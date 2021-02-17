@@ -442,8 +442,16 @@ void kernels_cache::build_all() {
     auto sorted_program_code = get_program_source(_kernels_code);
 
     _one_time_kernels.clear();
+	
+	std::vector<uint64_t> durations;  // store function execution time durations
+	
     for (auto& program : sorted_program_code) {
+		auto start = std::chrono::high_resolution_clock::now(); // Get the timepoint before the function is called
         auto kernels = build_program(program.second);
+		auto stop = std::chrono::high_resolution_clock::now(); // Get the timepoint after  the function is called
+
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start); // Get the difference in timepoints
+		durations.push_back(duration.count());
 
         for (auto& k : kernels) {
             const auto& entry_point = k.first;
@@ -455,6 +463,13 @@ void kernels_cache::build_all() {
             }
         }
     }
+	
+    // print out informations
+    std::cout << "[Build kernels]" << std::endl;
+    std::cout << "Total time:   "  << accumulate(durations.begin(), durations.end(), 0) << " ms" << std::endl;
+    std::cout << "Average time: "  << accumulate(durations.begin(), durations.end(), 0) / durations.size() << " ms" << std::endl;
+    std::cout << "Max time:     "  << *max_element(durations.begin(), durations.end()) << " ms" << std::endl;
+    std::cout << "Min time:     "  << *min_element(durations.begin(), durations.end()) << " ms" << std::endl;
 
     _kernels_code.clear();
     _pending_compilation = false;
