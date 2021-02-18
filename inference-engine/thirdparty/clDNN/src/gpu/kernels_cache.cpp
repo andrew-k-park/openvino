@@ -445,10 +445,12 @@ void kernels_cache::build_all() {
 	
 	std::vector<uint64_t> durations;  // store function execution time durations
 	
+    auto total_start = std::chrono::high_resolution_clock::now();
+
     for (auto& program : sorted_program_code) {
 		auto start = std::chrono::high_resolution_clock::now(); // Get the timepoint before the function is called
         auto kernels = build_program(program.second);
-		auto stop = std::chrono::high_resolution_clock::now(); // Get the timepoint after  the function is called
+		auto stop = std::chrono::high_resolution_clock::now(); // Get the timepoint after the function is called
 
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start); // Get the difference in timepoints
 		durations.push_back(duration.count());
@@ -463,11 +465,13 @@ void kernels_cache::build_all() {
             }
         }
     }
+    auto total_finish = std::chrono::high_resolution_clock::now();
+    auto total = std::chrono::duration_cast<std::chrono::milliseconds>(total_finish - total_start);
 	
     // print out informations
     std::cout << "[Build kernels]" << std::endl;
-    std::cout << "Total time:   "  << accumulate(durations.begin(), durations.end(), 0) << " ms" << std::endl;
-    std::cout << "Average time: "  << accumulate(durations.begin(), durations.end(), 0) / durations.size() << " ms" << std::endl;
+    std::cout << "Total time:   "  << total.count() << " ms" << std::endl;
+    std::cout << "Average time: "  << total.count() / durations.size() << " ms" << std::endl;
     std::cout << "Max time:     "  << *max_element(durations.begin(), durations.end()) << " ms" << std::endl;
     std::cout << "Min time:     "  << *min_element(durations.begin(), durations.end()) << " ms" << std::endl;
 
