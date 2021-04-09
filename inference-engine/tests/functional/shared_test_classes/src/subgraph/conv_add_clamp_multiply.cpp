@@ -27,9 +27,10 @@ void ConvAddClampMultiply::SetUp() {
 
     auto params = ngraph::builder::makeParams(ngPrc, {inputShape});
 
-    auto weights = CommonTestUtils::generate_float_numbers(128 * inputShape[1], -0.2f, 0.2f);
-    auto conv = ngraph::builder::makeConvolution(params[0], ngPrc, {1, 1}, {1, 1}, {0, 0}, {0, 0}, {1, 1},
-                                                 ngraph::op::PadType::VALID, 128, false, weights);
+    auto weights = CommonTestUtils::generate_float_numbers(32 * inputShape[1] * 3 * 3, -0.2f, 0.2f);
+    // in, type, filterSize, strides, padsBegin, padsEnd, dilations, autoPad, numOutChannels, addBias, filterWeights
+    auto conv = ngraph::builder::makeConvolution(params[0], ngPrc, {3, 3}, {1, 1}, {1, 1}, {1, 1}, {1, 1},
+                                                 ngraph::op::PadType::EXPLICIT, 32, false, weights);
     std::vector<size_t> input_dims = { 1, 1, 1, 1 };
     std::vector<float> clamp_min_max = { -20, 20 };
     auto shift = CommonTestUtils::generate_float_numbers(input_dims[0], 0.0f, 20.0f);

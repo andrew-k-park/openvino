@@ -17,7 +17,7 @@ const std::vector<InferenceEngine::Precision> netPrecisions = {
 INSTANTIATE_TEST_CASE_P(smoke_NoReshape, ConvAddClampMultiply,
                         ::testing::Combine(
                                 ::testing::ValuesIn(netPrecisions),
-                                ::testing::Values(std::vector<size_t >({1, 128, 40, 40})),
+                                ::testing::Values(std::vector<size_t >({1, 12, 320, 320})),
                                 ::testing::Values(CommonTestUtils::DEVICE_GPU)),
                         ConvAddClampMultiply::getTestCaseName);
 
