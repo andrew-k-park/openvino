@@ -17,6 +17,7 @@
 #include <xmmintrin.h>
 #include <vector>
 #include <utility>
+#include <iostream>
 
 #ifdef FIX_OPENMP_RELEASE_ISSUE
 #ifdef OPENMP_FOUND
@@ -269,7 +270,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 final_detections.emplace_back(confidences[image]);
             }
         }
-
+        std::cout << "cldnn cpu result =====================================" << std::endl;
         int count = 0;
         for (int image = 0; image < num_of_images; ++image) {
             const std::vector<std::vector<bounding_box>>& bboxes_per_image = all_bboxes[image];
@@ -300,6 +301,13 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 4] = (dtype)ymin;
                     out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 5] = (dtype)xmax;
                     out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 6] = (dtype)ymax;
+                    std::cout << "[" << static_cast<float>(image) << ", "
+                    << (args.decrease_label_id ? static_cast<float>(label - 1.0f) : static_cast<float>(label)) << ", "
+                    << static_cast<float>(score_prior.first) << ", "
+                    << static_cast<float>(xmin) << ", "
+                    << static_cast<float>(ymin) << ", "
+                    << static_cast<float>(xmax) << ", "
+                    << static_cast<float>(ymax) << "]" << std::endl;
                     ++count;
                 }
             }
@@ -315,8 +323,16 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 4] = (dtype)0.f;
             out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 5] = (dtype)0.f;
             out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 6] = (dtype)0.f;
+            std::cout << "[" << -1.f << ", "
+                    << 0.f << ", "
+                    << 0.f << ", "
+                    << 0.f << ", "
+                    << 0.f << ", "
+                    << 0.f << ", "
+                    << 0.f << "]" << std::endl;
             ++count;
         }
+        std::cout << "=====================================================" << std::endl;
     }
 
     // Compute the linear index taking the padding into account.
