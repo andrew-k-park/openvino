@@ -36,6 +36,49 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
     const detection_output_node& outer;
 
     explicit detection_output_cpu(const detection_output_node& outer) : outer(outer) {}
+    static float BBoxSize(const bounding_box& bbox) {
+        if (bbox.xmax < bbox.xmin || bbox.ymax < bbox.ymin) {
+            return 0;
+        } else {
+            float width = bbox.xmax - bbox.xmin;
+            float height = bbox.ymax - bbox.ymin;
+            return width * height;
+        }
+    }
+
+    static void IntersectBBox(const bounding_box& bbox1,
+                        const bounding_box& bbox2,
+                        bounding_box& intersectBbox) {
+        if (bbox2.xmin > bbox1.xmax || bbox2.xmax < bbox1.xmin ||
+            bbox2.ymin > bbox1.ymax || bbox2.ymax < bbox1.ymin) {
+            intersectBbox.xmin = 0;
+            intersectBbox.ymin = 0;
+            intersectBbox.xmax = 0;
+            intersectBbox.ymax = 0;
+        } else {
+            intersectBbox.xmin = std::max<float>(bbox1.xmin, bbox2.xmin);
+            intersectBbox.ymin = std::max<float>(bbox1.ymin, bbox2.ymin);
+            intersectBbox.xmax = std::min<float>(bbox1.xmax, bbox2.xmax);
+            intersectBbox.ymax = std::min<float>(bbox1.ymax, bbox2.ymax);
+        }
+    }
+
+    static float JaccardOverlap(const bounding_box& bbox1, const bounding_box& bbox2) {
+        bounding_box intersectBbox;
+        IntersectBBox(bbox1, bbox2, intersectBbox);
+
+        float intersectWidth, intersectHeight;
+        intersectWidth = intersectBbox.xmax - intersectBbox.xmin;
+        intersectHeight = intersectBbox.ymax - intersectBbox.ymin;
+        if (intersectWidth > 0 && intersectHeight > 0) {
+            float intersect_size = intersectWidth * intersectHeight;
+            float bbox1_size = BBoxSize(bbox1);
+            float bbox2_size = BBoxSize(bbox2);
+            return intersect_size / (bbox1_size + bbox2_size - intersect_size);
+        } else {
+            return 0.0f;
+        }
+    }
 
     static void decode_bounding_box(const bounding_box& prior_bbox,
                                     const std::array<float, PRIOR_BOX_SIZE>& prior_variance,
@@ -83,9 +126,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             }
             case prior_box_code_type::center_size: {
                 const float prior_width = prior_bbox_xmax - prior_bbox_xmin;
-                assert(prior_width > 0);
+                // assert(prior_width > 0);    // yunji
                 const float prior_height = prior_bbox_ymax - prior_bbox_ymin;
-                assert(prior_height > 0);
+                // assert(prior_height > 0);   // yunji
                 const float prior_center_x = (prior_bbox_xmin + prior_bbox_xmax) / 2.f;
                 const float prior_center_y = (prior_bbox_ymin + prior_bbox_ymax) / 2.f;
                 float decode_bbox_center_x, decode_bbox_center_y;
@@ -142,60 +185,46 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         }
     }
 
+
+
     static void apply_nms(const std::vector<bounding_box>& bboxes,
                           std::vector<std::pair<float, int>>& scores,
                           const float nms_threshold,
+                          const float conf_threshold,
                           const float eta,
-                          const int top_k) {
-        // Sort the scores in descending order and keep top_k scores if needed.
-        if ((top_k != -1) && (static_cast<int>(scores.size()) > top_k)) {
-            std::partial_sort(scores.begin(),
-                              scores.begin() + top_k,
-                              scores.end(),
-                              [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) {
-                                  return (p1.first > p2.first) || (p1.first == p2.first && p1.second < p2.second);
-                              });
-            scores.resize(top_k);
-        } else {
-            std::stable_sort(
-                scores.begin(),
-                scores.end(),
-                [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) { return p1.first > p2.first; });
+                          const int top_k,
+                          std::vector<int>& indices) {
+        std::vector<std::pair<float, int>> scoreIndexVec;
+        for (int i = 0; i < static_cast<int>(scores.size()); ++i) {
+            if (scores[i].first > conf_threshold) {
+                scoreIndexVec.push_back(std::make_pair(scores[i].first, i));
+            }
         }
 
-        // NMS
-        float adaptive_threshold = nms_threshold;
-        int post_nms_count = 0;
+        std::stable_sort(
+            scoreIndexVec.begin(), scoreIndexVec.end(), [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) { return p1.first > p2.first; });
 
-        for (auto score_index : scores) {
-            const int idx = score_index.second;
-            bounding_box box1(bboxes[idx]);
+        if (top_k > -1 && top_k < static_cast<int>(scoreIndexVec.size())) {
+            scoreIndexVec.resize(top_k);
+        }
+
+        scores = scoreIndexVec;
+        while (scoreIndexVec.size() != 0) {
+            const int idx = scoreIndexVec.front().second;   // 작은 인덱스부터 하나씩 사라진다..?
             bool keep = true;
-            for (int i = 0; i < post_nms_count; ++i) {
-                if (!keep) {
+            for (int k = 0; k < static_cast<int>(indices.size()); ++k) {
+                const int kept_idx = indices[k];
+                float overlap = JaccardOverlap(bboxes[idx], bboxes[kept_idx]);
+                if (overlap > nms_threshold) {
+                    keep = false;
                     break;
                 }
-                bounding_box box2(bboxes[scores[i].second]);
-                bool intersecting = (box1.xmin < box2.xmax) & (box2.xmin < box1.xmax) & (box1.ymin < box2.ymax) &
-                                    (box2.ymin < box1.ymax);
-                float overlap = 0.0f;
-                if (intersecting) {
-                    const float intersect_width = std::min(box1.xmax, box2.xmax) - std::max(box1.xmin, box2.xmin);
-                    const float intersect_height = std::min(box1.ymax, box2.ymax) - std::max(box1.ymin, box2.ymin);
-                    const float intersect_size = intersect_width * intersect_height;
-                    overlap = intersect_size / (box1.area() + box2.area() - intersect_size);
-                }
-                keep = (overlap <= adaptive_threshold);
             }
             if (keep) {
-                scores[post_nms_count] = score_index;
-                ++post_nms_count;
+                indices.push_back(idx);
             }
-            if (keep && eta < 1 && adaptive_threshold > 0.5) {
-                adaptive_threshold *= eta;
-            }
+            scoreIndexVec.erase(scoreIndexVec.begin());
         }
-        scores.resize(post_nms_count);  // scores holds only the items that were kept after the NMS.
     }
 
     template <typename dtype>
@@ -207,11 +236,14 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         auto out_ptr = lock.begin();
 
         const auto& args = instance.argument;
+        // int numKept = 0;
+        std::vector<std::map<int, std::vector<int>>> allIndices;
         std::vector<std::vector<std::vector<std::pair<float, int>>>>
             final_detections;  // Per image -> For each label: Pair (score, prior index)
         for (int image = 0; image < num_of_images; ++image) {
             const std::vector<std::vector<bounding_box>>& bboxes_per_image = all_bboxes[image];
             std::vector<std::vector<std::pair<float, int>>>& conf_per_image = confidences[image];
+            std::map<int, std::vector<int>> indices;
             int num_det = 0;
 #ifdef FIX_OPENMP_RELEASE_ISSUE
 #ifdef OPENMP_FOUND
@@ -229,10 +261,10 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 }
                 std::vector<std::pair<float, int>>& scores = conf_per_image[cls];
                 const int label = args.share_location ? 0 : cls;
-                apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.eta, args.top_k);
-                num_det += static_cast<int>(scores.size());
+                apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.confidence_threshold, args.eta, args.top_k, indices[cls]);
+                num_det += indices[cls].size();
             }
-            if (num_det > args.keep_top_k) {
+            if (args.keep_top_k > -1 && num_det > args.keep_top_k) {    //num_det 부분
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
                 score_index_pairs.reserve(num_det);
                 for (int label = 0; label < static_cast<int>(args.num_classes); ++label) {
@@ -242,7 +274,6 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     }
                 }
 
-                // Keep top k results per image.
                 auto sort_function = [](const std::pair<float, std::pair<int, int>>& p1,
                                         const std::pair<float, std::pair<int, int>>& p2) {
                     return p1.first > p2.first;
@@ -441,85 +472,44 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
 
         const int num_of_images = static_cast<int>(confidences.size());
         auto& input_confidence = instance.confidence_memory();
-        const float confidence_threshold = instance.argument.confidence_threshold;
+        // const float confidence_threshold = instance.argument.confidence_threshold;
 
         mem_lock<dtype> lock{(memory_impl::ptr) &input_confidence};
         auto confidence_data = lock.begin();
 
         assert(num_of_priors * num_classes == input_confidence.get_layout().size.feature[0]);
 
-        const auto& input_buffer_size = input_confidence.get_layout().get_buffer_size();
-        const int input_buffer_size_x = input_buffer_size.spatial[0];
-        const int input_buffer_size_y = input_buffer_size.spatial[1];
-        const int input_buffer_size_f = input_buffer_size.feature[0];
-        const auto& input_padding = input_confidence.get_layout().data_padding;
-        const int input_padding_lower_x = input_padding.lower_size().spatial[0];
-        const int input_padding_lower_y = input_padding.lower_size().spatial[1];
-        const int stride = input_buffer_size_y * input_buffer_size_x;
+        // const auto& input_buffer_size = input_confidence.get_layout().get_buffer_size();
+        // const int input_buffer_size_x = input_buffer_size.spatial[0];
+        // const int input_buffer_size_y = input_buffer_size.spatial[1];
+        // const int input_buffer_size_f = input_buffer_size.feature[0];
+        // const auto& input_padding = input_confidence.get_layout().data_padding;
+        // const int input_padding_lower_x = input_padding.lower_size().spatial[0];
+        // const int input_padding_lower_y = input_padding.lower_size().spatial[1];
+        // const int stride = input_buffer_size_y * input_buffer_size_x;
 
         for (int image = 0; image < num_of_images; ++image) {
             std::vector<std::vector<std::pair<float, int>>>& label_to_scores = confidences[image];
             label_to_scores.resize(num_classes);
-            int idx = get_linear_feature_index(image,
-                                               0,
-                                               input_buffer_size_f,
-                                               input_buffer_size_y,
-                                               input_buffer_size_x,
-                                               input_padding_lower_y,
-                                               input_padding_lower_x);
+            // int idx = get_linear_feature_index(image,
+            //                                    0,
+            //                                    input_buffer_size_f,
+            //                                    input_buffer_size_y,
+            //                                    input_buffer_size_x,
+            //                                    input_padding_lower_y,
+            //                                    input_padding_lower_x);
 
-            if (stride == 1 && std::is_same<dtype, float>::value) {
-                float const* confidence_ptr_float = (float const*)(&(*confidence_data));
-                confidence_ptr_float += idx;
-                __m128 threshold = _mm_load_ps1(&confidence_threshold);
-                for (int prior = 0; prior < num_of_priors; ++prior) {
-                    int cls = 0;
-                    for (; cls + 3 < num_classes; cls += 4) {
-                        __m128 scores = _mm_loadu_ps(confidence_ptr_float);
-                        confidence_ptr_float += 4;
-                        __m128i mask128 = _mm_castps_si128(_mm_cmpgt_ps(scores, threshold));
-                        if (_mm_testz_si128(mask128, mask128)) {
-                            continue;
-                        }
-                        int mask = _mm_movemask_ps(_mm_castsi128_ps(mask128));
-                        if (mask & 1) {
-                            label_to_scores[cls + 0].emplace_back(_mm_cvtss_f32(scores), prior);
-                        }
-                        if (mask & 2) {
-                            int score = _mm_extract_ps(scores, 1);
-                            float s = reinterpret_cast<float&>(score);
-                            label_to_scores[cls + 1].emplace_back(s, prior);
-                        }
-                        if (mask & 4) {
-                            int score = _mm_extract_ps(scores, 2);
-                            float s = reinterpret_cast<float&>(score);
-                            label_to_scores[cls + 2].emplace_back(s, prior);
-                        }
-                        if (mask & 8) {
-                            int score = _mm_extract_ps(scores, 3);
-                            float s = reinterpret_cast<float&>(score);
-                            label_to_scores[cls + 3].emplace_back(s, prior);
-                        }
-                    }
-                    for (; cls < num_classes; ++cls) {
-                        float score = *confidence_ptr_float;
-                        if (score > confidence_threshold) {
-                            label_to_scores[cls].emplace_back(score, prior);
-                        }
-                        ++confidence_ptr_float;
-                    }
-                }
-            } else {
-                for (int prior = 0; prior < num_of_priors; ++prior) {
-                    for (int cls = 0; cls < num_classes; ++cls) {
-                        float score = static_cast<float>(confidence_data[idx]);
-                        if (score > confidence_threshold) {
-                            label_to_scores[cls].emplace_back(score, prior);
-                        }
-                        idx += stride;
-                    }
+            for (int prior = 0; prior < num_of_priors; ++prior) {
+                int idx = prior * num_classes;
+                for (int cls = 0; cls < num_classes; ++cls) {
+                    float score = static_cast<float>(confidence_data[idx + cls]);
+                    // if (score > confidence_threshold) {
+                    label_to_scores[cls].emplace_back(score, prior);
+                    // }
+                    // idx += stride;
                 }
             }
+            // confidence_data += num_of_priors * num_classes;
         }
     }
 
