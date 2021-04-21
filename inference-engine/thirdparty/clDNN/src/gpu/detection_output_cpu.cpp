@@ -212,7 +212,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             scoreIndexVec.resize(top_k);
         }
 
-        scores = scoreIndexVec;
+        // scores = scoreIndexVec;
         while (scoreIndexVec.size() != 0) {
             const int idx = scoreIndexVec.front().second;   // 작은 인덱스부터 하나씩 사라진다..?
             bool keep = true;
@@ -232,6 +232,12 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
     }
 
     template <typename dtype>
+    static bool SortScorePairDescend(const std::pair<float, dtype>& pair1,
+                                        const std::pair<float, dtype>& pair2) {
+        return pair1.first > pair2.first;
+    }
+
+    template <typename dtype>
     void generate_detections(const detection_output_inst& instance,
                              const int num_of_images,
                              const std::vector<std::vector<std::vector<bounding_box>>>& all_bboxes,
@@ -241,11 +247,13 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
 
         const auto& args = instance.argument;
         std::vector<std::map<int, std::vector<int>>> allIndices;
+        // std::vector<std::map<int, std::vector<int>>> final_detections;
         std::vector<std::vector<std::vector<std::pair<float, int>>>>
             final_detections;  // Per image -> For each label: Pair (score, prior index)
         for (int image = 0; image < num_of_images; ++image) {
             const std::vector<std::vector<bounding_box>>& bboxes_per_image = all_bboxes[image];
             std::vector<std::vector<std::pair<float, int>>>& conf_per_image = confidences[image];
+            // const std::map<int, std::vector<float>>& confScores = confidences[image];
             std::map<int, std::vector<int>> indices;
             int num_det = 0;
 #ifdef FIX_OPENMP_RELEASE_ISSUE
@@ -263,51 +271,97 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     continue;  // Skip background class.
                 }
                 std::vector<std::pair<float, int>>& scores = conf_per_image[cls];
-                const int label = args.share_location ? 0 : cls;
+                const int label = args.share_location ? -1 : cls;
                 apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.confidence_threshold, args.top_k, indices[cls]);
                 num_det += indices[cls].size();
             }
+            // const std::map<int, std::vector<std::pair<float, int>>>& confScores = confidences[image];
             if (args.keep_top_k > -1 && num_det > args.keep_top_k) {
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
-                score_index_pairs.reserve(num_det);
-                for (int label = 0; label < static_cast<int>(args.num_classes); ++label) {
+                // for (int i = 1; i <= 10; ++i) {
+                //     for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
+                //         printf("(%d) ", indices[i][j]);
+                //     }
+                //     printf("\n");
+                // }
+                // printf("============================\n");
+                for (auto it = indices.begin(); it != indices.end(); ++it) {
+                    int label = it->first;
+                    const std::vector<int>& labelIndices = it->second;
+                    // if (confScores.find(label) == confScores.end())
+                    //     continue;
+                    // const std::vector<dataType>& scores = confidences[image][lab;
                     std::vector<std::pair<float, int>>& scores = confidences[image][label];
-                    for (std::pair<float, int> score_index : scores) {
-                        score_index_pairs.emplace_back(score_index.first, std::make_pair(label, score_index.second));
+                    // const std::vector<float>& scores1 =
+                    //     confScores.find(label)->second;
+                    for (int j = 0; j < static_cast<int>(labelIndices.size()); ++j) {
+                        int idx = labelIndices[j];
+                        printf("%f [%d, %d] ", scores[idx].first, label, idx);
+                        score_index_pairs.push_back(
+                            std::make_pair(scores[idx].first, std::make_pair(label, idx)));
                     }
+                    printf("\n");
                 }
+                printf("============================\n");
+                // 구분부굽
+                // score_index_pairs.reserve(num_det);
+                // for (int label = 0; label < static_cast<int>(args.num_classes); ++label) {
+                //     std::vector<std::pair<float, int>>& scores = confidences[image][label];
+                //     for (std::pair<float, int> score_index : scores) {
+                //         score_index_pairs.emplace_back(score_index.first, std::make_pair(label, score_index.second));
+                //     }
+                // }
                 // rnqnsrnqns
-                auto sort_function = [](const std::pair<float, std::pair<int, int>>& p1,
-                                        const std::pair<float, std::pair<int, int>>& p2) {
-                    return p1.first > p2.first;
-                };
-                if (static_cast<int>(score_index_pairs.size()) > args.keep_top_k) {
-                    std::partial_sort(score_index_pairs.begin(),
-                                      score_index_pairs.begin() + args.keep_top_k,
-                                      score_index_pairs.end(),
-                                      sort_function);
-                    score_index_pairs.resize(args.keep_top_k);
-                } else {
-                    std::sort(score_index_pairs.begin(), score_index_pairs.end(), sort_function);
-                }
-
+                // auto sort_function = [](const std::pair<float, std::pair<int, int>>& p1,
+                //                         const std::pair<float, std::pair<int, int>>& p2) {
+                //     return p1.first > p2.first;
+                // };
+                // if (static_cast<int>(score_index_pairs.size()) > args.keep_top_k) {
+                //     std::partial_sort(score_index_pairs.begin(),
+                //                       score_index_pairs.begin() + args.keep_top_k,
+                //                       score_index_pairs.end(),
+                //                       sort_function);
+                //     score_index_pairs.resize(args.keep_top_k);
+                // } else {
+                //     std::sort(score_index_pairs.begin(), score_index_pairs.end(), sort_function);
+                // }
+                std::sort(score_index_pairs.begin(),
+                            score_index_pairs.end(),
+                            SortScorePairDescend<std::pair<int, int>>);
+                score_index_pairs.resize(args.keep_top_k);
+                // for (int j = 0; j < static_cast<int>(score_index_pairs.size()); j++) {
+                //     printf("%f(%d, %d) ", score_index_pairs[j].first, score_index_pairs[j].second.first,
+                //     score_index_pairs[j].second.second);
+                // }
+                // printf("\n");
+                // printf("============================\n");
+                // 구분구분
                 // Store the new indices.
+                // std::map<int, std::vector<int>> new_indices;
                 std::vector<std::vector<std::pair<float, int>>> new_indices(args.num_classes);
+                // std::vector<std::vector<std::pair<float, int>>> new_indices;
                 for (int j = 0; j < static_cast<int>(score_index_pairs.size()); ++j) {
                     int label = score_index_pairs[j].second.first;
                     int idx = score_index_pairs[j].second.second;
                     new_indices[label].emplace_back(score_index_pairs[j].first, idx);
+                    // new_indices[label].push_back(idx);
                 }
                 final_detections.emplace_back(new_indices);
             } else {
                 final_detections.emplace_back(confidences[image]);
             }
-            for (int i = 1; i < 10; i++) {
-                for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
-                    printf("%f(%d) ", final_detections[0][i][j].first, final_detections[0][i][j].second);
-                }
-                printf("\n");
-            }
+            // for (int i = 1; i < 10; i++) {
+            //     for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
+            //         printf("%f(%d) ", final_detections[0][i][j].first, final_detections[0][i][j].second);
+            //     }
+            //     printf("\n");
+            // }
+            // for (int i = 1; i < 10; i++) {
+            //     for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
+            //         printf("(%d) ", final_detections[0][i][j]);
+            //     }
+            //     printf("\n");
+            // }
         }
 
         int count = 0;

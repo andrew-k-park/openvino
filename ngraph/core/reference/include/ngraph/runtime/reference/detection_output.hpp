@@ -634,6 +634,13 @@ namespace ngraph
                         if (attrs.keep_top_k[0] > -1 && numDet > attrs.keep_top_k[0])
                         {
                             std::vector<std::pair<dataType, std::pair<int, int>>> scoreIndexPairs;
+                            // for (int i = 1; i <= 10; ++i) {
+                            //     for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
+                            //         printf("(%d) ", indices[i][j]);
+                            //     }
+                            //     printf("\n");
+                            // }
+                            // printf("============================\n");
                             for (auto it = indices.begin(); it != indices.end(); ++it)
                             {
                                 int label = it->first;
@@ -645,24 +652,34 @@ namespace ngraph
                                 for (int j = 0; j < labelIndices.size(); ++j)
                                 {
                                     int idx = labelIndices[j];
+                                    std::cout << scores[idx];
+                                    printf("[%d, %d] ", label, idx);
                                     scoreIndexPairs.push_back(
                                         std::make_pair(scores[idx], std::make_pair(label, idx)));
                                 }
+                                printf("\n");
                             }
+                            printf("============================\n");
                             std::sort(scoreIndexPairs.begin(),
                                       scoreIndexPairs.end(),
                                       SortScorePairDescend<std::pair<int, int>>);
                             scoreIndexPairs.resize(attrs.keep_top_k[0]);
+                            // for (int j = 0; j < static_cast<int>(scoreIndexPairs.size()); j++) {
+                            //     std::cout << scoreIndexPairs[j].first;
+                            //     printf("(%d, %d) ", scoreIndexPairs[j].second.first,
+                            //     scoreIndexPairs[j].second.second);
+                            // }
+                            // printf("\n");printf("============================\n");
                             std::map<int, std::vector<int>> newIndices;
                             for (int j = 0; j < scoreIndexPairs.size(); ++j)
                             {
                                 int label = scoreIndexPairs[j].second.first;
                                 int idx = scoreIndexPairs[j].second.second;
-                                std::cout << scoreIndexPairs[j].first;
-                                printf("(%d) ", idx);
+                                // std::cout << scoreIndexPairs[j].first;
+                                // printf("(%d) ", idx);
                                 newIndices[label].push_back(idx);
                             }
-                            printf("\n");
+                            // printf("\n");
                             allIndices.push_back(newIndices);
                             numKept += attrs.top_k;
                         }
@@ -671,12 +688,13 @@ namespace ngraph
                             allIndices.push_back(indices);
                             numKept += numDet;
                         }
-                        for (int i = 1; i < 10; i++) {
-                            for (int j = 0; j < static_cast<int>(allIndices[0][i].size()); j++) {
-                                printf("(%d) ", allIndices[0][i][j]);
-                            }
-                            printf("\n");
-                        }
+                        // for (int i = 1; i < 10; i++) {
+                        //     for (int j = 0; j < static_cast<int>(allIndices[0][i].size()); j++) {
+                        //         // std::cout << scoreIndexPairs[j].first;
+                        //         printf("(%d) ", allIndices[0][i][j]);
+                        //     }
+                        //     printf("\n");
+                        // }
                     }
 
                     int count = 0;
