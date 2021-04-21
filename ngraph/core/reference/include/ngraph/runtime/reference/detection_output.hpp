@@ -658,8 +658,11 @@ namespace ngraph
                             {
                                 int label = scoreIndexPairs[j].second.first;
                                 int idx = scoreIndexPairs[j].second.second;
+                                std::cout << scoreIndexPairs[j].first;
+                                printf("(%d) ", idx);
                                 newIndices[label].push_back(idx);
                             }
+                            printf("\n");
                             allIndices.push_back(newIndices);
                             numKept += attrs.top_k;
                         }
@@ -667,6 +670,12 @@ namespace ngraph
                         {
                             allIndices.push_back(indices);
                             numKept += numDet;
+                        }
+                        for (int i = 1; i < 10; i++) {
+                            for (int j = 0; j < static_cast<int>(allIndices[0][i].size()); j++) {
+                                printf("(%d) ", allIndices[0][i][j]);
+                            }
+                            printf("\n");
                         }
                     }
 

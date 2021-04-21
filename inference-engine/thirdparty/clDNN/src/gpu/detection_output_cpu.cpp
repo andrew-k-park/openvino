@@ -107,6 +107,12 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             prior_bbox_ymax /= image_height;
         }
 
+        // if (variance_encoded_in_target) {
+        //     DecodeBBox(prior_bbox, bbox, decoded_bbox);
+        // } else {
+        //     DecodeBBox(prior_bbox, prior_variance, bbox, decoded_bbox);
+        // }
+
         switch (code_type) {
             case prior_box_code_type::corner: {
                 if (variance_encoded_in_target) {
@@ -129,27 +135,27 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 // assert(prior_width > 0);    // yunji
                 const float prior_height = prior_bbox_ymax - prior_bbox_ymin;
                 // assert(prior_height > 0);   // yunji
-                const float prior_center_x = (prior_bbox_xmin + prior_bbox_xmax) / 2.f;
-                const float prior_center_y = (prior_bbox_ymin + prior_bbox_ymax) / 2.f;
+                const float prior_center_x = (prior_bbox_xmin + prior_bbox_xmax) / 2;
+                const float prior_center_y = (prior_bbox_ymin + prior_bbox_ymax) / 2;
                 float decode_bbox_center_x, decode_bbox_center_y;
                 float decode_bbox_width, decode_bbox_height;
                 if (variance_encoded_in_target) {
                     // variance is encoded in target, we simply need to restore the offset predictions.
                     decode_bbox_center_x = bbox_xmin * prior_width + prior_center_x;
                     decode_bbox_center_y = bbox_ymin * prior_height + prior_center_y;
-                    decode_bbox_width = (exp(bbox_xmax) * prior_width);
-                    decode_bbox_height = (exp(bbox_ymax) * prior_height);
+                    decode_bbox_width = (std::exp(bbox_xmax) * prior_width);
+                    decode_bbox_height = (std::exp(bbox_ymax) * prior_height);
                 } else {
                     // variance is encoded in bbox, we need to scale the offset accordingly.
                     decode_bbox_center_x = prior_variance[0] * bbox_xmin * prior_width + prior_center_x;
                     decode_bbox_center_y = prior_variance[1] * bbox_ymin * prior_height + prior_center_y;
-                    decode_bbox_width = (exp(prior_variance[2] * bbox_xmax) * prior_width);
-                    decode_bbox_height = (exp(prior_variance[3] * bbox_ymax) * prior_height);
+                    decode_bbox_width = (std::exp(prior_variance[2] * bbox_xmax) * prior_width);
+                    decode_bbox_height = (std::exp(prior_variance[3] * bbox_ymax) * prior_height);
                 }
-                decoded_bbox->xmin = decode_bbox_center_x - decode_bbox_width / 2.0f;
-                decoded_bbox->ymin = decode_bbox_center_y - decode_bbox_height / 2.0f;
-                decoded_bbox->xmax = decode_bbox_center_x + decode_bbox_width / 2.0f;
-                decoded_bbox->ymax = decode_bbox_center_y + decode_bbox_height / 2.0f;
+                decoded_bbox->xmin = decode_bbox_center_x - decode_bbox_width / 2;
+                decoded_bbox->ymin = decode_bbox_center_y - decode_bbox_height / 2;
+                decoded_bbox->xmax = decode_bbox_center_x + decode_bbox_width / 2;
+                decoded_bbox->ymax = decode_bbox_center_y + decode_bbox_height / 2;
                 break;
             }
             case prior_box_code_type::corner_size: {
@@ -186,12 +192,10 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
     }
 
 
-
     static void apply_nms(const std::vector<bounding_box>& bboxes,
                           std::vector<std::pair<float, int>>& scores,
                           const float nms_threshold,
                           const float conf_threshold,
-                          const float eta,
                           const int top_k,
                           std::vector<int>& indices) {
         std::vector<std::pair<float, int>> scoreIndexVec;
@@ -236,7 +240,6 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         auto out_ptr = lock.begin();
 
         const auto& args = instance.argument;
-        // int numKept = 0;
         std::vector<std::map<int, std::vector<int>>> allIndices;
         std::vector<std::vector<std::vector<std::pair<float, int>>>>
             final_detections;  // Per image -> For each label: Pair (score, prior index)
@@ -261,10 +264,10 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 }
                 std::vector<std::pair<float, int>>& scores = conf_per_image[cls];
                 const int label = args.share_location ? 0 : cls;
-                apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.confidence_threshold, args.eta, args.top_k, indices[cls]);
+                apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.confidence_threshold, args.top_k, indices[cls]);
                 num_det += indices[cls].size();
             }
-            if (args.keep_top_k > -1 && num_det > args.keep_top_k) {    //num_det 부분
+            if (args.keep_top_k > -1 && num_det > args.keep_top_k) {
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
                 score_index_pairs.reserve(num_det);
                 for (int label = 0; label < static_cast<int>(args.num_classes); ++label) {
@@ -273,7 +276,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                         score_index_pairs.emplace_back(score_index.first, std::make_pair(label, score_index.second));
                     }
                 }
-
+                // rnqnsrnqns
                 auto sort_function = [](const std::pair<float, std::pair<int, int>>& p1,
                                         const std::pair<float, std::pair<int, int>>& p2) {
                     return p1.first > p2.first;
@@ -298,6 +301,12 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 final_detections.emplace_back(new_indices);
             } else {
                 final_detections.emplace_back(confidences[image]);
+            }
+            for (int i = 1; i < 10; i++) {
+                for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
+                    printf("%f(%d) ", final_detections[0][i][j].first, final_detections[0][i][j].second);
+                }
+                printf("\n");
             }
         }
 
