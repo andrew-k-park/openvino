@@ -36,6 +36,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
     const detection_output_node& outer;
 
     explicit detection_output_cpu(const detection_output_node& outer) : outer(outer) {}
+    using LabelBBox = std::map<int, std::vector<bounding_box>>;
     static float BBoxSize(const bounding_box& bbox) {
         if (bbox.xmax < bbox.xmin || bbox.ymax < bbox.ymin) {
             return 0;
@@ -72,8 +73,8 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         intersectHeight = intersectBbox.ymax - intersectBbox.ymin;
         if (intersectWidth > 0 && intersectHeight > 0) {
             float intersect_size = intersectWidth * intersectHeight;
-            float bbox1_size = BBoxSize(bbox1);
-            float bbox2_size = BBoxSize(bbox2);
+            float bbox1_size = bbox1.area();
+            float bbox2_size = bbox2.area();
             return intersect_size / (bbox1_size + bbox2_size - intersect_size);
         } else {
             return 0.0f;
@@ -199,6 +200,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                           const int top_k,
                           std::vector<int>& indices) {
         std::vector<std::pair<float, int>> scoreIndexVec;
+        // GetMaxScoreIndex
         for (int i = 0; i < static_cast<int>(scores.size()); ++i) {
             if (scores[i].first > conf_threshold) {
                 scoreIndexVec.push_back(std::make_pair(scores[i].first, i));
@@ -206,29 +208,36 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         }
 
         std::stable_sort(
-            scoreIndexVec.begin(), scoreIndexVec.end(), [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) { return p1.first > p2.first; });
+            // [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) { return p1.first > p2.first; }
+            scoreIndexVec.begin(), scoreIndexVec.end(), SortScorePairDescend<int>);
 
-        if (top_k > -1 && top_k < static_cast<int>(scoreIndexVec.size())) {
+        if (top_k > -1 && static_cast<size_t>(top_k) < static_cast<size_t>(scoreIndexVec.size())) {
             scoreIndexVec.resize(top_k);
         }
-        // scores = scoreIndexVec;
-        // for (int i = 0; i <= 14; ++i) {
-        //     printf("%f %f %f %f\n", bboxes[i].xmin, bboxes[i].xmax, bboxes[i].ymin, bboxes[i].ymax);
+        // end of GetMaxScoreIndex
+        // for (int i = 1; i < 10; ++i) {
+        //     std::cout << scoreIndexVec[i].first << ", " << scoreIndexVec[i].second << "   ";
         // }
+        // std::cout << std::endl;
+        // MNS
         while (scoreIndexVec.size() != 0) {
             const int idx = scoreIndexVec.front().second;
-            bounding_box box1(bboxes[idx]);
+            // bounding_box box1(bboxes[idx]);
             bool keep = true;
             for (int k = 0; k < static_cast<int>(indices.size()); ++k) {
                 const int kept_idx = indices[k];
-                bounding_box box2(bboxes[kept_idx]);
-                // float overlap = JaccardOverlap(bboxes[idx], bboxes[kept_idx]);
-                float overlap = JaccardOverlap(box1, box2);
+                // bounding_box box2(bboxes[kept_idx]);
+                float overlap = JaccardOverlap(bboxes[idx], bboxes[kept_idx]);
+                // overlap = JaccardOverlap(box1, box2);
                 if (overlap > nms_threshold) {
+                    // printf("box1 %f %f %f %f  ", box1.xmax, box1.xmin, box1.ymax, box1.ymin);
+                    // printf("box2 %f %f %f %f  ", box2.xmax, box2.xmin, box2.ymax, box2.ymin);
+                    std::cout << overlap << ", " << idx << " ";
                     keep = false;
                     break;
                 }
             }
+            // std::cout << std::endl;
             if (keep) {
                 indices.push_back(idx);
             }
@@ -236,9 +245,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         }
     }
 
-    template <typename dtype>
-    static bool SortScorePairDescend(const std::pair<float, dtype>& pair1,
-                                        const std::pair<float, dtype>& pair2) {
+    template <typename T>
+    static bool SortScorePairDescend(const std::pair<float, T>& pair1,
+                                        const std::pair<float, T>& pair2) {
         return pair1.first > pair2.first;
     }
 
@@ -249,7 +258,6 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                              std::vector<std::vector<std::vector<std::pair<float, int>>>>& confidences) {
         mem_lock<dtype> lock{instance.output_memory()};
         auto out_ptr = lock.begin();
-        // const int num_results = instance.output_memory().get_layout().size.batch[2];
 
         const auto& args = instance.argument;
         std::vector<std::map<int, std::vector<int>>> allIndices;
@@ -284,13 +292,13 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             // const std::map<int, std::vector<std::pair<float, int>>>& confScores = confidences[image];
             if (args.keep_top_k > -1 && num_det > args.keep_top_k) {
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
-                // for (int i = 1; i <= 10; ++i) {
-                //     for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
-                //         printf("(%d) ", indices[i][j]);
-                //     }
-                //     printf("\n");
-                // }
-                // printf("============================\n");
+                for (int i = 1; i <= 10; ++i) {
+                    for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
+                        printf("(%d) ", indices[i][j]);
+                    }
+                    printf("\n");
+                }
+                printf("===============upup=============\n");
                 for (auto it = indices.begin(); it != indices.end(); ++it) {
                     int label = it->first;
                     const std::vector<int>& labelIndices = it->second;
@@ -308,77 +316,100 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     }
                     // printf("\n");
                 }
-                // printf("============================\n");
-                // 구분부굽
-                // score_index_pairs.reserve(num_det);
-                // for (int label = 0; label < static_cast<int>(args.num_classes); ++label) {
-                //     std::vector<std::pair<float, int>>& scores = confidences[image][label];
-                //     for (std::pair<float, int> score_index : scores) {
-                //         score_index_pairs.emplace_back(score_index.first, std::make_pair(label, score_index.second));
-                //     }
-                // }
-                // rnqnsrnqns
-                // auto sort_function = [](const std::pair<float, std::pair<int, int>>& p1,
-                //                         const std::pair<float, std::pair<int, int>>& p2) {
-                //     return p1.first > p2.first;
-                // };
-                // if (static_cast<int>(score_index_pairs.size()) > args.keep_top_k) {
-                //     std::partial_sort(score_index_pairs.begin(),
-                //                       score_index_pairs.begin() + args.keep_top_k,
-                //                       score_index_pairs.end(),
-                //                       sort_function);
-                //     score_index_pairs.resize(args.keep_top_k);
-                // } else {
-                //     std::sort(score_index_pairs.begin(), score_index_pairs.end(), sort_function);
-                // }
+                // sort
                 std::sort(score_index_pairs.begin(),
                             score_index_pairs.end(),
                             SortScorePairDescend<std::pair<int, int>>);
                 score_index_pairs.resize(args.keep_top_k);
-                // for (int j = 0; j < static_cast<int>(score_index_pairs.size()); j++) {
-                //     printf("%f(%d, %d) ", score_index_pairs[j].first, score_index_pairs[j].second.first,
-                //     score_index_pairs[j].second.second);
-                // }
-                // printf("\n");
-                // printf("============================\n");
-                // 구분구분
-                // Store the new indices.
-                // std::map<int, std::vector<int>> new_indices;
+
                 std::vector<std::vector<std::pair<float, int>>> new_indices(args.num_classes);
                 // std::vector<std::vector<std::pair<float, int>>> new_indices;
                 for (int j = 0; j < static_cast<int>(score_index_pairs.size()); ++j) {
                     int label = score_index_pairs[j].second.first;
                     int idx = score_index_pairs[j].second.second;
                     new_indices[label].emplace_back(score_index_pairs[j].first, idx);
+                    printf("%.3f(%d, %d) ", score_index_pairs[j].first, label, idx);
                     // new_indices[label].push_back(idx);
                 }
+                printf("\n");
                 final_detections.emplace_back(new_indices);
             } else {
                 final_detections.emplace_back(confidences[image]);
             }
-            // for (int i = 1; i < 10; i++) {
-            //     for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
-            //         printf("%f(%d) ", final_detections[0][i][j].first, final_detections[0][i][j].second);
-            //     }
-            //     printf("\n");
-            // }
-            // printf("---------------------\n");
-            // for (int i = 1; i < 10; i++) {
-            //     for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
-            //         printf("(%d) ", final_detections[0][i][j]);
-            //     }
-            //     printf("\n");
-            // }
+            for (int i = 1; i < 10; i++) {
+                for (int j = 0; j < static_cast<int>(final_detections[0][i].size()); j++) {
+                    printf("%f(%d) ", final_detections[0][i][j].first, final_detections[0][i][j].second);
+                }
+                printf("\n");
+            }
+            printf("---------------------\n");
         }
 
         int count = 0;
         for (int image = 0; image < num_of_images; ++image) {
             const std::vector<std::vector<bounding_box>>& bboxes_per_image = all_bboxes[image];
             auto& final_detections_per_image = final_detections[image];
+            // for (auto it = final_detections_per_image[image].begin(); it != final_detections_per_image[image].end(); ++it) {
+            //     // int label = it->first;
+            //     // int loc_label = attrs.share_location ? -1 : label;
+            //     // if (decodeBboxesImage.find(loc_label) == decodeBboxesImage.end())
+            //     //     continue;
+            //     std::vector<float> scores;
+
+            //     for (int i = 0; i < static_cast<int>(confidences[image].size()); ++i) { // 0 ~10
+            //         for (int j = 0; j < static_cast<int>(confidences[image][i].size()); ++j) {  // 0~14
+            //             scores.emplace_back(confidences[image][i][j].first);
+            //         }
+            //     }s
+            //     std::cout << "cldnn##: " << scores[2];
+            //     // int loc_label = args.share_location ? 0 : label;
+            //     // const std::vector<bounding_box>& bboxes = bboxes_per_image[loc_label];
+            // }   // 임시
+                // const std::vector<std::pair<float, int>>& label_detections = final_detections_per_image[label];//
+                // const std::vector<std::pair<float, int>>& label_detections = confidences[image][it];
+                // std::vector<std::pair<float, int>>& scores = confidences[image][label];//
+
+            //     const std::vector<NormalizedBBox>& bboxes =
+            //         decodeBboxesImage.find(loc_label)->second;
+            //     std::vector<int>& indices = it->second;
+            //     for (size_t j = 0; j < indices.size(); ++j)
+            //     {
+            //         int idx = indices[j];
+            //         result[count * 7 + 0] = i;
+            //         result[count * 7 + 1] =
+            //             attrs.decrease_label_id ? (label - 1) : label;
+            //         result[count * 7 + 2] = scores[idx];
+            //         std::cout << "[" << result[count * 7 + 2] << ", ";
+            //         std::cout << result[count * 7 + 0] << ", ";
+            //         std::cout << result[count * 7 + 1] << "]";
+            //         // printf("(%d, %d)\n", result[count * 7 + 0], result[count * 7 + 1]);
+            //         const NormalizedBBox& bbox = bboxes[idx];
+            //         dataType xmin = bbox.xmin;
+            //         dataType ymin = bbox.ymin;
+            //         dataType xmax = bbox.xmax;
+            //         dataType ymax = bbox.ymax;
+            // space
+            //         if (attrs.clip_after_nms)
+            //         {
+            //             xmin = std::max<dataType>(0, std::min<dataType>(1, xmin));
+            //             ymin = std::max<dataType>(0, std::min<dataType>(1, ymin));
+            //             xmax = std::max<dataType>(0, std::min<dataType>(1, xmax));
+            //             ymax = std::max<dataType>(0, std::min<dataType>(1, ymax));
+            //         }
+            // space
+            //         result[count * 7 + 3] = xmin;
+            //         result[count * 7 + 4] = ymin;
+            //         result[count * 7 + 5] = xmax;
+            //         result[count * 7 + 6] = ymax;
+            //         ++count;
+            //     }
+            //     std::cout << std::endl;
+            // }
             for (int label = 0; label < static_cast<int>(final_detections_per_image.size()); ++label) {
                 int loc_label = args.share_location ? 0 : label;
                 const std::vector<bounding_box>& bboxes = bboxes_per_image[loc_label];
                 const std::vector<std::pair<float, int>>& label_detections = final_detections_per_image[label];
+                // const std::vector<std::pair<float, int>>& label_detections = confidences[image][label];
                 for (std::pair<float, int> score_prior : label_detections) {
                     out_ptr[count * DETECTION_OUTPUT_ROW_SIZE] = (dtype)static_cast<float>(image);
                     out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 1] =
@@ -630,6 +661,14 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             std::vector<std::vector<bounding_box>>& bboxes_per_image = bboxes[image];
             bboxes_per_image.resize(num_loc_classes);
             locations[image].resize(num_loc_classes);
+            // int pboxIdx = image;
+            // if (batches_in_prior_boxes == 1) {
+            //     pboxIdx = 0;
+            // }
+            // const std::vector<bounding_box>& currPrBbox = prior_bboxes[pboxIdx];
+            // const std::vector<std::vector<dataType>>& currPrVar =
+            //     prior_variances[pboxIdx];
+            // const std::array<float, PRIOR_BOX_SIZE
             for (int cls = 0; cls < num_loc_classes; ++cls) {
                 const int label = args.share_location ? 0 : cls;
                 if (!args.share_location && label == args.background_label_id) {
@@ -637,7 +676,6 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 }
                 const std::vector<bounding_box>& label_loc_preds = locations[image][label];
                 int label_loc_preds_size = static_cast<int>(label_loc_preds.size());
-
                 bboxes_per_image[label].clear();
 
                 for (int i = 0; i < label_loc_preds_size; ++i) {
