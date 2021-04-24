@@ -292,13 +292,6 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             // const std::map<int, std::vector<std::pair<float, int>>>& confScores = confidences[image];
             if (args.keep_top_k > -1 && num_det > args.keep_top_k) {
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
-                for (int i = 1; i <= 10; ++i) {
-                    for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
-                        printf("(%d) ", indices[i][j]);
-                    }
-                    printf("\n");
-                }
-                printf("===============upup=============\n");
                 for (auto it = indices.begin(); it != indices.end(); ++it) {
                     int label = it->first;
                     const std::vector<int>& labelIndices = it->second;
@@ -563,58 +556,67 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                                            std::vector<std::array<float, PRIOR_BOX_SIZE>>& prior_variances) { // priorVariances
         auto& input_prior_box = instance.prior_box_memory();
         const int num_of_priors = static_cast<int>(prior_bboxes.size()) / images_count;
-        // prior_coordinates_offset == offset
-        // prior_info_size == priorSize
-        prior_bboxes.resize(images_count); // add
-        prior_variances.resize(images_count); // add
-        // 아니면 2배..
-        // int off = variance_encoded_in_target ? (num_of_priors * prior_info_size)
-        //                                                        : (2 * num_of_priors * prior_info_size);
         mem_lock<dtype> lock{input_prior_box};
-        // std::cout << "size " << prior_info_size << ", " << offset << ", " << prior_coordinates_offset << std::endl;
         for (int i = 0; i < images_count; i++) {
-            // bounding_box& currPrBbox = prior_bboxes[i]; // add
-            // std::array<float>& currPrVar = prior_variances[i]; // add
-            // std::vector<float>& currPrVar = [];
-            // currPrVar.assign(prior_variances[i], prior_variances[i] + prior_variances[i].size()); // add
             auto prior_box_data =
                 lock.begin() + i * num_of_priors * prior_info_size * (variance_encoded_in_target ? 1 : 2);
+
             for (int prior = 0; prior < num_of_priors; ++prior) {
-                // int idx = prior * prior_info_size;
                 int idx = prior * prior_info_size + prior_coordinates_offset;
-                // prior_bboxes[i * num_of_priors + prior] =
-                bounding_box bbox = bounding_box(static_cast<float>(prior_box_data[idx]),
+                prior_bboxes[i * num_of_priors + prior] = bounding_box(static_cast<float>(prior_box_data[idx]),
                                                                        static_cast<float>(prior_box_data[idx + 1]),
                                                                        static_cast<float>(prior_box_data[idx + 2]),
                                                                        static_cast<float>(prior_box_data[idx + 3]));
-                prior_bboxes[i * num_of_priors + prior] = bbox;
-            //     currPrBbox.push_back(bbox); // add
-            // } // 추가한거
-                // if (!variance_encoded_in_target) {
-                //     const dtype* priorVar = prior_box_data + num_of_priors * prior_info_size;
-                //     for (size_t i = 0; i < static_cast<size_t>(num_of_priors); ++i) {
-                //         int start_idx = i * 4;
-                //         std::vector<dtype> var(4);
-                //         for (int j = 0; j < 4; ++j) {
-                //             var[j] = (priorVar[start_idx + j]);
-                //         }
-                //         // currPrVar.push_back(var);
-                //     }
-                // }
-                // prior_box_data += off;
-                // 원래
                 idx += num_of_priors * prior_info_size;
-                // if (!variance_encoded_in_target) {
-                //     for (int j = 0; j < PRIOR_BOX_SIZE; ++j) {
-                //         prior_variances[i * num_of_priors + prior][j] = static_cast<float>(prior_box_data[idx + j]);
-                //     }
+                // for (int j = 0; j < PRIOR_BOX_SIZE; ++j) {
+                //     prior_variances[i * num_of_priors + prior][j] =
+                //         variance_encoded_in_target ? 0.0f : static_cast<float>(prior_box_data[idx + j]);
                 // }
-                for (int j = 0; j < PRIOR_BOX_SIZE; ++j) {
-                    prior_variances[i * num_of_priors + prior][j] =
-                        variance_encoded_in_target ? 0.0f : static_cast<float>(prior_box_data[idx + j]);
+            }
+            if (!variance_encoded_in_target) {
+                const dtype* priorVar = prior_box_data + num_of_priors * prior_info_size;
+                for (int prior = 0; prior < num_of_priors; ++prior) {
+                    int start_idx = prior * 4;
+                    std::array<float, PRIOR_BOX_SIZE> var;
+                    for (int j = 0; j < PRIOR_BOX_SIZE; ++j) {
+                        var[j] = (priorVar[start_idx + j]);
+                    }
+                    // prior_variances.push_back(var);
+                    prior_variances[i * num_of_priors + prior] = var;
                 }
             }
         }
+        // ngraph
+        // prior_bboxes.resize(images_count); // add
+        // prior_variances.resize(images_count); // add
+        // int off = variance_encoded_in_target ? (num_of_priors * prior_info_size)
+        //                                     : (2 * num_of_priors * prior_info_size);
+        // for (int i = 0; i < images_count; i++) {
+        //     const dtype* prior_box_data; // 이게 문제인듯
+        //     // bounding_box& currPrBbox = prior_bboxes[i]; // add
+        //     // std::array<float>& currPrVar = prior_variances[i]; // add
+        //     for (int prior = 0; prior < num_of_priors; ++prior) {
+        //         int idx = prior * prior_info_size;
+        //         bounding_box bbox = bounding_box(static_cast<float>(prior_box_data[idx + 0 + prior_coordinates_offset]),
+        //                                                                static_cast<float>(prior_box_data[idx + 1 + prior_coordinates_offset]),
+        //                                                                static_cast<float>(prior_box_data[idx + 2 + prior_coordinates_offset]),
+        //                                                                static_cast<float>(prior_box_data[idx + 3 + prior_coordinates_offset]));
+        //         // prior_bboxes[i * num_of_priors + prior] = bbox;
+        //         prior_bboxes.push_back(bbox); // add
+        //     }
+        //     if (!variance_encoded_in_target) {
+        //         const dtype* priorVar = prior_box_data + num_of_priors * prior_info_size;
+        //         for (size_t i = 0; i < static_cast<size_t>(num_of_priors); ++i) {
+        //             int start_idx = i * 4;
+        //             std::array<float, PRIOR_BOX_SIZE> var;
+        //             for (int j = 0; j < 4; ++j) {
+        //                 var[j] = (priorVar[start_idx + j]);
+        //             }
+        //             prior_variances.push_back(var);
+        //         }
+        //     }
+        //     prior_box_data += off;
+        // } // ngraph
     }
 
     template <typename dtype>
