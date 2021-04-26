@@ -454,11 +454,7 @@ namespace ngraph
                 {
                     std::vector<std::pair<dataType, int>> scoreIndexVec;
                     GetMaxScoreIndex(
-                        scores, attrs.confidence_threshold, attrs.top_k, scoreIndexVec);
-                    // for (int i = 1; i < 10; ++i) {
-                    //     std::cout << scoreIndexVec[i].first << ", " << scoreIndexVec[i].second << "   ";
-                    // }
-                    // std::cout << std::endl;                    
+                        scores, attrs.confidence_threshold, attrs.top_k, scoreIndexVec);                   
                     while (scoreIndexVec.size() != 0)
                     {
                         const int idx = scoreIndexVec.front().second;
@@ -470,14 +466,11 @@ namespace ngraph
 
                             if (overlap > attrs.nms_threshold)
                             {
-                                // printf("box1 %f %f %f %f  ", bboxes[idx].xmax, bboxes[idx].xmin, bboxes[idx].ymax, bboxes[idx].ymin);
-                                // printf("box2 %f %f %f %f  ", bboxes[kept_idx].xmax, bboxes[kept_idx].xmin, bboxes[kept_idx].ymax, bboxes[kept_idx].ymin);
                                 std::cout << overlap << ", " << idx << " ";
                                 keep = false;
                                 break;
                             }
                         }
-                        std::cout << std::endl;
                         if (keep)
                         {
                             indices.push_back(idx);
@@ -608,9 +601,6 @@ namespace ngraph
                     {
                         const LabelBBox& decodeBboxesImage = decodeBboxes[i];
                         const std::map<int, std::vector<dataType>>& confScores = confPreds[i];
-                        // std::cout << confScores.find(2)[3];
-                        // std::cout << confScores[2][3];
-                        // printf("ng:%f %f %f\n", confScores[2][3],  confScores[8][3], confScores[9][0]);
                         std::map<int, std::vector<int>> indices;
                         int numDet = 0;
                         if (!attrs.decrease_label_id)
@@ -645,14 +635,6 @@ namespace ngraph
                         if (attrs.keep_top_k[0] > -1 && numDet > attrs.keep_top_k[0])
                         {
                             std::vector<std::pair<dataType, std::pair<int, int>>> scoreIndexPairs;
-                            // for (int i = 1; i <= 10; ++i) {
-                            //     for (int j = 0; j < static_cast<int>(indices[i].size()); j++) {
-                            //         printf("(%d) ", indices[i][j]);
-                            //     }
-                            //     printf("\n");
-                            // }
-                            // printf("===============upup=============\n"); 
-                            
                             for (auto it = indices.begin(); it != indices.end(); ++it)
                             {
                                 int label = it->first;
@@ -664,34 +646,21 @@ namespace ngraph
                                 for (size_t j = 0; j < labelIndices.size(); ++j)
                                 {
                                     int idx = labelIndices[j];
-                                    // std::cout << scores[idx];
-                                    // printf("[%d, %d] ", label, idx);
                                     scoreIndexPairs.push_back(
                                         std::make_pair(scores[idx], std::make_pair(label, idx)));
                                 }
-                                // printf("\n");
                             }
-                            // printf("============================\n");
                             std::sort(scoreIndexPairs.begin(),
                                       scoreIndexPairs.end(),
                                       SortScorePairDescend<std::pair<int, int>>);
                             scoreIndexPairs.resize(attrs.keep_top_k[0]);
-                            // for (int j = 0; j < static_cast<int>(scoreIndexPairs.size()); j++) {
-                            //     std::cout << scoreIndexPairs[j].first;
-                            //     printf("(%d, %d) ", scoreIndexPairs[j].second.first,
-                            //     scoreIndexPairs[j].second.second);
-                            // }
-                            // printf("\n");
                             std::map<int, std::vector<int>> newIndices;
                             for (size_t j = 0; j < scoreIndexPairs.size(); ++j)
                             {
                                 int label = scoreIndexPairs[j].second.first;
                                 int idx = scoreIndexPairs[j].second.second;
-                                // std::cout << scoreIndexPairs[j].first;
-                                // printf("(%d, %d) ",label, idx);
                                 newIndices[label].push_back(idx);
                             }
-                            // printf("\n");
                             allIndices.push_back(newIndices);
                             numKept += attrs.top_k;
                         }
@@ -700,13 +669,6 @@ namespace ngraph
                             allIndices.push_back(indices);
                             numKept += numDet;
                         }
-                        // for (int i = 1; i < 10; i++) {
-                        //     for (int j = 0; j < static_cast<int>(allIndices[i].size()); j++) {
-                        //         std::cout << allIndices[i][j]) << " ";
-                        //     }
-                        //     printf("\n");
-                        // }
-                        // printf("---------------------\n");
                     }
                     size_t count = 0;
                     for (size_t i = 0; i < numImages; ++i)
@@ -730,9 +692,6 @@ namespace ngraph
                                 result[count * 7 + 1] =
                                     attrs.decrease_label_id ? (label - 1) : label;
                                 result[count * 7 + 2] = scores[idx];
-                                // std::cout << "[" << result[count * 7 + 2] << ", ";
-                                // std::cout << result[count * 7 + 0] << ", ";
-                                // printf("(%d, %d)\n", result[count * 7 + 0], result[count * 7 + 1]);
                                 const NormalizedBBox& bbox = bboxes[idx];
                                 dataType xmin = bbox.xmin;
                                 dataType ymin = bbox.ymin;
@@ -753,10 +712,8 @@ namespace ngraph
                                 result[count * 7 + 6] = ymax;
                                 ++count;
                             }
-                            // std::cout << std::endl;
                         }
                     }
-                    printf("count ngraph: %d %d\n", static_cast<int>(count), static_cast<int>(numResults));
                     if (count < numResults)
                     {
                         result[count * 7 + 0] = -1;

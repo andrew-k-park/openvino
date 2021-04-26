@@ -170,16 +170,6 @@ public:
 
     template<class T>
     static void Compare(const T *expected, const T *actual, std::size_t size, T threshold) {
-        printf("expected reference, ngraph\n");
-        for (std::size_t i = 0; i < size; ++i) {
-            const auto &ref = expected[i];
-            std::cout << ref << " ";
-        }
-        printf("\nactual cldnn\n");
-        for (std::size_t i = 0; i < size; ++i) {
-            const auto &res = actual[i];
-            std::cout << res << " ";
-        }
         for (std::size_t i = 0; i < size; ++i) {
             const auto &ref = expected[i];
             const auto &res = actual[i];
