@@ -215,10 +215,11 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             scoreIndexVec.resize(top_k);
         }
         // end of GetMaxScoreIndex
-        // for (int i = 1; i < 10; ++i) {
-        //     std::cout << scoreIndexVec[i].first << ", " << scoreIndexVec[i].second << "   ";
-        // }
-        // std::cout << std::endl;
+        std::cout << "inside nms sorted result" << std::endl;
+        for (int i = 1; i < 10; ++i) {
+            std::cout << scoreIndexVec[i].first << ", " << scoreIndexVec[i].second << "   ";
+        }
+        std::cout << std::endl;
         // MNS
         while (scoreIndexVec.size() != 0) {
             const int idx = scoreIndexVec.front().second;
@@ -260,11 +261,13 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         auto out_ptr = lock.begin();
 
         const auto& args = instance.argument;
+        // int numKept = 0;
         std::vector<std::map<int, std::vector<int>>> allIndices;
         // std::vector<std::map<int, std::vector<int>>> final_detections;
         std::vector<std::vector<std::vector<std::pair<float, int>>>>
             final_detections;  // Per image -> For each label: Pair (score, prior index)
         for (int image = 0; image < num_of_images; ++image) {
+            std::cout << "batch number]]: " << image << std::endl;
             const std::vector<std::vector<bounding_box>>& bboxes_per_image = all_bboxes[image];
             std::vector<std::vector<std::pair<float, int>>>& conf_per_image = confidences[image];
             // const std::map<int, std::vector<float>>& confScores = confidences[image];
@@ -286,11 +289,16 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 }
                 std::vector<std::pair<float, int>>& scores = conf_per_image[cls];
                 const int label = args.share_location ? 0 : cls;
+                std::cout << "CLS : " << cls << std::endl;
+                for (int i = 1; i < 10; ++i) {
+                    std::cout << scores[i].first << ", " << scores[i].second << "   ";
+                }
+                std::cout << std::endl;
                 apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.confidence_threshold, args.top_k, indices[cls]);
                 num_det += indices[cls].size();
             }
             // const std::map<int, std::vector<std::pair<float, int>>>& confScores = confidences[image];
-            std::cout << args.keep_top_k << ", " << num_det << std::endl;
+            std::cout << "keep_top_k, numdet: " << args.keep_top_k << ", " << num_det << std::endl;
             if (args.keep_top_k > -1 && num_det > args.keep_top_k) {
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
                 for (auto it = indices.begin(); it != indices.end(); ++it) {
@@ -644,7 +652,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     // idx += stride;
                 }
             }
-            // confidence_data += num_of_priors * num_classes;
+            confidence_data += num_of_priors * num_classes;
         }
     }
 
