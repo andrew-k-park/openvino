@@ -280,13 +280,15 @@ static std::vector<unsigned char> getProgramBinaries(cl::Program program) {
 void kernels_cache::build_batch(const batch_program& batch) {
     OV_ITT_SCOPED_TASK(itt::domains::CLDNN, "KernelsCache::BuildProgram");
 
-    bool dump_sources = !_context.get_configuration().ocl_sources_dumps_dir.empty() || batch.dump_custom_program;
+    // bool dump_sources = !_context.get_configuration().ocl_sources_dumps_dir.empty() || batch.dump_custom_program;
+    bool dump_sources = true;
 
     std::string err_log;  // accumulated build log from all program's parts (only contains messages from parts which
 
     std::string current_dump_file_name = "";
     if (dump_sources) {
-        current_dump_file_name = _context.get_configuration().ocl_sources_dumps_dir;
+        // current_dump_file_name = _context.get_configuration().ocl_sources_dumps_dir;
+        current_dump_file_name = "/home/kwangwoo/cldnn/cl_dump";
         if (!current_dump_file_name.empty() && current_dump_file_name.back() != '/')
             current_dump_file_name += '/';
 
