@@ -272,7 +272,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
 #pragma omp parallel for num_threads(num_threads_to_use) reduction(+ : num_det)
 #endif
 #endif
-            auto start1 = std::chrono::high_resolution_clock::now();
+            // auto start1 = std::chrono::high_resolution_clock::now();
             for (int cls = 0; cls < static_cast<int>(args.num_classes); ++cls) {
                 if (static_cast<int>(cls) == args.background_label_id) {
                     conf_per_image[cls].clear();
@@ -283,9 +283,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 apply_nms(bboxes_per_image[label], scores, args.nms_threshold, args.confidence_threshold, args.top_k, indices[cls]);
                 num_det += indices[cls].size();
             }
-            auto stop1 = std::chrono::high_resolution_clock::now();
-            auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(stop1 - start1);
-            std::cout << "NMS: " << duration1.count() << " microseconds." << std::endl;
+            // auto stop1 = std::chrono::high_resolution_clock::now();
+            // auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(stop1 - start1);
+            // std::cout << "NMS: " << duration1.count() << " microseconds." << std::endl;
             // const std::map<int, std::vector<std::pair<float, int>>>& confScores = confidences[image];
             if (args.keep_top_k > -1 && num_det > args.keep_top_k) {
                 std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
@@ -300,14 +300,14 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     }
                 }
 
-                auto start2 = std::chrono::high_resolution_clock::now();
+                // auto start2 = std::chrono::high_resolution_clock::now();
                 std::sort(score_index_pairs.begin(),
                             score_index_pairs.end(),
                             SortScorePairDescend<std::pair<int, int>>);
                 score_index_pairs.resize(args.keep_top_k);
-                auto stop2 = std::chrono::high_resolution_clock::now();
-                auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(stop2 - start2);
-                std::cout << "sort : " << duration2.count() << " microseconds." << std::endl;
+                // auto stop2 = std::chrono::high_resolution_clock::now();
+                // auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(stop2 - start2);
+                // std::cout << "sort : " << duration2.count() << " microseconds." << std::endl;
                 std::vector<std::vector<std::pair<float, int>>> new_indices(args.num_classes);
                 for (int j = 0; j < static_cast<int>(score_index_pairs.size()); ++j) {
                     int label = score_index_pairs[j].second.first;
@@ -333,14 +333,14 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     }
                 }
 
-                auto start = std::chrono::high_resolution_clock::now();
+                // auto start = std::chrono::high_resolution_clock::now();
                 std::sort(score_index_pairs.begin(),
                             score_index_pairs.end(),
                             SortScorePairDescend<std::pair<int, int>>);
                 // score_index_pairs.resize(args.keep_top_k);
-                auto stop = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-                std::cout << "sort : " << duration.count() << " microseconds." << std::endl;
+                // auto stop = std::chrono::high_resolution_clock::now();
+                // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+                // std::cout << "sort : " << duration.count() << " microseconds." << std::endl;
                 std::vector<std::vector<std::pair<float, int>>> new_indices(args.num_classes);
                 for (int j = 0; j < static_cast<int>(score_index_pairs.size()); ++j) {
                     int label = score_index_pairs[j].second.first;
@@ -496,26 +496,80 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
 
         const int num_of_images = static_cast<int>(confidences.size());
         auto& input_confidence = instance.confidence_memory();
+        // const float confidence_threshold = instance.argument.confidence_threshold;
 
         mem_lock<dtype> lock{(memory_impl::ptr) &input_confidence};
         auto confidence_data = lock.begin();
 
         assert(num_of_priors * num_classes == input_confidence.get_layout().size.feature[0]);
+        const auto& input_buffer_size = input_confidence.get_layout().get_buffer_size();
+        const int input_buffer_size_x = input_buffer_size.spatial[0];
+        const int input_buffer_size_y = input_buffer_size.spatial[1];
+        const int input_buffer_size_f = input_buffer_size.feature[0];
+        const auto& input_padding = input_confidence.get_layout().data_padding;
+        const int input_padding_lower_x = input_padding.lower_size().spatial[0];
+        const int input_padding_lower_y = input_padding.lower_size().spatial[1];
+        const int stride = input_buffer_size_y * input_buffer_size_x;
 
         for (int image = 0; image < num_of_images; ++image) {
             std::vector<std::vector<std::pair<float, int>>>& label_to_scores = confidences[image];
             label_to_scores.resize(num_classes);
-            for (int prior = 0; prior < num_of_priors; ++prior) {
-                int idx = prior * num_classes;
-                for (int cls = 0; cls < num_classes; ++cls) {
-                    float score = static_cast<float>(confidence_data[idx + cls]);
-                    // if (score > confidence_threshold) {
-                    label_to_scores[cls].emplace_back(score, prior);
-                    // }
-                    // idx += stride;
+            int idx = get_linear_feature_index(image,
+                                               0,
+                                               input_buffer_size_f,
+                                               input_buffer_size_y,
+                                               input_buffer_size_x,
+                                               input_padding_lower_y,
+                                               input_padding_lower_x);
+            if (stride == 1 && std::is_same<dtype, float>::value) {
+                float const* confidence_ptr_float = (float const*)(&(*confidence_data));
+                confidence_ptr_float += idx;
+                // __m128 threshold = _mm_load_ps1(&confidence_threshold);
+                for (int prior = 0; prior < num_of_priors; ++prior) {
+                    // int idx = prior * num_classes;
+                    int cls = 0;
+                    for (; cls + 3 < num_classes; cls += 4) {
+                        __m128 scores = _mm_loadu_ps(confidence_ptr_float);
+                        confidence_ptr_float += 4;
+                        // Copy the lower single-precision (32-bit) floating-point element of a to dst
+                        label_to_scores[cls + 0].emplace_back(_mm_cvtss_f32(scores), prior);
+                        // Extract a single-precision (32-bit) floating-point element from a, selected with imm8, and store the result in dst.
+                        int score = _mm_extract_ps(scores, 1);
+                        label_to_scores[cls + 1].emplace_back(reinterpret_cast<float&>(score), prior);
+                        int score2 = _mm_extract_ps(scores, 2);
+                        label_to_scores[cls + 2].emplace_back(reinterpret_cast<float&>(score2), prior);
+                        int score3 = _mm_extract_ps(scores, 3);
+                        label_to_scores[cls + 3].emplace_back(reinterpret_cast<float&>(score3), prior);
+                        // printf("score: %d %d %d \n", score, score2, score3);
+                        // printf("float: %f %f %f \n", reinterpret_cast<float&>(score), reinterpret_cast<float&>(score2), reinterpret_cast<float&>(score3));
+                        // __m128i mask128 = _mm_castps_si128(_mm_cmpgt_ps(scores, threshold));
+
+                        // float score = static_cast<float>(confidence_data[idx + cls]);
+                        // if (score > confidence_threshold) {
+                        // label_to_scores[cls].emplace_back(score, prior);
+                        // }
+                        // idx += stride;
+                    }
+                    for (; cls < num_classes; ++cls) {
+                        float score = *confidence_ptr_float;
+                        // if (score > confidence_threshold) {
+                        label_to_scores[cls].emplace_back(score, prior);
+                        // }
+                        ++confidence_ptr_float;
+                    }
+                }
+            } else {
+                for (int prior = 0; prior < num_of_priors; ++prior) {
+                    for (int cls = 0; cls < num_classes; ++cls) {
+                        float score = static_cast<float>(confidence_data[idx]);
+                        // if (score > confidence_threshold) {
+                            label_to_scores[cls].emplace_back(score, prior);
+                        // }
+                        idx += stride;
+                    }
                 }
             }
-            confidence_data += num_of_priors * num_classes;
+            // confidence_data += num_of_priors * num_classes;
         }
     }
 
@@ -536,11 +590,11 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         // Extract locations per image.
         std::vector<std::vector<std::vector<bounding_box>>> locations(
             num_of_images);  // Per image : label -> bounding boxes.
-        auto start111 = std::chrono::high_resolution_clock::now();
+        // auto start111 = std::chrono::high_resolution_clock::now();
         extract_locations_per_image<dtype>(instance, locations, num_of_priors, num_loc_classes);
-        auto stop111 = std::chrono::high_resolution_clock::now();
-        auto duration111 = std::chrono::duration_cast<std::chrono::microseconds>(stop111- start111);
-        std::cout << "extract_locations_per_image: " << duration111.count() << " microseconds." << std::endl;
+        // auto stop111 = std::chrono::high_resolution_clock::now();
+        // auto duration111 = std::chrono::duration_cast<std::chrono::microseconds>(stop111- start111);
+        // std::cout << "extract_locations_per_image: " << duration111.count() << " microseconds." << std::endl;
         int32_t batches_in_prior_boxes = instance.prior_box_memory().get_layout().size.batch[0];
         std::vector<bounding_box> prior_bboxes(batches_in_prior_boxes *
                                                num_of_priors);  // Prior-Boxes (identical for all images since we assume
@@ -548,7 +602,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         std::vector<std::array<float, PRIOR_BOX_SIZE>> prior_variances(
             batches_in_prior_boxes * num_of_priors);  // Variances per prior-box (identical for all images since we
                                                       // assume all images in a batch are of same dimension).
-        auto start11 = std::chrono::high_resolution_clock::now();
+        // auto start11 = std::chrono::high_resolution_clock::now();
         extract_prior_boxes_and_variances<dtype>(instance,
                                                  args.variance_encoded_in_target,
                                                  args.prior_info_size,
@@ -556,11 +610,11 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                                                  batches_in_prior_boxes,
                                                  prior_bboxes,
                                                  prior_variances);
-        auto stop11 = std::chrono::high_resolution_clock::now();
-        auto duration11 = std::chrono::duration_cast<std::chrono::microseconds>(stop11- start11);
-        std::cout << "extract_prior_boxes_and_variances: " << duration11.count() << " microseconds." << std::endl;
+        // auto stop11 = std::chrono::high_resolution_clock::now();
+        // auto duration11 = std::chrono::duration_cast<std::chrono::microseconds>(stop11- start11);
+        // std::cout << "extract_prior_boxes_and_variances: " << duration11.count() << " microseconds." << std::endl;
 
-        auto start0 = std::chrono::high_resolution_clock::now();
+        // auto start0 = std::chrono::high_resolution_clock::now();
         // Create the decoded bounding boxes according to locations predictions and prior-boxes.
         for (int image = 0; image < num_of_images; ++image) {
             std::vector<std::vector<bounding_box>>& bboxes_per_image = bboxes[image];
@@ -594,9 +648,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 }
             }
         }
-        auto stop0 = std::chrono::high_resolution_clock::now();
-        auto duration0 = std::chrono::duration_cast<std::chrono::microseconds>(stop0 - start0);
-        std::cout << "decode_bounding_box: " << duration0.count() << " microseconds." << std::endl;
+        // auto stop0 = std::chrono::high_resolution_clock::now();
+        // auto duration0 = std::chrono::duration_cast<std::chrono::microseconds>(stop0 - start0);
+        // std::cout << "decode_bounding_box: " << duration0.count() << " microseconds." << std::endl;
 
         auto start1 = std::chrono::high_resolution_clock::now();
         // Extract confidences per image.
