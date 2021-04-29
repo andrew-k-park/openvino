@@ -200,30 +200,17 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                           const float conf_threshold,
                           const int top_k,
                           std::vector<int>& indices) {
-        std::vector<std::pair<float, int>> scoreIndexVec;
-        // GetMaxScoreIndex
-        for (int i = 0; i < static_cast<int>(scores.size()); ++i) {
-            if (scores[i].first > conf_threshold) {
-                scoreIndexVec.push_back(std::make_pair(scores[i].first, i));
-            }
-        }
-        std::stable_sort(
-            // [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) { return p1.first > p2.first; }
-            scoreIndexVec.begin(), scoreIndexVec.end(), SortScorePairDescend<int>);
+        std::stable_sort(scores.begin(), scores.end(), SortScorePairDescend<int>);
 
-        if (top_k > -1 && static_cast<size_t>(top_k) < static_cast<size_t>(scoreIndexVec.size())) {
-            scoreIndexVec.resize(top_k);
+        if (top_k > -1 && static_cast<size_t>(top_k) < static_cast<size_t>(scores.size())) {
+            scores.resize(top_k);
         }
-        // end of GetMaxScoreIndex
-
         // MNS
-        while (scoreIndexVec.size() != 0) {
-            const int idx = scoreIndexVec.front().second;
-            // bounding_box box1(bboxes[idx]);
+        for (const auto& s : scores) {
+            const int idx = s.second;
             bool keep = true;
             for (int k = 0; k < static_cast<int>(indices.size()); ++k) {
                 const int kept_idx = indices[k];
-                // bounding_box box2(bboxes[kept_idx]);
                 float overlap = JaccardOverlap(bboxes[idx], bboxes[kept_idx]);
                 if (overlap > nms_threshold) {
                     keep = false;
@@ -233,7 +220,6 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             if (keep) {
                 indices.push_back(idx);
             }
-            scoreIndexVec.erase(scoreIndexVec.begin());
         }
     }
 
@@ -295,8 +281,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     std::vector<std::pair<float, int>>& scores = confidences[image][label];
                     for (int j = 0; j < static_cast<int>(labelIndices.size()); ++j) {
                         int idx = labelIndices[j];
-                        score_index_pairs.push_back(
-                            std::make_pair(scores[idx].first, std::make_pair(label, idx)));
+                        for (const auto& s : scores) {
+                            if (s.second == idx) score_index_pairs.push_back(std::make_pair(s.first, std::make_pair(label, idx)));
+                        }
                     }
                 }
 
@@ -328,8 +315,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                     std::vector<std::pair<float, int>>& scores = confidences[image][label];
                     for (int j = 0; j < static_cast<int>(labelIndices.size()); ++j) {
                         int idx = labelIndices[j];
-                        score_index_pairs.push_back(
-                            std::make_pair(scores[idx].first, std::make_pair(label, idx)));
+                        for (const auto& s : scores) {
+                            if (s.second == idx) score_index_pairs.push_back(std::make_pair(s.first, std::make_pair(label, idx)));
+                        }
                     }
                 }
 
@@ -496,7 +484,7 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
 
         const int num_of_images = static_cast<int>(confidences.size());
         auto& input_confidence = instance.confidence_memory();
-        // const float confidence_threshold = instance.argument.confidence_threshold;
+        const float confidence_threshold = instance.argument.confidence_threshold;
 
         mem_lock<dtype> lock{(memory_impl::ptr) &input_confidence};
         auto confidence_data = lock.begin();
@@ -524,37 +512,38 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             if (stride == 1 && std::is_same<dtype, float>::value) {
                 float const* confidence_ptr_float = (float const*)(&(*confidence_data));
                 confidence_ptr_float += idx;
-                // __m128 threshold = _mm_load_ps1(&confidence_threshold);
+                __m128 threshold = _mm_load_ps1(&confidence_threshold);
                 for (int prior = 0; prior < num_of_priors; ++prior) {
-                    // int idx = prior * num_classes;
                     int cls = 0;
                     for (; cls + 3 < num_classes; cls += 4) {
                         __m128 scores = _mm_loadu_ps(confidence_ptr_float);
                         confidence_ptr_float += 4;
-                        // Copy the lower single-precision (32-bit) floating-point element of a to dst
-                        label_to_scores[cls + 0].emplace_back(_mm_cvtss_f32(scores), prior);
-                        // Extract a single-precision (32-bit) floating-point element from a, selected with imm8, and store the result in dst.
-                        int score = _mm_extract_ps(scores, 1);
-                        label_to_scores[cls + 1].emplace_back(reinterpret_cast<float&>(score), prior);
-                        int score2 = _mm_extract_ps(scores, 2);
-                        label_to_scores[cls + 2].emplace_back(reinterpret_cast<float&>(score2), prior);
-                        int score3 = _mm_extract_ps(scores, 3);
-                        label_to_scores[cls + 3].emplace_back(reinterpret_cast<float&>(score3), prior);
-                        // printf("score: %d %d %d \n", score, score2, score3);
-                        // printf("float: %f %f %f \n", reinterpret_cast<float&>(score), reinterpret_cast<float&>(score2), reinterpret_cast<float&>(score3));
-                        // __m128i mask128 = _mm_castps_si128(_mm_cmpgt_ps(scores, threshold));
-
-                        // float score = static_cast<float>(confidence_data[idx + cls]);
-                        // if (score > confidence_threshold) {
-                        // label_to_scores[cls].emplace_back(score, prior);
-                        // }
-                        // idx += stride;
+                        __m128i mask128 = _mm_castps_si128(_mm_cmpgt_ps(scores, threshold));
+                        if (_mm_testz_si128(mask128, mask128)) {
+                            continue;
+                        }
+                        int mask = _mm_movemask_ps(_mm_castsi128_ps(mask128));
+                        if (mask & 1) {
+                            label_to_scores[cls + 0].emplace_back(_mm_cvtss_f32(scores), prior);
+                        }
+                        if (mask & 2) {
+                            int score = _mm_extract_ps(scores, 1);
+                            label_to_scores[cls + 1].emplace_back(reinterpret_cast<float&>(score), prior);
+                        }
+                        if (mask & 4) {
+                            int score2 = _mm_extract_ps(scores, 2);
+                            label_to_scores[cls + 2].emplace_back(reinterpret_cast<float&>(score2), prior);
+                        }
+                        if (mask & 8) {
+                            int score3 = _mm_extract_ps(scores, 3);
+                            label_to_scores[cls + 3].emplace_back(reinterpret_cast<float&>(score3), prior);
+                        }
                     }
                     for (; cls < num_classes; ++cls) {
                         float score = *confidence_ptr_float;
-                        // if (score > confidence_threshold) {
-                        label_to_scores[cls].emplace_back(score, prior);
-                        // }
+                        if (score > confidence_threshold) {
+                            label_to_scores[cls].emplace_back(score, prior);
+                        }
                         ++confidence_ptr_float;
                     }
                 }
@@ -562,9 +551,9 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 for (int prior = 0; prior < num_of_priors; ++prior) {
                     for (int cls = 0; cls < num_classes; ++cls) {
                         float score = static_cast<float>(confidence_data[idx]);
-                        // if (score > confidence_threshold) {
+                        if (score > confidence_threshold) {
                             label_to_scores[cls].emplace_back(score, prior);
-                        // }
+                        }
                         idx += stride;
                     }
                 }
