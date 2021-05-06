@@ -302,7 +302,12 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
 
     static void sort(std::vector<std::pair<float, int>>& scores,
                      const int top_k) {
-        std::stable_sort(scores.begin(), scores.end(), SortScorePairDescend<int>);
+        // std::stable_sort(scores.begin(), scores.end(), SortScorePairDescend<int>);
+        std::stable_sort(scores.begin(),
+                         scores.end(),
+                         [](const std::pair<float, int>& p1, const std::pair<float, int>& p2) {
+                             return (p1.first > p2.first) || (p1.first == p2.first && p1.second < p2.second);
+                         });
 
         if (top_k > -1 && static_cast<size_t>(top_k) < static_cast<size_t>(scores.size())) {
             scores.resize(top_k);
@@ -348,9 +353,14 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
             }
         }
 
+        // std::sort(score_index_pairs.begin(),
+        //           score_index_pairs.end(),
+        //           SortScorePairDescend<std::pair<int, int>>);
         std::sort(score_index_pairs.begin(),
                   score_index_pairs.end(),
-                  SortScorePairDescend<std::pair<int, int>>);
+                  [](const std::pair<float, std::pair<int, int>>& p1, const std::pair<float, std::pair<int, int>>& p2) {
+                      return (p1.first > p2.first) || (p1.first == p2.first && p1.second.second < p2.second.second);
+                  });
         if (keep_top_k > -1 && num_det > keep_top_k) {
             score_index_pairs.resize(keep_top_k);
         }
