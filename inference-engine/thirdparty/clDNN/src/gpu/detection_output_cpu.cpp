@@ -18,6 +18,7 @@
 #include <vector>
 #include <utility>
 #include <chrono>
+#include <memory>
 
 #ifdef FIX_OPENMP_RELEASE_ISSUE
 #ifdef OPENMP_FOUND
@@ -37,6 +38,13 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
     const detection_output_node& outer;
 
     explicit detection_output_cpu(const detection_output_node& outer) : outer(outer) {}
+
+    typedef struct {
+        int batchId;
+        int classId;
+        int boxId;
+        float score;
+    } Scores;
 
     static void IntersectBBox(const bounding_box& bbox1,
                               const bounding_box& bbox2,
@@ -225,6 +233,162 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
     }
 
     template <typename dtype>
+    void stage_0_work_item_with_remainder(float* input_confidence,
+                                          unsigned char* buffer1,
+                                          unsigned char* buffer2,
+                                          int idx_scores,
+                                          const int num_classes,
+                                          const int num_of_priors,
+                                          const float confidence_threshold,
+                                          const int remainder) {
+        Scores* scores = reinterpret_cast<Scores*>(buffer1);
+        int* num_scores = reinterpret_cast<int*>(buffer2);
+
+        const int feature_size = num_classes * num_of_priors;
+        const int idx_image = idx_scores / feature_size;
+
+        for (int idx_remainder = idx_scores; idx_remainder < idx_scores + remainder; idx_remainder++) {
+            float score = input_confidence[idx_remainder];
+            if (score > confidence_threshold) {
+                int idx_class = idx_remainder % num_classes;
+                int idx_prior = idx_remainder / num_classes;
+                int num_scores_offset = idx_image * num_classes + idx_class;
+                int acc_num = num_scores[num_scores_offset];
+                int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+                Scores score_info = { idx_image, idx_class, idx_prior, score };
+                scores[scores_offset] = score_info;
+                num_scores[num_scores_offset] += 1;
+            }
+        }
+    }
+
+    template <typename dtype>
+    void stage_0_work_item(float* input_confidence,
+                           unsigned char* buffer1,
+                           unsigned char* buffer2,
+                           const int idx_scores,
+                           const int num_of_images,
+                           const int num_classes,
+                           const int num_of_priors,
+                           const float confidence_threshold) {
+        Scores* scores = reinterpret_cast<Scores*>(buffer1);
+        int* num_scores = reinterpret_cast<int*>(buffer2);
+        if (idx_scores == 0) {
+            for (int idx_num_scores = 0; idx_num_scores < num_of_images * num_classes; idx_num_scores++) {
+                num_scores[idx_num_scores] = 0;
+            }
+        }
+
+        const int feature_size = num_classes * num_of_priors;
+        const int idx_image = idx_scores / feature_size;
+        float const* confidence_ptr_float = (float const*)(input_confidence);
+        confidence_ptr_float += idx_scores;
+        __m128 threshold = _mm_load_ps1(&confidence_threshold);
+        __m128 scores_0 = _mm_loadu_ps(confidence_ptr_float);
+        confidence_ptr_float += 4;
+        __m128 scores_1 = _mm_loadu_ps(confidence_ptr_float);
+        __m128i mask128_0 = _mm_castps_si128(_mm_cmpgt_ps(scores_0, threshold));
+        __m128i mask128_1 = _mm_castps_si128(_mm_cmpgt_ps(scores_1, threshold));
+
+        int mask = _mm_movemask_ps(_mm_castsi128_ps(mask128_0));
+        if (mask & 1) {
+            float s = _mm_cvtss_f32(scores_0);
+            int idx_class = idx_scores % num_classes;
+            int idx_prior = idx_scores / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        if (mask & 2) {
+            int score = _mm_extract_ps(scores_0, 1);
+            float s = reinterpret_cast<float&>(score);
+            int idx_class = (idx_scores + 1) % num_classes;
+            int idx_prior = (idx_scores + 1) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        if (mask & 4) {
+            int score = _mm_extract_ps(scores_0, 2);
+            float s = reinterpret_cast<float&>(score);
+            int idx_class = (idx_scores + 2) % num_classes;
+            int idx_prior = (idx_scores + 2) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        if (mask & 8) {
+            int score = _mm_extract_ps(scores_0, 3);
+            float s = reinterpret_cast<float&>(score);
+            int idx_class = (idx_scores + 3) % num_classes;
+            int idx_prior = (idx_scores + 3) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        mask = _mm_movemask_ps(_mm_castsi128_ps(mask128_1));
+        if (mask & 1) {
+            float s = _mm_cvtss_f32(scores_1);
+            int idx_class = (idx_scores + 4) % num_classes;
+            int idx_prior = (idx_scores + 4) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        if (mask & 2) {
+            int score = _mm_extract_ps(scores_1, 1);
+            float s = reinterpret_cast<float&>(score);
+            int idx_class = (idx_scores + 5) % num_classes;
+            int idx_prior = (idx_scores + 5) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        if (mask & 4) {
+            int score = _mm_extract_ps(scores_1, 2);
+            float s = reinterpret_cast<float&>(score);
+            int idx_class = (idx_scores + 6) % num_classes;
+            int idx_prior = (idx_scores + 6) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+        if (mask & 8) {
+            int score = _mm_extract_ps(scores_1, 3);
+            float s = reinterpret_cast<float&>(score);
+            int idx_class = (idx_scores + 7) % num_classes;
+            int idx_prior = (idx_scores + 7) / num_classes;
+            int num_scores_offset = idx_image * num_classes + idx_class;
+            int acc_num = num_scores[num_scores_offset];
+            int scores_offset = (idx_image * feature_size) + idx_class * num_of_priors + acc_num;
+            Scores score_info = { idx_image, idx_class, idx_prior, s };
+            scores[scores_offset] = score_info;
+            num_scores[num_scores_offset] += 1;
+        }
+    }
+
+    template <typename dtype>
     void stage_0_extract_confidence(const detection_output_inst& instance,
                                     std::vector<std::vector<std::pair<float, int>>>& scores_per_image,
                                     const int idx_image,
@@ -382,6 +546,61 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
         const int num_of_priors = instance.prior_box_memory().get_layout().size.spatial[1] / args.prior_info_size;
         const int num_loc_classes = args.share_location ? 1 : args.num_classes;
         const int num_classes = static_cast<int>(args.num_classes);
+        const int block_size = 8;
+
+        auto& input_confidence = instance.confidence_memory();
+        mem_lock<dtype> lock_confidence{input_confidence};
+        auto confidence_data = lock_confidence.begin();
+
+        const auto& input_buffer_size = input_confidence.get_layout().get_buffer_size();
+        const int input_buffer_size_f = input_buffer_size.feature[0];
+        const int input_buffer_size_x = input_buffer_size.spatial[0];
+        const int input_buffer_size_y = input_buffer_size.spatial[1];
+        const auto& input_padding = input_confidence.get_layout().data_padding;
+        const int input_padding_lower_x = input_padding.lower_size().spatial[0];
+        const int input_padding_lower_y = input_padding.lower_size().spatial[1];
+        const int confidence_size_product = input_buffer_size_y * input_buffer_size_x;
+        const int confidence_padding = input_padding_lower_y * input_buffer_size_x + input_padding_lower_x;
+
+        constexpr size_t buffer_bytes = 16;
+        size_t buffer_stride = num_of_priors * buffer_bytes;
+        size_t buffer1_size = num_of_images * num_classes * buffer_stride;
+        size_t buffer2_size = num_of_images * num_classes * 4;
+        std::unique_ptr<unsigned char[]> intermediate_scores(new unsigned char[buffer1_size]());
+        std::unique_ptr<unsigned char[]> intermediate_box_num(new unsigned char[buffer2_size]());
+
+        if (confidence_size_product == 1 && confidence_padding == 0 && std::is_same<dtype, float>::value) {
+            const int total_scores = num_of_images * input_buffer_size_f;
+            const int remainder = total_scores % block_size;
+            float* scores = reinterpret_cast<float*>(confidence_data);
+            int idx_scores = 0;
+            for (; idx_scores + (block_size - 1) < total_scores; idx_scores += block_size) {
+                stage_0_work_item<dtype>(scores, intermediate_scores.get(), intermediate_box_num.get(),
+                                         idx_scores, num_of_images, num_classes, num_of_priors, args.confidence_threshold);
+            }
+            if (remainder > 0) {
+                stage_0_work_item_with_remainder<dtype>(scores, intermediate_scores.get(), intermediate_box_num.get(),
+                                                        idx_scores, num_classes, num_of_priors,
+                                                        args.confidence_threshold, remainder);
+            }
+            // Debugging
+            Scores* inter_scores = reinterpret_cast<Scores*>(intermediate_scores.get());
+            int* inter_box_num = reinterpret_cast<int*>(intermediate_box_num.get());
+            for (int idx_image = 0; idx_image < num_of_images; idx_image++) {
+                for (int idx_class = 0; idx_class < num_classes; idx_class++) {
+                    int num_scores_offset = idx_image * num_classes + idx_class;
+                    int acc_num = inter_box_num[num_scores_offset];
+                    int scores_offset = (idx_image * num_classes * num_of_priors) + idx_class * num_of_priors;
+                    for (int idx_inter_scores = 0; idx_inter_scores < acc_num; idx_inter_scores++) {
+                        Scores score_info = inter_scores[scores_offset + idx_inter_scores];
+                        std::cout << "[batchId:" << score_info.batchId
+                                  << ", classId:" << score_info.classId
+                                  << ", boxId:" << score_info.boxId
+                                  << ", score:" << score_info.score <<"]" << std::endl;
+                    }
+                }
+            }
+        }
 
         for (int image = 0; image < num_of_images; ++image) {
             std::vector<std::vector<bounding_box>>& bboxes_per_image = bboxes[image];
