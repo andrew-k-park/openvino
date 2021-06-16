@@ -384,17 +384,14 @@ struct detection_output_cpu : typed_primitive_impl<detection_output> {
                 }
             }
         }
-        // In case number of detections is smaller than keep_top_k fill the rest of the buffer with invalid image id
-        // (-1).
-        while (count < num_of_images * args.keep_top_k) {
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE] = (dtype)-1.f;
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 1] = (dtype)0.f;
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 2] = (dtype)0.f;
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 3] = (dtype)0.f;
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 4] = (dtype)0.f;
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 5] = (dtype)0.f;
-            out_ptr[count * DETECTION_OUTPUT_ROW_SIZE + 6] = (dtype)0.f;
-            ++count;
+        for (int i = count; i < num_of_images * args.keep_top_k; i++) {
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE] = (i == count ? (dtype)-1.f : (dtype)0.f);
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE + 1] = (dtype)0.f;
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE + 2] = (dtype)0.f;
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE + 3] = (dtype)0.f;
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE + 4] = (dtype)0.f;
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE + 5] = (dtype)0.f;
+            out_ptr[i * DETECTION_OUTPUT_ROW_SIZE + 6] = (dtype)0.f;
         }
     }
 

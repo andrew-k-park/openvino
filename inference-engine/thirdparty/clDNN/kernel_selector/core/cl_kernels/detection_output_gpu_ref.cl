@@ -936,7 +936,7 @@ KERNEL (detection_output_stage_final_caffe)(
     }
     unroll_for (uint i = outputIdx; i < NUM_OF_IMAGES * KEEP_TOP_K; i++)
     {
-        output[i * OUTPUT_ROW_SIZE] = -1.0;
+        output[i * OUTPUT_ROW_SIZE] = (i == outputIdx ? -1.0 : 0.0);
         output[i * OUTPUT_ROW_SIZE + 1] = 0.0;
         output[i * OUTPUT_ROW_SIZE + 2] = 0.0;
         output[i * OUTPUT_ROW_SIZE + 3] = 0.0;

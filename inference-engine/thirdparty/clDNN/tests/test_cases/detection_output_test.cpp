@@ -258,7 +258,7 @@ public:
         check_results(output_prim, 4, "1 1 0.6 0.45 0.45 0.75 0.75");
         check_results(output_prim, 5, "1 1 0.0 0.25 0.25 0.55 0.55");
         check_results(output_prim, 6, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 7, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 7, "0 0 0 0 0 0 0");
     }
 
     void forward_num_detections_greater_than_keep_top_k() {
@@ -348,11 +348,11 @@ public:
         check_results(output_prim, 4, "1 1 0.6 0.45 0.45 0.75 0.75");
         check_results(output_prim, 5, "1 1 0.0 0.25 0.25 0.55 0.55");
         check_results(output_prim, 6, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 7, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 8, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 9, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 10, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 11, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 7, "0 0 0 0 0 0 0");
+        check_results(output_prim, 8, "0 0 0 0 0 0 0");
+        check_results(output_prim, 9, "0 0 0 0 0 0 0");
+        check_results(output_prim, 10, "0 0 0 0 0 0 0");
+        check_results(output_prim, 11, "0 0 0 0 0 0 0");
     }
 
     void test_forward_share_location_top_k() {
@@ -450,14 +450,14 @@ public:
         check_results(output_prim, 9, "1 0 0.4 0.45 0.45 0.75 0.75");
         check_results(output_prim, 10, "1 1 0.6 0.40 0.40 0.70 0.70");
         check_results(output_prim, 11, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 12, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 13, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 14, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 15, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 16, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 17, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 18, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 19, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 12, "0 0 0 0 0 0 0");
+        check_results(output_prim, 13, "0 0 0 0 0 0 0");
+        check_results(output_prim, 14, "0 0 0 0 0 0 0");
+        check_results(output_prim, 15, "0 0 0 0 0 0 0");
+        check_results(output_prim, 16, "0 0 0 0 0 0 0");
+        check_results(output_prim, 17, "0 0 0 0 0 0 0");
+        check_results(output_prim, 18, "0 0 0 0 0 0 0");
+        check_results(output_prim, 19, "0 0 0 0 0 0 0");
     }
 
     void forward_no_share_location_top_k() {
@@ -506,7 +506,7 @@ public:
         check_results(output_prim, 4, "1 0 1.0 0.25 0.25 0.55 0.55");
         check_results(output_prim, 5, "1 1 0.6 0.40 0.40 0.70 0.70");
         check_results(output_prim, 6, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 7, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 7, "0 0 0 0 0 0 0");
     }
 
     void forward_no_share_location_neg_0() {
@@ -553,10 +553,10 @@ public:
         check_results(output_prim, 3, "0 1 0.4 0.50 0.50 0.80 0.80");
         check_results(output_prim, 4, "1 1 0.6 0.40 0.40 0.70 0.70");
         check_results(output_prim, 5, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 6, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 7, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 8, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 9, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 6, "0 0 0 0 0 0 0");
+        check_results(output_prim, 7, "0 0 0 0 0 0 0");
+        check_results(output_prim, 8, "0 0 0 0 0 0 0");
+        check_results(output_prim, 9, "0 0 0 0 0 0 0");
     }
 
     void forward_no_share_location_neg_0_top_k() {
@@ -651,7 +651,7 @@ public:
         check_results(output_prim, 4, "1 0 1.0 0.25 0.25 0.55 0.55");
         check_results(output_prim, 5, "1 1 0.6 0.40 0.40 0.70 0.70");
         check_results(output_prim, 6, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 7, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 7, "0 0 0 0 0 0 0");
     }
 
     void test_forward_no_share_location_top_k_faster_rcnn_case() {
@@ -714,7 +714,7 @@ public:
         check_results(output_prim, 4, "1 0 1.0 0.25 0.25 0.55 0.55");
         check_results(output_prim, 5, "1 1 0.6 0.40 0.40 0.70 0.70");
         check_results(output_prim, 6, "-1 0 0 0 0 0 0");
-        check_results(output_prim, 7, "-1 0 0 0 0 0 0");
+        check_results(output_prim, 7, "0 0 0 0 0 0 0");
     }
 
     static const int num_of_images = 2;
