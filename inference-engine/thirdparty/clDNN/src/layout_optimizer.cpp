@@ -828,6 +828,7 @@ impl_types layout_optimizer::get_preferred_impl_type(program_node& node) {
     if (!_forcing_map.empty() && _forcing_map.count(node.id()) != 0) {
         preferred_impl = _forcing_map.at(node.id()).second;
     } else if (node.is_type<detection_output>()) {
+#if 0
         auto& detection_output_node = node.as<detection_output>();
         auto confidence_layout = detection_output_node.confidence().get_output_layout();
         auto prim = detection_output_node.get_primitive();
@@ -836,6 +837,16 @@ impl_types layout_optimizer::get_preferred_impl_type(program_node& node) {
             preferred_impl = impl_types::ocl;
         else
             preferred_impl = impl_types::cpu;
+#else
+        char* DEBUG_SWITCH = getenv("DEBUG_SWITCH");
+        if (DEBUG_SWITCH == nullptr) {
+            printf("[ DEBUG ] Creating detection output primitive for GPU\n");
+            preferred_impl = impl_types::ocl;
+        } else {
+            printf("[ DEBUG ] Creating detection output primitive for CPU\n");
+            preferred_impl = impl_types::cpu;
+        }
+#endif
     }
 
     return preferred_impl;
