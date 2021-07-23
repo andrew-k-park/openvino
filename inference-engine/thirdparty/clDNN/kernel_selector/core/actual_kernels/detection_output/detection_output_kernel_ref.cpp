@@ -117,14 +117,6 @@ DetectionOutputKernelRef::DispatchData SetDefault(const detection_output_params&
             dispatchData.gws = {input.Batch().v, num_classes, 1};
             dispatchData.lws = {1, 1, 1};
         }
-    } else if (idx == 3) {
-        if (detectOutParams.decrease_label_id) {
-            dispatchData.gws = {1, 1, 1};
-            dispatchData.lws = {1, 1, 1};
-        } else {
-            dispatchData.gws = {input.Batch().v, 1, 1};
-            dispatchData.lws = {1, 1, 1};
-        }
     } else {
         dispatchData.gws = {1, 1, 1};
         dispatchData.lws = {1, 1, 1};
