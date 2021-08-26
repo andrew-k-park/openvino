@@ -99,14 +99,14 @@ public:
     /// Returns the maximum amount of GPU memory that engine allocated in current process
     uint64_t get_max_used_device_memory() const;
 
-    /// Returns the amount of GPU memory currently used by the engine
-    uint64_t get_used_device_memory() const;
+    /// Returns the amount of GPU memory currently used by the engine with allocation @p type
+    uint64_t get_used_device_memory(allocation_type type) const;
 
-    /// Adds @p bytes count to currently used memory size
-    void add_memory_used(uint64_t bytes);
+    /// Adds @p bytes count to currently used memory size with allocation @p type
+    void add_memory_used(uint64_t bytes, allocation_type type);
 
-    /// Subtracts @p bytes count from currently used memory size
-    void subtract_memory_used(uint64_t bytes);
+    /// Subtracts @p bytes count from currently used memory size with allocation @p type
+    void subtract_memory_used(uint64_t bytes, allocation_type type);
 
     /// Returns true if USM is enabled in engine config and device/driver supports required features
     bool use_unified_shared_memory() const;
@@ -142,7 +142,8 @@ protected:
     const device::ptr _device;
     engine_configuration _configuration;
 
-    std::atomic<uint64_t> memory_usage = {0};
+    // std::atomic<uint64_t> memory_usage = {0};
+    std::map<allocation_type, std::atomic<uint64_t>> memory_usage_map;
     std::atomic<uint64_t> peak_memory_usage = {0};
 };
 

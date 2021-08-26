@@ -7,6 +7,7 @@
 #include "primitive_type_base.h"
 #include "cldnn/runtime/memory.hpp"
 #include "cldnn/runtime/error_handler.hpp"
+#include "cldnn/runtime/debug_configuration.hpp"
 #include "json_object.h"
 #include <string>
 
@@ -99,6 +100,10 @@ void reshape_inst::on_execute() {
 
 void reshape_inst::reuse_input() {
     build_deps();  // reshape need deps
+    GPU_DEBUG_GET_INSTANCE(debug_config);
+    GPU_DEBUG_IF(debug_config->verbose >= 1) {
+        GPU_DEBUG_COUT << "[" << node.id() << ": output] ";
+    }
     _output = _network.get_engine().reinterpret_buffer(input_memory(), node.get_output_layout());
 }
 

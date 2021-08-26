@@ -123,19 +123,36 @@ uint64_t engine::get_max_used_device_memory() const {
     return peak_memory_usage.load();
 }
 
-uint64_t engine::get_used_device_memory() const {
-    return memory_usage.load();
+uint64_t engine::get_used_device_memory(allocation_type type) const {
+    uint64_t memory_usage{};
+    auto iter = memory_usage_map.find(type);
+    if (iter != memory_usage_map.end()) {
+        memory_usage = iter->second.load();
+    }
+    return memory_usage;
 }
 
-void engine::add_memory_used(size_t bytes) {
-    memory_usage += bytes;
+void engine::add_memory_used(size_t bytes, allocation_type type) {
+    auto iter = memory_usage_map.find(type);
+    if (iter == memory_usage_map.end()) {
+        memory_usage_map.insert(std::make_pair(type, 0));
+    }
+    memory_usage_map[type] += bytes;
+
+    uint64_t memory_usage{};
+    for (auto const& m : memory_usage_map) {
+        memory_usage += m.second.load();
+    }
     if (memory_usage > peak_memory_usage) {
-        peak_memory_usage = memory_usage.load();
+        peak_memory_usage = memory_usage;
     }
 }
 
-void engine::subtract_memory_used(size_t bytes) {
-    memory_usage -= bytes;
+void engine::subtract_memory_used(size_t bytes, allocation_type type) {
+    auto iter = memory_usage_map.find(type);
+    if (iter != memory_usage_map.end()) {
+        memory_usage_map[type] -= bytes;
+    }
 }
 
 std::shared_ptr<cldnn::engine> engine::create(engine_types engine_type,

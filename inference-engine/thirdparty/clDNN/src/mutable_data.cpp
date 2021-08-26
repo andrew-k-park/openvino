@@ -8,6 +8,7 @@
 #include "cldnn/runtime/memory.hpp"
 #include <random>
 #include "cldnn/runtime/error_handler.hpp"
+#include "cldnn/runtime/debug_configuration.hpp"
 #include "json_object.h"
 #include <string>
 #include <memory>
@@ -70,6 +71,10 @@ void mutable_data_inst::set_output_memory(memory::ptr mem_new, bool check) {
 
         // re-attach mutable_data internal memory if necessary
         if (eng.is_the_same_buffer(mem_orig, mem_attached)) {
+            GPU_DEBUG_GET_INSTANCE(debug_config);
+            GPU_DEBUG_IF(debug_config->verbose >= 1) {
+                GPU_DEBUG_COUT << "[" << _node.id() << ": output] ";
+            }
             mem_node.attach_memory(eng.reinterpret_buffer(*mem_new, mem_attached.get_layout()));
         }
     }

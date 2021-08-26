@@ -6,6 +6,7 @@
 #pragma once
 #include "primitive.hpp"
 #include "cldnn/runtime/memory.hpp"
+#include "cldnn/runtime/debug_configuration.hpp"
 
 namespace cldnn {
 /// @addtogroup cpp_api C++ API
@@ -28,6 +29,14 @@ struct data : public primitive_base<data> {
     /// @note If memory is attached by memory::attach(), the attached buffer should be valid till network build.
     data(const primitive_id& id, memory::ptr mem)
         : primitive_base(id, {}, padding()), mem(mem) {}
+
+    /// @brief Destructs data primitive.
+    ~data() {
+        GPU_DEBUG_GET_INSTANCE(debug_config);
+        GPU_DEBUG_IF(debug_config->verbose >= 1) {
+            GPU_DEBUG_COUT << "[" << id << "] ";
+        }
+    }
 
     /// @brief @ref memory object which contains data.
     /// @note If memory is attached by memory::attach(), the attached buffer should be valid till network build.

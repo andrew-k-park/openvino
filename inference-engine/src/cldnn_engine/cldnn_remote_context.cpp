@@ -7,6 +7,7 @@
 #include "cldnn_itt.h"
 
 #include "cldnn/runtime/device_query.hpp"
+#include "cldnn/runtime/debug_configuration.hpp"
 
 using namespace InferenceEngine;
 using namespace InferenceEngine::gpu;

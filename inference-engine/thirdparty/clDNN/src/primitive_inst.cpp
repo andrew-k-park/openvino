@@ -15,6 +15,7 @@
 #include "cldnn/runtime/memory.hpp"
 
 #include "cldnn/runtime/error_handler.hpp"
+#include "cldnn/runtime/debug_configuration.hpp"
 #include "json_object.h"
 #include <string>
 #include <stack>
@@ -174,7 +175,10 @@ memory::ptr primitive_inst::allocate_output() {
     allocation_type alloc_type = use_lockable_memory ?
                                  engine.get_lockable_preffered_memory_allocation_type(layout.format.is_image_2d())
                                                      : allocation_type::usm_device;
-
+    GPU_DEBUG_GET_INSTANCE(debug_config);
+    GPU_DEBUG_IF(debug_config->verbose >= 1) {
+        GPU_DEBUG_COUT << "[" << _node.id() << ": output] ";
+    }
     if (!_network.is_internal() && (_node.can_be_optimized() || _node.is_type<generic_layer>())) {
         return _network.get_memory_from_pool(layout,
                                              _node.id(),

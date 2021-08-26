@@ -417,6 +417,10 @@ void network::set_output_memory(const primitive_id& id, memory::ptr mem_new) {
     }
 
     for (auto& prim : o_iter->second) {
+        GPU_DEBUG_GET_INSTANCE(debug_config);
+        GPU_DEBUG_IF(debug_config->verbose >= 1) {
+            GPU_DEBUG_COUT << "[" << prim->id() << ": output] ";
+        }
         prim->set_output_memory(eng.reinterpret_buffer(*mem_new, prim->output_memory().get_layout()), false);
         if (!_reset_arguments)
             prim->set_arguments();
@@ -738,6 +742,10 @@ void network::transfer_memory_to_device(std::shared_ptr<primitive_inst> instance
 
     if (alloc_type == allocation_type::usm_host || alloc_type == allocation_type::usm_shared) {
         // Allocate and transfer memory
+        GPU_DEBUG_GET_INSTANCE(debug_config);
+        GPU_DEBUG_IF(debug_config->verbose >= 1) {
+            GPU_DEBUG_COUT << "[" << node.id() << ": transfer] ";
+        }
         auto device_mem = inst_mem.get_engine()->allocate_memory(inst_mem.get_layout(), allocation_type::usm_device, false);
         device_mem->copy_from(get_stream(), inst_mem);
         _memory_pool->release_memory(&inst_mem, node.id(), get_id());
