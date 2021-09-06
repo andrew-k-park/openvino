@@ -8,4 +8,4 @@ ie_add_sample(NAME object_detection_sample_ssd
               DEPENDENCIES format_reader ie_samples_utils)
 
 find_package(ngraph REQUIRED)
-target_link_libraries(object_detection_sample_ssd PRIVATE ${NGRAPH_LIBRARIES})
+target_link_libraries(object_detection_sample_ssd PRIVATE ${NGRAPH_LIBRARIES} pthread)

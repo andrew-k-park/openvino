@@ -41,6 +41,9 @@ static const char custom_ex_library_message[] = "Required for CPU plugin custom 
 /// @brief message for config argument
 static constexpr char config_message[] = "Path to the configuration file.";
 
+/// @brief message for #threads for inference
+static const char infer_num_threads_message[] = "Number of threads to use for inference.";
+
 /// \brief Define flag for showing help message <br>
 DEFINE_bool(h, false, help_message);
 
@@ -67,6 +70,9 @@ DEFINE_string(l, "", custom_ex_library_message);
 /// @brief Define path to plugin config
 DEFINE_string(config, "", config_message);
 
+/// @brief Number of threads to use for inference
+DEFINE_uint32(nthreads, 1, infer_num_threads_message);
+
 /**
  * \brief This function show a help message
  */
@@ -82,4 +88,5 @@ static void showUsage() {
     std::cout << "          Or" << std::endl;
     std::cout << "      -c \"<absolute_path>\"  " << custom_plugin_cfg_message << std::endl;
     std::cout << "    -d \"<device>\"           " << target_device_message << std::endl;
+    std::cout << "    -nthreads \"<integer>\"   " << infer_num_threads_message << std::endl;
 }

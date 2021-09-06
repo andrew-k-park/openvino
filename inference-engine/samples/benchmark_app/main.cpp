@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <thread>
 #include <vpu/vpu_plugin_config.hpp>
 
 #include "benchmark_app.hpp"
