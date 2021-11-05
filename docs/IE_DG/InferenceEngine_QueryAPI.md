@@ -57,6 +57,10 @@ For documentation about common configuration keys, refer to `ie_plugin_config.hp
 
 A returned value appears as follows: `Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz`.
 
+The code below demonstrates how to get overall memory statistics of `GPU` device:
+
+@snippet snippets/InferenceEngine_QueryAPI7.cpp part7
+
 > **NOTE**: All metrics have specific type, which is specified during metric instantiation. The list of common device-agnostic metrics can be found in `ie_plugin_config.hpp`. Device specific metrics (for example, for `HDDL`, `MYRIAD` devices) can be found in corresponding plugin folders.
 
 ## Query API in the ExecutableNetwork Class
