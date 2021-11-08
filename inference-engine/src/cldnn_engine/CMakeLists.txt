@@ -48,6 +48,6 @@ set_target_properties(${TARGET_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION_REL
 
 # install
 
-install(FILES "${clDNN_SOURCE_DIR}/kernel_selector/core/cache/cache.json"
-        DESTINATION ${IE_CPACK_RUNTIME_PATH}
-        COMPONENT gpu)
+# install(FILES "${clDNN_SOURCE_DIR}/kernel_selector/core/cache/cache.json"
+#         DESTINATION ${IE_CPACK_RUNTIME_PATH}
+#         COMPONENT gpu)

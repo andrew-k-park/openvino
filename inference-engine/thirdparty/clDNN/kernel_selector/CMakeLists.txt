@@ -164,9 +164,9 @@ else((NOT ANDROID) AND (UNIX))
   set(CLDNN_CACHE_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/")
 endif()
 
-add_custom_command(
-    TARGET "${CLDNN_BUILD__PROJ}" POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${__CLDNN_Directory__core}/cache/cache.json ${CLDNN_CACHE_PATH}/cache.json)
+# add_custom_command(
+#     TARGET "${CLDNN_BUILD__PROJ}" POST_BUILD
+#     COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${__CLDNN_Directory__core}/cache/cache.json ${CLDNN_CACHE_PATH}/cache.json)
 
 
 # ======================================================================================================
