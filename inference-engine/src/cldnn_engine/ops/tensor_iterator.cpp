@@ -28,7 +28,7 @@ namespace CLDNNPlugin {
 
 template<class DATA_TYPE>
 static DATA_TYPE CreateScalarData(Program &p, const cldnn::primitive_id& id, int64_t num, const cldnn::primitive_id& ext_prim_id) {
-    auto mem = p.GetEngine().allocate_memory({ cldnn::data_types::i64, cldnn::format::bfyx, { 1, 1, 1, 1 } });
+    auto mem = p.GetEngine().allocate_memory({ cldnn::data_types::i64, cldnn::format::bfyx, { 1, 1, 1, 1 } }, p.GetGraphId());
     cldnn::mem_lock<int64_t> ptr{mem, p.GetEngine().get_program_stream()};
     *ptr.begin() = num;
     return {id, mem, ext_prim_id};
@@ -41,7 +41,7 @@ static cldnn::mutable_data CreateAdditionalOutputData(Program &p, const std::sha
     const auto format = DefaultFormatForDims(op->get_output_shape(output_idx).size());
     const auto tensor = CldnnTensorFromIEDims(op->get_output_shape(output_idx));
     cldnn::layout output_layout = cldnn::layout(precision, format, tensor);
-    auto mem = p.GetEngine().allocate_memory(output_layout);
+    auto mem = p.GetEngine().allocate_memory(output_layout, p.GetGraphId());
     auto md = cldnn::mutable_data(id, {input}, mem, op->get_friendly_name()); // cldnn::data cannot set dependency
     return md;
 }

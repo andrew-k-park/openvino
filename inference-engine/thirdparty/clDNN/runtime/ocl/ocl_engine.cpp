@@ -85,7 +85,7 @@ const cl::UsmHelper& ocl_engine::get_usm_helper() const {
     return *_usm_helper;
 }
 
-memory::ptr ocl_engine::allocate_memory(const layout& layout, allocation_type type, bool reset) {
+memory::ptr ocl_engine::allocate_memory(const layout& layout, allocation_type type, uint32_t net_id, bool reset) {
     if (layout.bytes_count() > get_device_info().max_alloc_mem_size) {
         throw std::runtime_error("exceeded max size of memory object allocation");
     }
@@ -99,11 +99,11 @@ memory::ptr ocl_engine::allocate_memory(const layout& layout, allocation_type ty
     try {
         memory::ptr res = nullptr;
         if (layout.format.is_image_2d()) {
-            res = std::make_shared<ocl::gpu_image2d>(this, layout);
+            res = std::make_shared<ocl::gpu_image2d>(this, layout, net_id);
         } else if (type == allocation_type::cl_mem) {
-            res = std::make_shared<ocl::gpu_buffer>(this, layout);
+            res = std::make_shared<ocl::gpu_buffer>(this, layout, net_id);
         } else {
-            res = std::make_shared<ocl::gpu_usm>(this, layout, type);
+            res = std::make_shared<ocl::gpu_usm>(this, layout, type, net_id);
         }
 
         if (reset || res->is_memory_reset_needed(layout)) {

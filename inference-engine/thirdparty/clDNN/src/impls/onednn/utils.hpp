@@ -17,7 +17,7 @@ namespace onednn {
 
 // common utils
 template <typename T>
-cldnn::memory::ptr convert_zp_data_to_s32(const memory::ptr zp_memory);
+cldnn::memory::ptr convert_zp_data_to_s32(const memory::ptr zp_memory, uint32_t graph_id);
 cldnn::format default_fmt_for_dims(size_t dims, bool is_grouped = false);
 void combine_bf_with_first_spatial_dim(cldnn::layout& l);
 

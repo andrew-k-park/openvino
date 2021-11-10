@@ -50,7 +50,7 @@ public:
                                  uint32_t plane = 0,
                                  BlobType mem_type = BT_BUF_INTERNAL);
 
-    void allocate() noexcept;
+    void allocate(uint32_t graph_id = 0) noexcept;
     bool deallocate() noexcept;
     InferenceEngine::ParamMap getParams() const;
     std::string getDeviceName() const noexcept;

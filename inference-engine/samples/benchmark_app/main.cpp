@@ -491,11 +491,27 @@ int main(int argc, char* argv[]) {
             next_step();
             startTime = Time::now();
             exeNetwork = ie.LoadNetwork(cnnNetwork, device_name);
+            slog::info << "---------- exeNetwork.GetMetric MEMORY_STATISTICS" << slog::endl;
+            std::map<std::string, uint64_t> statistics_map1 = exeNetwork.GetMetric(GPU_METRIC_KEY(MEMORY_STATISTICS));
+            for (auto const& m : statistics_map1) {
+                slog::info << std::to_string(m.second) << " bytes allocated for " << m.first << slog::endl;
+            }
             duration_ms = double_to_string(get_total_ms_time(startTime));
             slog::info << "Load network took " << duration_ms << " ms" << slog::endl;
             if (statistics)
                 statistics->addParameters(StatisticsReport::Category::EXECUTION_RESULTS,
                                           {{"load network time (ms)", duration_ms}});
+            auto exeNetwork2 = ie.LoadNetwork(cnnNetwork, device_name);
+            slog::info << "---------- exeNetwork2.GetMetric MEMORY_STATISTICS" << slog::endl;
+            std::map<std::string, uint64_t> statistics_map2 = exeNetwork2.GetMetric(GPU_METRIC_KEY(MEMORY_STATISTICS));
+            for (auto const& m : statistics_map2) {
+                slog::info << std::to_string(m.second) << " bytes allocated for " << m.first << slog::endl;
+            }
+            std::map<std::string, uint64_t> statistics_map3 = ie.GetMetric(device_name, GPU_METRIC_KEY(MEMORY_STATISTICS));
+            slog::info << "---------- ie.GetMetric MEMORY_STATISTICS" << slog::endl;
+            for (auto const& m : statistics_map3) {
+                slog::info << std::to_string(m.second) << " bytes allocated for " << m.first << slog::endl;
+            }
         } else {
             next_step();
             slog::info << "Skipping the step for compiled network" << slog::endl;

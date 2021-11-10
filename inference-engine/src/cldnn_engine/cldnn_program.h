@@ -66,7 +66,8 @@ public:
 
 class Program {
 public:
-    Program(InferenceEngine::CNNNetwork& network, std::shared_ptr<cldnn::engine> engine, const Config& config, bool createTopologyOnly = false);
+    Program(InferenceEngine::CNNNetwork& network, std::shared_ptr<cldnn::engine> engine, const Config& config, uint32_t graph_id,
+            bool createTopologyOnly = false);
     Program(std::shared_ptr<cldnn::engine> engine, const Config& config) : m_config(config), m_engine(engine),
             m_curBatch(-1), queryMode(false), m_max_batch(1) {}
     Program() : m_config(), m_engine(nullptr), m_curBatch(-1), queryMode(false), m_max_batch(1) {}
@@ -98,6 +99,7 @@ public:
     cldnn::engine& GetEngine() const { return *m_engine; }
     std::shared_ptr<cldnn::engine> GetEnginePtr() const { return m_engine; }
     const Config& GetConfig() const { return m_config; }
+    uint32_t GetGraphId() const { return m_graph_id; }
     int GetMaxBatchSizeForSingleProgram();
 
     bool IsOpSupported(const InferenceEngine::CNNNetwork& network, const std::shared_ptr<ngraph::Node>& op);
@@ -152,6 +154,7 @@ private:
     InferenceEngine::InputsDataMap m_networkInputs;
     InferenceEngine::OutputsDataMap m_networkOutputs;
 
+    uint32_t m_graph_id;
     bool queryMode;
 
     void EnableQueryMode() { queryMode = true; }

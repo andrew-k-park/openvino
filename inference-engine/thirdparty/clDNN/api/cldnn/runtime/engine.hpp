@@ -48,10 +48,10 @@ public:
     memory_ptr attach_memory(const layout& layout, void* ptr);
 
     /// Allocate gpu memory using specified @p layout and alloation @p type
-    virtual memory_ptr allocate_memory(const layout& layout, allocation_type type, bool reset = true) = 0;
+    virtual memory_ptr allocate_memory(const layout& layout, allocation_type type, uint32_t net_id = 0, bool reset = true) = 0;
 
     /// Allocate gpu memory using specified @p layout. Allocation type is selected automatically based on engine/device configuration
-    memory_ptr allocate_memory(const layout& layout, bool reset = true);
+    memory_ptr allocate_memory(const layout& layout, uint32_t net_id = 0, bool reset = true);
 
     /// Created memory object from memory @p params and reinterpred the data using specified @p layout
     virtual memory_ptr reinterpret_handle(const layout& new_layout, shared_mem_params params) = 0;
@@ -101,20 +101,22 @@ public:
     uint64_t get_max_used_device_memory() const;
 
     /// Returns the maximum amount of GPU memory allocated by engine in current process for the specified allocation @p type
-    uint64_t get_max_used_device_memory(allocation_type type) const;
+    uint64_t get_max_used_device_memory(allocation_type type, uint32_t net_id) const;
 
     /// Returns the amount of GPU memory specified allocation @p type that currently used by the engine
-    uint64_t get_used_device_memory(allocation_type type) const;
+    uint64_t get_used_device_memory(allocation_type type, uint32_t net_id) const;
 
     /// Returns statistics of GPU memory allocated by engine in current process for all allocation types.
     /// @note It contains information about both current and peak memory usage
     std::map<std::string, uint64_t> get_memory_statistics() const;
 
+    std::map<std::string, uint64_t> get_memory_statistics(uint32_t net_id) const;
+
     /// Adds @p bytes count to currently used memory size of the specified allocation @p type
-    void add_memory_used(uint64_t bytes, allocation_type type);
+    void add_memory_used(uint64_t bytes, allocation_type type, uint32_t net_id);
 
     /// Subtracts @p bytes count from currently used memory size of the specified allocation @p type
-    void subtract_memory_used(uint64_t bytes, allocation_type type);
+    void subtract_memory_used(uint64_t bytes, allocation_type type, uint32_t net_id);
 
     /// Returns true if USM is enabled in engine config and device/driver supports required features
     bool use_unified_shared_memory() const;
@@ -170,8 +172,8 @@ protected:
     engine_configuration _configuration;
     mutable std::mutex _mutex;
 
-    std::map<allocation_type, std::atomic<uint64_t>> _memory_usage_map;
-    std::map<allocation_type, std::atomic<uint64_t>> _peak_memory_usage_map;
+    std::map<uint32_t, std::map<allocation_type, std::atomic<uint64_t>>> _memory_usage_map;
+    std::map<uint32_t, std::map<allocation_type, std::atomic<uint64_t>>> _peak_memory_usage_map;
 };
 
 }  // namespace cldnn

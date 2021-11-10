@@ -92,7 +92,7 @@ TEST(add_intermediate_gpu, test1)
     topology.add(cldnn::convolution("conv1b", { "input" }, { "weights" }));
     topology.add(cldnn::convolution("conv2a", { "conv1a" }, { "weights2" }));
     auto new_reorder = std::make_shared<reorder>("reorder","nothing", input->get_layout());
-    program::ptr prog = program::build_program(engine, topology, build_opt, false, true);
+    program::ptr prog = program::build_program(engine, topology, build_opt, false, 0, true);
     prog->add_intermediate(new_reorder, prog->get_node("conv1a"), 0);
     prog->dump_program("custom_dump", true);
 
@@ -153,7 +153,7 @@ TEST(add_intermediate_gpu, test2)
     w_vec.push_back("weights");
     auto new_conv = std::make_shared<convolution>("conv1a", "input", w_vec);
     auto weights_node = std::make_shared<data>("weights", weights);
-    program::ptr prog = program::build_program(engine, topology, build_opt, false, true);
+    program::ptr prog = program::build_program(engine, topology, build_opt, false, 0, true);
 
     prog->add_intermediate(new_conv, prog->get_node("conv2a"), 0, true, true);
     program_wrapper::add_connection(*prog, prog->get_or_create(weights_node), prog->get_or_create(new_conv));

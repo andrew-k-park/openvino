@@ -49,6 +49,7 @@ CLDNNExecNetwork::CLDNNExecNetwork(InferenceEngine::CNNNetwork &network, std::sh
     m_config(config),
     m_taskExecutor{ _taskExecutor },
     m_waitExecutor(InferenceEngine::ExecutorManager::getInstance()->getIdleCPUStreamsExecutor({ "GPUWaitExecutor" })) {
+    static std::atomic<uint32_t> id_gen{0};
     auto casted_context = std::dynamic_pointer_cast<gpu::ClContext>(context);
 
     if (nullptr == casted_context) {
@@ -57,9 +58,9 @@ CLDNNExecNetwork::CLDNNExecNetwork(InferenceEngine::CNNNetwork &network, std::sh
 
     m_context = casted_context;
 
-    auto graph_base = std::make_shared<CLDNNGraph>(network, m_context, m_config, 0);
+    auto graph_base = std::make_shared<CLDNNGraph>(network, m_context, m_config, ++id_gen, 0);
     for (uint16_t n = 0; n < m_config.throughput_streams; n++) {
-        auto graph = n == 0 ? graph_base : std::make_shared<CLDNNGraph>(graph_base, n);
+        auto graph = n == 0 ? graph_base : std::make_shared<CLDNNGraph>(graph_base, ++id_gen, n);
         m_graphs.push_back(graph);
     }
 }
@@ -173,7 +174,16 @@ InferenceEngine::Parameter CLDNNExecNetwork::GetMetric(const std::string &name) 
             auto impl = getContextImpl(m_context);
             impl->acquire_lock();
             std::shared_ptr<cldnn::engine> eng = impl->GetEngine();
-            statistics = eng->get_memory_statistics();
+            // Collects allocated memory statistics from sub graphs
+            for (auto& graph : m_graphs) {
+                std::map<std::string, uint64_t> map = eng->get_memory_statistics(graph->GetId());
+                for (auto const& m : map) {
+                    if (!statistics.count(m.first)) {
+                        statistics[m.first] = 0;
+                    }
+                    statistics[m.first] += m.second;
+                }
+            }
             impl->release_lock();
         }
         IE_SET_METRIC_RETURN(GPU_MEMORY_STATISTICS, statistics);

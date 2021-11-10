@@ -69,10 +69,10 @@ void  prepare_quantization::prepare_scale_shift_opt(program &p, quantize_node& q
     scales_layout.size = tensor::max(scales_layout.size, mem_output_low->get_layout().size);
     scales_layout.size = tensor::max(scales_layout.size, mem_output_high->get_layout().size);
 
-    auto mem_input_scale  = p.get_engine().allocate_memory(scales_layout, false);
-    auto mem_input_shift  = p.get_engine().allocate_memory(scales_layout, false);
-    auto mem_output_scale = p.get_engine().allocate_memory(scales_layout, false);
-    auto mem_output_shift = p.get_engine().allocate_memory(scales_layout, false);
+    auto mem_input_scale  = p.get_engine().allocate_memory(scales_layout, p.get_graph_id(), false);
+    auto mem_input_shift  = p.get_engine().allocate_memory(scales_layout, p.get_graph_id(), false);
+    auto mem_output_scale = p.get_engine().allocate_memory(scales_layout, p.get_graph_id(), false);
+    auto mem_output_shift = p.get_engine().allocate_memory(scales_layout, p.get_graph_id(), false);
 
     auto get_offset_safe = [](const layout& l, const tensor& idx) -> int {
         auto sizes = l.size;
@@ -617,7 +617,7 @@ void prepare_quantization::prepare_asymmetric_quantization(program &p, convoluti
 
         auto l = layout{new_a_zp->get_output_layout().data_type, format::bfyx, tensor{1, ifm_aligned, 1, 1}};
         int s = new_a_zp->get_output_layout().size.feature[0];
-        auto azp_aligned = p.get_engine().allocate_memory(l);
+        auto azp_aligned = p.get_engine().allocate_memory(l, p.get_graph_id());
         auto old_ptr = new_a_zp->as<data>().get_attached_memory_ptr();
         mem_lock<int8_t, mem_lock_type::write> new_data{azp_aligned, stream};
         mem_lock<int8_t, mem_lock_type::read> old_data{old_ptr, stream};
@@ -640,7 +640,7 @@ void prepare_quantization::prepare_asymmetric_quantization(program &p, convoluti
 
         auto l = layout{new_w_zp->get_output_layout().data_type, format::bfyx, tensor{ofm_aligned, 1, 1, 1}};
         int s = new_w_zp->get_output_layout().size.batch[0];
-        auto wzp_aligned = p.get_engine().allocate_memory(l);
+        auto wzp_aligned = p.get_engine().allocate_memory(l, p.get_graph_id());
         auto old_ptr = new_w_zp->as<data>().get_attached_memory_ptr();
         mem_lock<int8_t, mem_lock_type::write> new_data{wzp_aligned, stream};
         mem_lock<int8_t, mem_lock_type::read> old_data{old_ptr, stream};
@@ -657,7 +657,7 @@ void prepare_quantization::prepare_asymmetric_quantization(program &p, convoluti
     cldnn::program_node* new_compenstation = nullptr;
     if (need_compensation) {
         auto l = layout{data_types::f32, format::bfyx, tensor{1, ofm_aligned, 1, 1}};
-        auto data_to_allocate = p.get_engine().allocate_memory(l);
+        auto data_to_allocate = p.get_engine().allocate_memory(l, p.get_graph_id());
         auto w = new_weights->as<data>().get_attached_memory_ptr();
         auto azp = asymmetric_data ? new_a_zp->as<data>().get_attached_memory_ptr() : nullptr;
         auto wzp = asymmetric_weights ? new_w_zp->as<data>().get_attached_memory_ptr() : nullptr;

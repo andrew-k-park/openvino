@@ -13,13 +13,13 @@ namespace cldnn {
 namespace onednn {
 
 template <typename T>
-cldnn::memory::ptr convert_zp_data_to_s32(const memory::ptr zp_memory) {
+cldnn::memory::ptr convert_zp_data_to_s32(const memory::ptr zp_memory, uint32_t graph_id) {
     auto engine = zp_memory->get_engine();
     auto& stream = engine->get_program_stream();
 
     auto zp_s32_layout = zp_memory->get_layout();
     zp_s32_layout.data_type = data_types::i32;
-    auto zp_s32_memory = engine->allocate_memory(zp_s32_layout, false);
+    auto zp_s32_memory = engine->allocate_memory(zp_s32_layout, graph_id, false);
 
     mem_lock<T, mem_lock_type::read> zp_data(zp_memory, stream);
     mem_lock<int32_t, mem_lock_type::write> zp_s32_data(zp_s32_memory, stream);
@@ -30,8 +30,8 @@ cldnn::memory::ptr convert_zp_data_to_s32(const memory::ptr zp_memory) {
     return zp_s32_memory;
 }
 
-template cldnn::memory::ptr convert_zp_data_to_s32<int8_t>(const memory::ptr zp_memory);
-template cldnn::memory::ptr convert_zp_data_to_s32<uint8_t>(const memory::ptr zp_memory);
+template cldnn::memory::ptr convert_zp_data_to_s32<int8_t>(const memory::ptr zp_memory, uint32_t graph_id);
+template cldnn::memory::ptr convert_zp_data_to_s32<uint8_t>(const memory::ptr zp_memory, uint32_t graph_id);
 
 cldnn::format default_fmt_for_dims(size_t dims, bool is_grouped) {
     switch (dims) {
@@ -280,7 +280,7 @@ void make_per_tensor_if_possible(cldnn::data_node& node) {
     }
 
     auto l = layout {node.get_output_layout().data_type, node.get_output_layout().format, tensor{1, 1, 1, 1}};
-    auto new_mem = engine->allocate_memory(l);
+    auto new_mem = engine->allocate_memory(l, node.get_program().get_graph_id());
     mem_lock<T, mem_lock_type::write> new_data{new_mem, stream};
     new_data[0] = val;
     node.attach_memory(new_mem, false);

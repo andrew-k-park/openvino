@@ -32,8 +32,9 @@ static int get_cl_map_type(mem_lock_type type) {
 }
 
 gpu_buffer::gpu_buffer(ocl_engine* engine,
-                       const layout& layout)
-    : lockable_gpu_mem(), memory(engine, layout, allocation_type::cl_mem, false)
+                       const layout& layout,
+                       int32_t net_id)
+    : lockable_gpu_mem(), memory(engine, layout, allocation_type::cl_mem, false, net_id)
     , _buffer(engine->get_cl_context(), CL_MEM_READ_WRITE, size()) { }
 
 gpu_buffer::gpu_buffer(ocl_engine* engine,
@@ -118,8 +119,8 @@ dnnl::memory gpu_buffer::get_onednn_memory(dnnl::memory::desc desc) {
 }
 #endif
 
-gpu_image2d::gpu_image2d(ocl_engine* engine, const layout& layout)
-    : lockable_gpu_mem(), memory(engine, layout, allocation_type::cl_mem, false), _row_pitch(0), _slice_pitch(0) {
+gpu_image2d::gpu_image2d(ocl_engine* engine, const layout& layout, int32_t net_id)
+    : lockable_gpu_mem(), memory(engine, layout, allocation_type::cl_mem, false, net_id), _row_pitch(0), _slice_pitch(0) {
     cl_channel_type type = layout.data_type == data_types::f16 ? CL_HALF_FLOAT : CL_FLOAT;
     cl_channel_order order = CL_R;
     switch (layout.format) {
@@ -279,9 +280,9 @@ gpu_usm::gpu_usm(ocl_engine* engine, const layout& new_layout, const cl::UsmMemo
     , _buffer(buffer) {
 }
 
-gpu_usm::gpu_usm(ocl_engine* engine, const layout& layout, allocation_type type)
+gpu_usm::gpu_usm(ocl_engine* engine, const layout& layout, allocation_type type, int32_t net_id)
     : lockable_gpu_mem()
-    , memory(engine, layout, type, false)
+    , memory(engine, layout, type, false, net_id)
     , _buffer(engine->get_usm_helper()) {
     switch (get_allocation_type()) {
     case allocation_type::usm_host:

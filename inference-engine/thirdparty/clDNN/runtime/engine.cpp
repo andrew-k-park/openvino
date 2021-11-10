@@ -76,9 +76,9 @@ memory::ptr engine::attach_memory(const layout& layout, void* ptr) {
     return std::make_shared<simple_attached_memory>(layout, ptr);
 }
 
-memory::ptr engine::allocate_memory(const layout& layout, bool reset) {
+memory::ptr engine::allocate_memory(const layout& layout, uint32_t net_id, bool reset) {
     allocation_type type = get_lockable_preffered_memory_allocation_type(layout.format.is_image_2d());
-    return allocate_memory(layout, type, reset);
+    return allocate_memory(layout, type, net_id, reset);
 }
 
 memory_ptr engine::share_buffer(const layout& layout, shared_handle buf) {
@@ -122,65 +122,117 @@ memory_ptr engine::share_surface(const layout& layout, shared_surface surf, uint
 
 uint64_t engine::get_max_used_device_memory() const {
     std::lock_guard<std::mutex> guard(_mutex);
+
     uint64_t total_peak_memory_usage {0};
-    for (auto const& m : _peak_memory_usage_map) {
-        total_peak_memory_usage += m.second.load();
+    for (auto const& net : _peak_memory_usage_map) {
+        for (auto const& type : net.second) {
+            total_peak_memory_usage += type.second.load();
+        }
     }
     return total_peak_memory_usage;
 }
 
-uint64_t engine::get_max_used_device_memory(allocation_type type) const {
+uint64_t engine::get_max_used_device_memory(allocation_type type, uint32_t net_id) const {
     std::lock_guard<std::mutex> guard(_mutex);
+
     uint64_t peak_memory_usage {0};
-    auto iter = _peak_memory_usage_map.find(type);
-    if (iter != _peak_memory_usage_map.end()) {
-        peak_memory_usage = iter->second.load();
+    auto iter_net = _peak_memory_usage_map.find(net_id);
+    if (iter_net != _peak_memory_usage_map.end()) {
+        auto iter_type = iter_net->second.find(type);
+        if (iter_type != iter_net->second.end()) {
+            peak_memory_usage = iter_type->second.load();
+        }
     }
     return peak_memory_usage;
 }
 
-uint64_t engine::get_used_device_memory(allocation_type type) const {
+uint64_t engine::get_used_device_memory(allocation_type type, uint32_t net_id) const {
     std::lock_guard<std::mutex> guard(_mutex);
+
     uint64_t memory_usage {0};
-    auto iter = _memory_usage_map.find(type);
-    if (iter != _memory_usage_map.end()) {
-        memory_usage = iter->second.load();
+    auto iter_net = _memory_usage_map.find(net_id);
+    if (iter_net != _memory_usage_map.end()) {
+        auto iter_type = iter_net->second.find(type);
+        if (iter_type != iter_net->second.end()) {
+            memory_usage = iter_type->second.load();
+        }
     }
     return memory_usage;
 }
 
 std::map<std::string, uint64_t> engine::get_memory_statistics() const {
     std::map<std::string, uint64_t> statistics;
-    for (auto const& m : _memory_usage_map) {
-        std::ostringstream oss;
-        oss << m.first << "_current";
-        statistics[oss.str()] = m.second.load();
+
+    for (auto const& net : _memory_usage_map) {
+        for (auto const& type : net.second) {
+            std::ostringstream oss;
+            oss << type.first << "_current";
+            if (!statistics.count(oss.str())) {
+                statistics[oss.str()] = 0;
+            }
+            statistics[oss.str()] += type.second.load();
+        }
     }
-    for (auto const& m : _peak_memory_usage_map) {
-        std::ostringstream oss;
-        oss << m.first << "_peak";
-        statistics[oss.str()] = m.second.load();
+
+    for (auto const& net : _peak_memory_usage_map) {
+        for (auto const& type : net.second) {
+            std::ostringstream oss;
+            oss << type.first << "_peak";
+            if (!statistics.count(oss.str())) {
+                statistics[oss.str()] = 0;
+            }
+            statistics[oss.str()] += type.second.load();
+        }
     }
     return statistics;
 }
 
-void engine::add_memory_used(size_t bytes, allocation_type type) {
-    std::lock_guard<std::mutex> guard(_mutex);
-    if (!_memory_usage_map.count(type) && !_peak_memory_usage_map.count(type)) {
-        _memory_usage_map[type] = 0;
-        _peak_memory_usage_map[type] = 0;
+std::map<std::string, uint64_t> engine::get_memory_statistics(uint32_t net_id) const {
+    std::map<std::string, uint64_t> statistics;
+    auto iter = _memory_usage_map.find(net_id);
+    if (iter != _memory_usage_map.end()) {
+        for (auto const& m : iter->second) {
+            std::ostringstream oss;
+            oss << m.first << "_current";
+            statistics[oss.str()] = m.second.load();
+        }
     }
-    _memory_usage_map[type] += bytes;
-    if (_memory_usage_map[type] > _peak_memory_usage_map[type]) {
-        _peak_memory_usage_map[type] = _memory_usage_map[type].load();
+    auto iter_peak = _peak_memory_usage_map.find(net_id);
+    if (iter_peak != _peak_memory_usage_map.end()) {
+        for (auto const& m : iter_peak->second) {
+            std::ostringstream oss;
+            oss << m.first << "_peak";
+            statistics[oss.str()] = m.second.load();
+        }
+    }
+    return statistics;
+}
+
+void engine::add_memory_used(size_t bytes, allocation_type type, uint32_t net_id) {
+    std::lock_guard<std::mutex> guard(_mutex);
+
+    if ((!_memory_usage_map.count(net_id) && !_peak_memory_usage_map.count(net_id)) ||
+        (!_memory_usage_map[net_id].count(type) && !_peak_memory_usage_map[net_id].count(type))) {
+        _memory_usage_map[net_id][type] = 0;
+        _peak_memory_usage_map[net_id][type] = 0;
+    }
+    _memory_usage_map[net_id][type] += bytes;
+    if (_memory_usage_map[net_id][type] > _peak_memory_usage_map[net_id][type]) {
+        _peak_memory_usage_map[net_id][type] = _memory_usage_map[net_id][type].load();
     }
 }
 
-void engine::subtract_memory_used(size_t bytes, allocation_type type) {
+void engine::subtract_memory_used(size_t bytes, allocation_type type, uint32_t net_id) {
     std::lock_guard<std::mutex> guard(_mutex);
-    auto iter = _memory_usage_map.find(type);
-    if (iter != _memory_usage_map.end()) {
-        _memory_usage_map[type] -= bytes;
+
+    auto iter_net = _memory_usage_map.find(net_id);
+    if (iter_net != _memory_usage_map.end()) {
+        auto iter_type = iter_net->second.find(type);
+        if (iter_type != iter_net->second.end()) {
+            _memory_usage_map[net_id][type] -= bytes;
+        } else {
+            throw std::runtime_error("Attempt to free unallocated memory");
+        }
     } else {
         throw std::runtime_error("Attempt to free unallocated memory");
     }

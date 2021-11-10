@@ -28,7 +28,8 @@ private:
             _program = program::build_program(node.get_program().get_engine(),
                                               _topology,
                                               node.get_program().get_options(),
-                                              true);  // rebuild program
+                                              true,
+                                              node.get_program().get_graph_id());  // rebuild program
         }
         program::ptr get() const { return _program; }
 

@@ -126,13 +126,15 @@ public:
             topology const& topology,
             build_options const& options,
             bool is_internal = false,
+            uint32_t graph_id = 0,
             bool no_optimizations = false,
             bool is_body_program = false);
     /* constructor used to build a program from subset of nodes of other program (used in propagate_constants) */
     program(engine& engine_ref,
             std::set<std::shared_ptr<program_node>> const& nodes,
             build_options const& options,
-            bool is_internal);
+            bool is_internal,
+            uint32_t graph_id = 0);
     ~program();
     engine& get_engine() const { return _engine; }
     const build_options& get_options() const { return options; }
@@ -148,6 +150,7 @@ public:
     nodes_ordering& get_processing_order();
     uint32_t get_prog_id() { return prog_id; }
     stream& get_stream() { return *_stream; }
+    uint32_t get_graph_id() const { return _graph_id; }
     const std::list<primitive_id>& get_optimized_out() const { return optimized_out; }
     const std::list<optimized_info>& get_optimized() const { return optimized; }
     bool has_node(const primitive_id& prim) const { return nodes_map.count(prim) > 0; }
@@ -218,12 +221,14 @@ public:
                              const topology& topology,
                              const build_options& options,
                              bool is_internal = false,
+                             uint32_t graph_id = 0,
                              bool no_optimizations = false,
                              bool is_body_program = false);
     static ptr build_program(engine& engine,
                              const std::set<std::shared_ptr<program_node>>& nodes,
                              const build_options& options,
-                             bool is_internal);
+                             bool is_internal,
+                             uint32_t graph_id = 0);
     static void init_primitives();
     void compile();
     void init_kernels();
@@ -237,6 +242,7 @@ private:
     uint32_t prog_id = 0;
     engine& _engine;
     stream::ptr _stream;
+    uint32_t _graph_id;
     // TODO: Consider moving it to engine
     std::unique_ptr<kernels_cache> _kernels_cache;
     build_options options;

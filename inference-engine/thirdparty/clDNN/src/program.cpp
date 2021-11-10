@@ -88,6 +88,7 @@ program::program(engine& engine_ref,
                  topology const& topology,
                  build_options const& options,
                  bool is_internal,
+                 uint32_t graph_id,
                  bool no_optimizations,
                  bool is_body_program)
     : _engine(engine_ref),
@@ -96,7 +97,8 @@ program::program(engine& engine_ref,
       options(options),
       processing_order(),
       tuning_cache(nullptr),
-      is_body_program(is_body_program) {
+      is_body_program(is_body_program),
+      _graph_id(graph_id) {
     init_primitives();
     set_options();
     pm = std::unique_ptr<pass_manager>(new pass_manager(*this));
@@ -112,12 +114,14 @@ program::program(engine& engine_ref,
 program::program(engine& engine_ref,
                  std::set<std::shared_ptr<program_node>> const& nodes,
                  build_options const& options,
-                 bool is_internal)
+                 bool is_internal,
+                 uint32_t graph_id)
     : _engine(engine_ref),
       _kernels_cache(std::unique_ptr<kernels_cache>(new kernels_cache(_engine))),
       options(options),
       processing_order(),
-      tuning_cache(nullptr) {
+      tuning_cache(nullptr),
+      _graph_id(graph_id) {
     init_primitives();
     set_options();
     _kernels_cache->set_batch_header_str(kernel_selector::KernelBase::get_db().get_batch_header_str());
@@ -174,16 +178,18 @@ program::ptr program::build_program(engine& engine,
                                     const topology& topology,
                                     const build_options& options,
                                     bool is_internal,
+                                    uint32_t graph_id,
                                     bool no_optimizations,
                                     bool is_body_program) {
-    return std::make_shared<program>(engine, topology, options, is_internal, no_optimizations, is_body_program);
+    return std::make_shared<program>(engine, topology, options, is_internal, graph_id, no_optimizations, is_body_program);
 }
 
 program::ptr program::build_program(engine& engine,
                                     const std::set<std::shared_ptr<program_node>>& nodes,
                                     const build_options& options,
-                                    bool is_internal) {
-    return std::make_shared<program>(engine, nodes, options, is_internal);
+                                    bool is_internal,
+                                    uint32_t graph_id) {
+    return std::make_shared<program>(engine, nodes, options, is_internal, graph_id);
 }
 
 program_node& program::get_node(primitive_id const& id) {
@@ -616,7 +622,7 @@ void program::transfer_memory_to_device() {
                     GPU_DEBUG_COUT << "[" << data_node.id() << ": constant]" << std::endl;
                 }
                 // Allocate and transfer memory
-                auto device_mem = mem.get_engine()->allocate_memory(data_node_layout, allocation_type::usm_device, false);
+                auto device_mem = mem.get_engine()->allocate_memory(data_node_layout, allocation_type::usm_device, _graph_id, false);
                 device_mem->copy_from(get_stream(), mem);
                 data_node.attach_memory(device_mem);
                 const_cast<memory::ptr&>(data_node.get_primitive()->mem).reset();

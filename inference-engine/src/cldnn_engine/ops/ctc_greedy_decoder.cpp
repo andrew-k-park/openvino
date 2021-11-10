@@ -78,7 +78,7 @@ static void CreateCommonCTCGreedyDecoderOp(Program& p, const std::shared_ptr<ngr
         GPU_DEBUG_IF(debug_config->verbose >= 2) {
             GPU_DEBUG_COUT << "[" << layer_type_name_ID(op) << ": mutable data]" << std::endl;
         }
-        shared_memory.emplace_back(p.GetEngine().allocate_memory(mutableLayout));
+        shared_memory.emplace_back(p.GetEngine().allocate_memory(mutableLayout, p.GetGraphId()));
 
         cldnn::primitive_id ctc_gd_mutable_id_w = layer_type_name_ID(op) + "_md_write";
         auto ctc_gd_mutable_prim = cldnn::mutable_data(ctc_gd_mutable_id_w,

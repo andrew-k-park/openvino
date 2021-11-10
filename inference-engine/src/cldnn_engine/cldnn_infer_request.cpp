@@ -952,7 +952,7 @@ void CLDNNInferRequest::prepare_output(const cldnn::primitive_id& outputName, Bl
 
 InferenceEngine::Blob::Ptr CLDNNInferRequest::create_device_blob(const InferenceEngine::TensorDesc& desc, const cldnn::layout& layout) {
     auto blobPtr = std::make_shared<CLDNNRemoteCLbuffer>(m_graph->GetContext(), m_graph->GetNetwork()->get_stream(), desc, layout);
-    getBlobImpl(blobPtr.get())->allocate();
+    getBlobImpl(blobPtr.get())->allocate(m_graph->GetId());
     return blobPtr;
 }
 

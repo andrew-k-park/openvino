@@ -24,8 +24,8 @@ memory_record::memory_record(memory_set users,
                              allocation_type type)
     : _users(users), _memory(memory), _network_id(net_id), _type(type) {}
 
-memory::ptr memory_pool::alloc_memory(const layout& layout, allocation_type type) {
-    return _engine->allocate_memory(layout, type);
+memory::ptr memory_pool::alloc_memory(const layout& layout, allocation_type type, uint32_t network_id) {
+    return _engine->allocate_memory(layout, type, network_id);
 }
 
 memory_pool::~memory_pool() {}
@@ -142,7 +142,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
         GPU_DEBUG_COUT << "[" << id << ": output]" << std::endl;
     }
     // didn't find anything for you? create new resource
-    auto mem = alloc_memory(layout, type);
+    auto mem = alloc_memory(layout, type, network_id);
     {
         _non_padded_pool.emplace(layout.bytes_count(),
                                  memory_record({{id, network_id}}, mem, network_id, type));
@@ -174,7 +174,7 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
                 return ret_mem;
             }
         }
-        auto mem = alloc_memory(layout, type);
+        auto mem = alloc_memory(layout, type, network_id);
         first_level_cache->second.emplace_back(
             memory_record({{id, network_id}}, mem, network_id, type));
         return mem;
@@ -183,7 +183,7 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
     GPU_DEBUG_IF(debug_config->verbose >= 2) {
         GPU_DEBUG_COUT << "[" << id << ": output]" << std::endl;
     }
-    auto mem = alloc_memory(layout, type);
+    auto mem = alloc_memory(layout, type, network_id);
     std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, type)};
     _padded_pool.emplace(layout, std::move(list));
     return mem;
@@ -210,7 +210,7 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
         }
         ++it;
     }
-    auto mem = alloc_memory(layout, type);
+    auto mem = alloc_memory(layout, type, network_id);
     {
         _no_reusable_pool.emplace(layout.bytes_count(),
                                   memory_record({{id, network_id}}, mem, network_id, type));
@@ -218,8 +218,8 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
     return mem;
 }
 
-memory::ptr memory_pool::get_memory(const layout& layout, allocation_type type) {
-    return alloc_memory(layout, type);
+memory::ptr memory_pool::get_memory(const layout& layout, allocation_type type, uint32_t network_id) {
+    return alloc_memory(layout, type, network_id);
 }
 
 memory::ptr memory_pool::get_memory(const layout& layout,
@@ -238,10 +238,10 @@ memory::ptr memory_pool::get_memory(const layout& layout,
             return get_from_padded_pool(layout, id, network_id, restrictions, type);
         } else {
             // images (reuse not yet implemented)
-            return alloc_memory(layout, type);
+            return alloc_memory(layout, type, network_id);
         }
     } else {
-        return alloc_memory(layout, type);
+        return alloc_memory(layout, type, network_id);
     }
 }
 

@@ -28,7 +28,7 @@ struct lockable_gpu_mem {
 
 struct gpu_buffer : public lockable_gpu_mem, public memory {
     gpu_buffer(ocl_engine* engine, const layout& new_layout, const cl::Buffer& buffer);
-    gpu_buffer(ocl_engine* engine, const layout& layout);
+    gpu_buffer(ocl_engine* engine, const layout& layout, int32_t net_id);
 
     void* lock(const stream& stream, mem_lock_type type = mem_lock_type::read_write) override;
     void unlock(const stream& stream) override;
@@ -52,7 +52,7 @@ protected:
 
 struct gpu_image2d : public lockable_gpu_mem, public memory {
     gpu_image2d(ocl_engine* engine, const layout& new_layout, const cl::Image2D& buffer);
-    gpu_image2d(ocl_engine* engine, const layout& layout);
+    gpu_image2d(ocl_engine* engine, const layout& layout, int32_t net_id);
 
     void* lock(const stream& stream, mem_lock_type type = mem_lock_type::read_write) override;
     void unlock(const stream& stream) override;
@@ -100,7 +100,7 @@ private:
 
 struct gpu_usm : public lockable_gpu_mem, public memory {
     gpu_usm(ocl_engine* engine, const layout& new_layout, const cl::UsmMemory& usm_buffer, allocation_type type);
-    gpu_usm(ocl_engine* engine, const layout& layout, allocation_type type);
+    gpu_usm(ocl_engine* engine, const layout& layout, allocation_type type, int32_t net_id);
 
     void* lock(const stream& stream, mem_lock_type type = mem_lock_type::read_write) override;
     void unlock(const stream& stream) override;
