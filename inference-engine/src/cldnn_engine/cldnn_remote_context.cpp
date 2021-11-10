@@ -81,7 +81,7 @@ bool CLDNNRemoteBlobImpl::is_locked() const noexcept {
     return lockedHolder != nullptr;
 }
 
-void CLDNNRemoteBlobImpl::allocate() noexcept {
+void CLDNNRemoteBlobImpl::allocate(uint32_t graph_id) noexcept {
     OV_ITT_SCOPED_TASK(itt::domains::CLDNNPlugin, "CLDNNRemoteBlobImpl::Allocate");
     assert(m_memObject == nullptr);
 
@@ -91,7 +91,7 @@ void CLDNNRemoteBlobImpl::allocate() noexcept {
 
     switch (m_mem_type) {
     case BlobType::BT_BUF_INTERNAL: {
-        m_memObject = eng->allocate_memory(m_layout);
+        m_memObject = eng->allocate_memory(m_layout, graph_id);
         break;
     }
     case BlobType::BT_BUF_SHARED: {

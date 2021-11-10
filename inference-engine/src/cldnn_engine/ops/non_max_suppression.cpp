@@ -82,7 +82,7 @@ static void CreateNonMaxSuppressionIEInternalOp(Program& p, const std::shared_pt
             GPU_DEBUG_IF(debug_config->verbose >= 2) {
                 GPU_DEBUG_COUT << "[" << layer_type_name_ID(op) << ": mutable data]" << std::endl;
             }
-            shared_memory.emplace_back(p.GetEngine().allocate_memory(mutableLayoutSecond));
+            shared_memory.emplace_back(p.GetEngine().allocate_memory(mutableLayoutSecond, p.GetGraphId()));
 
             cldnn::primitive_id non_max_supression_mutable_id_w_second = layer_type_name_ID(op) + "_md_write_second";
             auto nms_mutable_prim_second = cldnn::mutable_data(non_max_supression_mutable_id_w_second,
@@ -103,7 +103,7 @@ static void CreateNonMaxSuppressionIEInternalOp(Program& p, const std::shared_pt
             GPU_DEBUG_IF(debug_config->verbose >= 2) {
                 GPU_DEBUG_COUT << "[" << layer_type_name_ID(op) << ": mutable data]" << std::endl;
             }
-            shared_memory.emplace_back(p.GetEngine().allocate_memory(mutableLayoutFirst));
+            shared_memory.emplace_back(p.GetEngine().allocate_memory(mutableLayoutFirst, p.GetGraphId()));
 
             cldnn::primitive_id non_max_supression_mutable_id_w_first = layer_type_name_ID(op) + "_md_write_first";
             auto nms_mutable_prim_first = cldnn::mutable_data(non_max_supression_mutable_id_w_first,

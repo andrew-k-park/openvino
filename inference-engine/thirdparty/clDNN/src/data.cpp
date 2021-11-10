@@ -19,12 +19,12 @@ primitive_type_id data::type_id() {
 }
 
 namespace {
-memory::ptr attach_or_copy_data(network& network, memory::ptr mem) {
+memory::ptr attach_or_copy_data(network& network, memory::ptr mem, uint32_t graph_id) {
     auto& engine = network.get_engine();
     if (mem->is_allocated_by(engine))
         return mem;
 
-    memory::ptr result = engine.allocate_memory(mem->get_layout(), false);
+    memory::ptr result = engine.allocate_memory(mem->get_layout(), graph_id, false);
     mem_lock<char, mem_lock_type::read> src(mem, network.get_stream());
     mem_lock<char, mem_lock_type::write> dst(result, network.get_stream());
     std::copy(src.begin(), src.end(), dst.begin());
@@ -54,6 +54,6 @@ std::string data_inst::to_string(data_node const& node) {
 }
 
 data_inst::typed_primitive_inst(network& network, data_node const& node)
-    : parent(network, node, attach_or_copy_data(network, node.get_attached_memory_ptr())) {}
+    : parent(network, node, attach_or_copy_data(network, node.get_attached_memory_ptr(), node.get_program().get_graph_id())) {}
 
 }  // namespace cldnn

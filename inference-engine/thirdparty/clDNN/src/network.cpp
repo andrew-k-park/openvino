@@ -209,6 +209,7 @@ network::network(program::ptr program, stream::ptr stream, bool is_internal, boo
     , _is_primary_stream(is_primary_stream)
     , _reset_arguments(true) {
     static std::atomic<uint32_t> id_gen{0};
+    net_id = id_gen;
     if (!_internal) {
         net_id = ++id_gen;
     }
@@ -820,7 +821,7 @@ void network::transfer_memory_to_device(std::shared_ptr<primitive_inst> instance
 
     if (alloc_type == allocation_type::usm_host || alloc_type == allocation_type::usm_shared) {
         // Allocate and transfer memory
-        auto device_mem = inst_mem.get_engine()->allocate_memory(inst_mem.get_layout(), allocation_type::usm_device, false);
+        auto device_mem = inst_mem.get_engine()->allocate_memory(inst_mem.get_layout(), allocation_type::usm_device, node.get_program().get_graph_id(), false);
         device_mem->copy_from(get_stream(), inst_mem);
         _memory_pool->release_memory(&inst_mem, node.id(), get_id());
         instance->set_output_memory(device_mem);
@@ -834,6 +835,6 @@ memory::ptr network::get_memory_from_pool(const layout& layout,
                                                bool reusable) {
     if (get_engine().configuration().use_memory_pool)
         return _memory_pool->get_memory(layout, id, get_id(), dependencies, type, reusable);
-    return _memory_pool->get_memory(layout, type);
+    return _memory_pool->get_memory(layout, type, get_id());
 }
 }  // namespace cldnn

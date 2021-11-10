@@ -82,10 +82,12 @@ protected:
             memory::ptr s32_mem;
             if (a_zp.get_output_layout().data_type == data_types::i8) {
                 onednn::make_per_tensor_if_possible<data_type_to_type<data_types::i8>::type>(a_zp.as<data>());
-                s32_mem = onednn::convert_zp_data_to_s32<data_type_to_type<data_types::i8>::type>(a_zp.as<data>().get_attached_memory_ptr());
+                s32_mem = onednn::convert_zp_data_to_s32<data_type_to_type<data_types::i8>::type>(a_zp.as<data>().get_attached_memory_ptr(),
+                                                                                                  a_zp.get_program().get_graph_id());
             } else if (a_zp.get_output_layout().data_type == data_types::u8) {
                 onednn::make_per_tensor_if_possible<data_type_to_type<data_types::u8>::type>(a_zp.as<data>());
-                s32_mem = onednn::convert_zp_data_to_s32<data_type_to_type<data_types::u8>::type>(a_zp.as<data>().get_attached_memory_ptr());
+                s32_mem = onednn::convert_zp_data_to_s32<data_type_to_type<data_types::u8>::type>(a_zp.as<data>().get_attached_memory_ptr(),
+                                                                                                  a_zp.get_program().get_graph_id());
             } else {
                 throw std::runtime_error("Unsupported data type for activations zero points for oneDNN convolution");
             }

@@ -259,7 +259,7 @@ public:
         // add incremental data: 1
         // it is used to update current_iteration in body network
         const primitive_id increment_value_id = current_iteration_id + "_inc";
-        auto mem = get_program().get_engine().allocate_memory(body_input_layout);
+        auto mem = get_program().get_engine().allocate_memory(body_input_layout, get_program().get_graph_id());
         auto& stream = get_program().get_stream();
         write_scalar_value(mem, stream, 1);
         body.add_primitive(std::make_shared<data>(increment_value_id, mem));
@@ -280,12 +280,12 @@ public:
         if (!id.empty()) {
             auto body_output = body_topology_map.find(id);
             if (body_output == body_topology_map.end()) {
-                auto mem = get_program().get_engine().allocate_memory(body_output_layout);
+                auto mem = get_program().get_engine().allocate_memory(body_output_layout, get_program().get_graph_id());
                 auto md = std::make_shared<data>(id, mem);
                 body.add_primitive(md);
             } else {
                 auto body_output_prim = body.at(body_output->first);
-                auto mem = get_program().get_engine().allocate_memory(body_output_layout);
+                auto mem = get_program().get_engine().allocate_memory(body_output_layout, get_program().get_graph_id());
                 body_output_prim.reset(new mutable_data(body_output->first, mem));
             }
         }
@@ -342,7 +342,7 @@ public:
         auto opts = get_program().get_options();
         std::vector<primitive_id> output_names_vec(output_names.begin(), output_names.end());
         opts.set_option(build_option::outputs(output_names_vec));
-        body_program = program::build_program(get_program().get_engine(), body, opts, false, false, true);
+        body_program = program::build_program(get_program().get_engine(), body, opts, false, get_program().get_graph_id(), false, true);
     }
 
     const primitive_id& get_trip_count_id() const { return get_primitive()->trip_count_id; }

@@ -92,10 +92,11 @@ bool Program::CanProcessDynBatch(std::vector<std::shared_ptr<ngraph::Node>> ops,
     return true;
 }
 
-Program::Program(InferenceEngine::CNNNetwork& network, std::shared_ptr<cldnn::engine> engine, const Config& config, bool createTopologyOnly)
+Program::Program(InferenceEngine::CNNNetwork& network, std::shared_ptr<cldnn::engine> engine, const Config& config, uint32_t graph_id, bool createTopologyOnly)
     : m_config(config)
     , m_engine(engine)
     , m_curBatch(-1)
+    , m_graph_id(graph_id)
     , queryMode(false) {
     // Extract inputs/outputs info from CNNNetwork
     auto networkInputs = network.getInputsInfo();
@@ -193,7 +194,7 @@ std::shared_ptr<cldnn::program> Program::BuildProgram(const std::vector<std::sha
         return {};
     } else {
         OV_ITT_SCOPED_TASK(itt::domains::CLDNNPlugin, "Program::CreateProgram");
-        auto program = cldnn::program::build_program(*m_engine, *m_topology, options);
+        auto program = cldnn::program::build_program(*m_engine, *m_topology, options, false, m_graph_id);
         CleanupBuild();
 
         return program;

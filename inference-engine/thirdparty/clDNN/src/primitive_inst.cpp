@@ -253,9 +253,9 @@ void primitive_inst::allocate_internal_buffers(void) {
             GPU_DEBUG_COUT << "[" << _node.id() << ": internal buf]" << std::endl;
         }
         if (input_device_mem && (available_device_mem_size - (int64_t)layout.bytes_count() >= 0))
-            _intermediates_memory.push_back(engine.allocate_memory(layout, allocation_type::usm_device));
+            _intermediates_memory.push_back(engine.allocate_memory(layout, allocation_type::usm_device, _network.get_id()));
         else
-            _intermediates_memory.push_back(engine.allocate_memory(layout, allocation_type::usm_host));
+            _intermediates_memory.push_back(engine.allocate_memory(layout, allocation_type::usm_host, _network.get_id()));
     }
 }
 
@@ -297,19 +297,19 @@ memory::ptr primitive_inst::allocate_output() {
         GPU_DEBUG_IF(debug_config->verbose >= 2) {
             GPU_DEBUG_COUT << "[" << _node.id() << ": output]" << std::endl;
         }
-        return engine.allocate_memory(layout, allocation_type::usm_device, false);
+        return engine.allocate_memory(layout, allocation_type::usm_device, _network.get_id() + 1, false);
     } else if (_network.is_internal() && !_node.is_output() && _node.is_type<input_layout>()) {
         // Skip memory reset for input_layout primitives, since data will be copied from cldnn::data primitive
         // or just reuse primitive's memory
         GPU_DEBUG_IF(debug_config->verbose >= 2) {
             GPU_DEBUG_COUT << "[" << _node.id() << ": constant]" << std::endl;
         }
-        return engine.allocate_memory(layout, alloc_type, false);
+        return engine.allocate_memory(layout, alloc_type, _network.get_id() + 1, false);
     } else if (_network.is_internal() || (!_node.can_share_buffer()) || _node.can_be_optimized() || _node.is_output()) {
         GPU_DEBUG_IF(debug_config->verbose >= 2) {
             GPU_DEBUG_COUT << "[" << _node.id() << ": output]" << std::endl;
         }
-        return engine.allocate_memory(layout, alloc_type);
+        return engine.allocate_memory(layout, alloc_type, (_network.is_internal() ? _network.get_id() + 1 : _network.get_id()));
     } else {
         return _network.get_memory_from_pool(layout,
                                              _node.id(),

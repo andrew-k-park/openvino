@@ -268,7 +268,7 @@ void loop_inst::update_mapped_memory() {
                             // generally, shouldn't go this way, but...
                             auto output_prim = body_network->get_primitive(back_edge.from);
                             layout output_layout = output_prim->output_memory().get_layout();
-                            backedge_mem = body_network->get_engine().allocate_memory(output_layout, 0);
+                            backedge_mem = body_network->get_engine().allocate_memory(output_layout, node.get_program().get_graph_id(), false);
                         }
                     } else {
                         backedge_mem = get_external_memory(output_mapping.front()->external_id);
@@ -312,7 +312,7 @@ void loop_inst::preprocess_output_memory() {
             std::vector<memory::ptr> sliced_mems;
             sliced_mems.reserve(max_iteration);
             for (int j=0; j < max_iteration; ++j) {
-                memory::ptr sliced_mem = engine.allocate_memory(sliced_layout, 0);
+                memory::ptr sliced_mem = engine.allocate_memory(sliced_layout, node.get_program().get_graph_id(), false);
                 sliced_mems.push_back(sliced_mem);
             }
 
@@ -354,7 +354,7 @@ void loop_inst::preprocess_input_memory() {
                 std::vector<memory::ptr> sliced_mems;
                 sliced_mems.reserve(max_iteration);
                 for (int j=0; j < max_iteration; ++j) {
-                    memory::ptr sliced_mem = engine.allocate_memory(sliced_layout, 0);
+                    memory::ptr sliced_mem = engine.allocate_memory(sliced_layout, node.get_program().get_graph_id(), false);
                     sliced_mems.push_back(sliced_mem);
                 }
                 const int64_t num_elements_batch = concatenated_memory_mapping::get_batch_size(
@@ -388,7 +388,7 @@ void loop_inst::preprocess_backedge_memory() {
         memory::ptr initial_mem;
         if (back_edge.to == node.get_current_iteration_id()) {
             const layout current_iteration_layout = backedge_to_prim->output_memory().get_layout();
-            initial_mem = get_network().get_engine().allocate_memory(current_iteration_layout);
+            initial_mem = get_network().get_engine().allocate_memory(current_iteration_layout, node.get_program().get_graph_id());
             auto& stream = get_network().get_stream();
             loop_node::write_scalar_value(initial_mem, stream, 0);
             current_iteratoin_backedge_mapping_idx = backedge_memory_mappings.size();
@@ -414,7 +414,7 @@ void loop_inst::preprocess_backedge_memory() {
                 } else {
                     auto output_prim = body_network->get_primitive(back_edge.from);
                     layout output_layout = output_prim->output_memory().get_layout();
-                    backedge_mem = body_network->get_engine().allocate_memory(output_layout, 0);
+                    backedge_mem = body_network->get_engine().allocate_memory(output_layout, node.get_program().get_graph_id(), false);
                 }
             } else {
                 backedge_mem = get_external_memory(output_mapping.front()->external_id);

@@ -174,7 +174,7 @@ static void CreateConstantOp(Program& p, const std::shared_ptr<ngraph::op::v0::C
         GPU_DEBUG_IF(debug_config->verbose >= 2) {
             GPU_DEBUG_COUT << "[" << initialconstPrimID << ": constant]" << std::endl;
         }
-        cldnn::memory::ptr mem = p.GetEngine().allocate_memory(constLayout, false);
+        cldnn::memory::ptr mem = p.GetEngine().allocate_memory(constLayout, p.GetGraphId(), false);
         auto& stream = p.GetEngine().get_program_stream();
         cldnn::mem_lock<char> lock{mem, stream};
         auto buf = lock.data();

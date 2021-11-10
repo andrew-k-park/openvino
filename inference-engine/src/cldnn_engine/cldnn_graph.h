@@ -37,8 +37,8 @@ public:
     };
     typedef std::shared_ptr<CLDNNGraph> Ptr;
 
-    CLDNNGraph(InferenceEngine::CNNNetwork& network, InferenceEngine::gpu::ClContext::Ptr context, Config config, uint16_t stream_id = 0);
-    explicit CLDNNGraph(std::shared_ptr<CLDNNGraph> graph, uint16_t stream_id = 0);
+    CLDNNGraph(InferenceEngine::CNNNetwork& network, InferenceEngine::gpu::ClContext::Ptr context, Config config, uint32_t graph_id, uint16_t stream_id = 0);
+    explicit CLDNNGraph(std::shared_ptr<CLDNNGraph> graph, uint32_t graph_id, uint16_t stream_id = 0);
     std::shared_ptr<ngraph::Function> GetExecGraphInfo();
 
     bool IsLoaded() const;
@@ -56,6 +56,8 @@ public:
     InferenceEngine::SizeVector GetOutputSize(std::string outName) const;
     std::string MapOutputName(std::string outName) const;
     std::string getName() const { return m_networkName; }
+    uint32_t GetId() const { return m_graph_id; }
+
     void wait(Stage stage_mask) {
         std::unique_lock<std::mutex> lock(m_infer_mutex);
         m_cv.wait(lock, [&] {
@@ -94,6 +96,7 @@ protected:
     std::map<std::string, InferenceEngine::SizeVector> outputDims;
 
     std::shared_ptr<Program> m_program;
+    uint32_t m_graph_id;
     uint16_t m_stream_id;
 
     std::shared_ptr<cldnn::network> BuildNetwork(std::shared_ptr<cldnn::program> program);

@@ -40,21 +40,23 @@ using namespace InferenceEngine::details;
 
 namespace CLDNNPlugin {
 
-CLDNNGraph::CLDNNGraph(InferenceEngine::CNNNetwork& network, gpu::ClContext::Ptr context, Config config, uint16_t stream_id)
+CLDNNGraph::CLDNNGraph(InferenceEngine::CNNNetwork& network, gpu::ClContext::Ptr context, Config config, uint32_t graph_id, uint16_t stream_id)
     : m_context(context)
     , m_networkName(network.getName())
     , m_config(config)
+    , m_graph_id(graph_id)
     , m_stream_id(stream_id)
     , m_state(0) {
-    m_program = std::make_shared<Program>(network, GetEngine(), m_config);
+    m_program = std::make_shared<Program>(network, GetEngine(), m_config, m_graph_id);
     Build();
 }
 
-CLDNNGraph::CLDNNGraph(std::shared_ptr<CLDNNGraph> graph, uint16_t stream_id)
+CLDNNGraph::CLDNNGraph(std::shared_ptr<CLDNNGraph> graph, uint32_t graph_id, uint16_t stream_id)
         : m_context(graph->m_context)
         , m_program(graph->m_program)
         , m_networkName(graph->m_networkName)
         , m_config(graph->m_config)
+        , m_graph_id(graph_id)
         , m_stream_id(stream_id)
         , m_state(0) {
     Build();

@@ -20,7 +20,7 @@ primitive_type_id mutable_data::type_id() {
 }
 
 namespace {
-memory::ptr attach_or_copy_data(network& network, memory::ptr mem, bool reuse) {
+memory::ptr attach_or_copy_data(network& network, memory::ptr mem, bool reuse, uint32_t graph_id) {
     auto& engine = network.get_engine();
     auto& stream = network.get_stream();
 
@@ -28,7 +28,7 @@ memory::ptr attach_or_copy_data(network& network, memory::ptr mem, bool reuse) {
         return mem;
     }
 
-    memory::ptr result = engine.allocate_memory(mem->get_layout(), false);
+    memory::ptr result = engine.allocate_memory(mem->get_layout(), graph_id, false);
     mem_lock<char, mem_lock_type::read> src(mem, stream);
     mem_lock<char, mem_lock_type::write> dst(result, stream);
     std::copy(src.begin(), src.end(), dst.begin());
@@ -77,6 +77,6 @@ void mutable_data_inst::set_output_memory(memory::ptr mem_new, bool check) {
 }
 
 mutable_data_inst::typed_primitive_inst(network& network, mutable_data_node const& node)
-    : parent(network, node, attach_or_copy_data(network, node.get_attached_memory_ptr(), network.is_primary_stream())) {}
+    : parent(network, node, attach_or_copy_data(network, node.get_attached_memory_ptr(), network.is_primary_stream(), node.get_program().get_graph_id())) {}
 
 }  // namespace cldnn
