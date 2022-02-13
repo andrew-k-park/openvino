@@ -142,7 +142,7 @@ static void dump(memory::ptr mem, stream& stream, std::ofstream& file_stream) {
                             size_t input_it = mem->get_layout().get_linear_offset(t);
 
                             for (cldnn::tensor::value_type x = 0; x < size.spatial[0]; ++x, input_it += x_pitch) {
-                                buffer << std::fixed << std::setprecision(6) << convert_element(mem_ptr[input_it]) << std::endl;
+                                buffer << std::fixed << std::setprecision(16) << convert_element(mem_ptr[input_it]) << std::endl;
                             }
                         }
                     }
@@ -182,7 +182,7 @@ void dump<uint32_t>(memory::ptr mem, stream& stream, std::ofstream& file_stream)
 }
 
 static void log_memory_to_file(memory::ptr mem, stream& stream, std::string layerName) {
-    std::cout << "Dump " << layerName << std::endl;
+    // std::cout << "Dump " << layerName << std::endl;
     GPU_DEBUG_GET_INSTANCE(debug_config);
     std::string filename = layerName;
     std::replace(filename.begin(), filename.end(), '\\', '_');
@@ -692,7 +692,7 @@ void network::execute_impl(const std::vector<event::ptr>& events) {
                             debug_config->is_dumped_layer(layer_name)) {
                 for (size_t i = 0; i < get_primitive(inst->id())->dependencies().size(); i++) {
                     log_memory_to_file(get_primitive(inst->id())->dep_memory_ptr(i), get_stream(),
-                                    layer_name + "_src_" + std::to_string(i));
+                                    layer_name + "_src_" + std::to_string(i) + "_frame_" + std::to_string(infer_id));
                 }
             }
         }
@@ -714,11 +714,11 @@ void network::execute_impl(const std::vector<event::ptr>& events) {
             auto& node = _program->get_node(inst->id());
             const std::string layer_name = node.id();
             GPU_DEBUG_IF(debug_config->is_dumped_layer(layer_name)) {
-                log_memory_to_file(get_primitive(inst->id())->output_memory_ptr(), get_stream(), layer_name + "_dst_0");
+                log_memory_to_file(get_primitive(inst->id())->output_memory_ptr(), get_stream(), layer_name + "_dst_0_frame_" + std::to_string(infer_id));
             }
         }
     }
-
+    infer_id++;
     for (auto& inst : _program->get_processing_order()) {
         // Special handling for mutable data. The event should be the same as the user or dependency with highest
         // processing_num as the mutable_data can be updated when is both user or dependency.

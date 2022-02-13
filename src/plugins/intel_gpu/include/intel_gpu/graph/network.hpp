@@ -190,6 +190,7 @@ public:
 private:
     using output_chains_map = std::map<primitive_id, std::vector<std::shared_ptr<primitive_inst>>>;
     uint32_t net_id = 0;
+    uint32_t infer_id = 1;
     program::ptr _program;
     stream::ptr _stream;
     std::unique_ptr<memory_pool> _memory_pool;
