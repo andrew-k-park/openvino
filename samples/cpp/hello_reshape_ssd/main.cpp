@@ -1,20 +1,26 @@
-// Copyright (C) 2018-2022 Intel Corporation
+// Copyright (C) 2018-2021 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
+#include <format_reader_ptr.h>
+
+#include <inference_engine.hpp>
 #include <memory>
 #include <string>
 #include <vector>
+#include <cstring>
 
 // clang-format off
-#include "openvino/openvino.hpp"
 #include "ngraph/ngraph.hpp"
+#include "openvino/openvino.hpp"
 
-#include "format_reader_ptr.h"
 #include "samples/args_helper.hpp"
 #include "samples/common.hpp"
 #include "samples/slog.hpp"
+#include "format_reader_ptr.h"
 // clang-format on
+
+#include <iostream>
 
 // thickness of a line (in pixels) to be used for bounding boxes
 constexpr int BBOX_THICKNESS = 2;
@@ -27,13 +33,16 @@ int main(int argc, char* argv[]) {
         slog::info << ov::get_openvino_version() << slog::endl;
 
         // --------------------------- Parsing and validation of input arguments
-        if (argc != 4) {
-            std::cout << "Usage : " << argv[0] << " <path_to_model> <path_to_image> <device>" << std::endl;
+        if (argc < 4) {
+            std::cout << "Usage : " << argv[0] << " <path_to_model> <path_to_image> <device> <batch_size>" << std::endl;
             return EXIT_FAILURE;
         }
         const std::string model_path{argv[1]};
         const std::string image_path{argv[2]};
         const std::string device_name{argv[3]};
+        size_t batch_size = 1;
+        if (argc == 5)
+            batch_size = std::stoul(argv[4]);
         // -------------------------------------------------------------------
 
         // Step 1. Initialize inference engine core
@@ -80,8 +89,6 @@ int main(int argc, char* argv[]) {
         const ov::Layout model_layout{"NCHW"};
 
         ov::Shape tensor_shape = model->input().get_shape();
-
-        size_t batch_size = 1;
 
         tensor_shape[ov::layout::batch_idx(model_layout)] = batch_size;
         tensor_shape[ov::layout::channels_idx(model_layout)] = image_channels;
@@ -139,8 +146,11 @@ int main(int argc, char* argv[]) {
         unsigned char* image_data_ptr = image_data.get();
         unsigned char* tensor_data_ptr = input_tensor.data<unsigned char>();
         size_t image_size = image_width * image_height * image_channels;
-        for (size_t i = 0; i < image_size; i++) {
-            tensor_data_ptr[i] = image_data_ptr[i];
+        // repeat input image for every batch
+        for (size_t b = 0; b < batch_size; b++) {
+            for (size_t i = 0; i < image_size; i++) {
+                tensor_data_ptr[i + b * image_size] = image_data_ptr[i];
+            }
         }
         // -------------------------------------------------------------------
 
@@ -157,8 +167,10 @@ int main(int argc, char* argv[]) {
         const float* detections = output_tensor.data<const float>();
         // -------------------------------------------------------------------
 
-        std::vector<int> boxes;
-        std::vector<int> classes;
+        std::vector<std::vector<int>> boxes;
+        boxes.resize(batch_size);
+        std::vector<std::vector<int>> classes;
+        classes.resize(batch_size);
 
         // Step 12. Parse SSD output
         for (size_t object = 0; object < ssd_object_count; object++) {
@@ -177,25 +189,31 @@ int main(int argc, char* argv[]) {
 
             if (confidence > 0.5f) {
                 // collect only objects with >50% probability
-                classes.push_back(label);
-                boxes.push_back(xmin);
-                boxes.push_back(ymin);
-                boxes.push_back(xmax - xmin);
-                boxes.push_back(ymax - ymin);
+                classes[image_id].push_back(label);
+                boxes[image_id].push_back(xmin);
+                boxes[image_id].push_back(ymin);
+                boxes[image_id].push_back(xmax - xmin);
+                boxes[image_id].push_back(ymax - ymin);
 
-                std::cout << "[" << object << "," << label << "] element, prob = " << confidence << ",    (" << xmin
-                          << "," << ymin << ")-(" << xmax << "," << ymax << ")" << std::endl;
+                std::cout << "[" << image_id << "," << object << "," << label << "] element, prob = " << confidence << ",    (" << xmin
+                        << "," << ymin << ")-(" << xmax << "," << ymax << ")" << std::endl;
             }
         }
 
-        // draw bounding boxes on the image
-        addRectangles(image_data.get(), image_height, image_width, boxes, classes, BBOX_THICKNESS);
+        for (size_t batch = 0; batch < batch_size; batch++) {
+            std::cout << "DETECTED OBJECTS NUM: " << classes[batch].size() << std::endl;
+            // draw bounding boxes on the image
+            unsigned char *image_data_copy = new unsigned char[image_size];
+            std::memcpy(image_data_copy, image_data_ptr, image_size);
+            addRectangles(image_data_copy, image_height, image_width, boxes[batch], classes[batch], BBOX_THICKNESS);
 
-        const std::string image_name = "hello_reshape_ssd_output.bmp";
-        if (writeOutputBmp(image_name, image_data.get(), image_height, image_width)) {
-            std::cout << "The resulting image was saved in the file: " + image_name << std::endl;
-        } else {
-            throw std::logic_error(std::string("Can't create a file: ") + image_name);
+            const std::string image_name = "hello_reshape_ssd_output_" + std::to_string(batch) + ".bmp";
+            if (writeOutputBmp(image_name, image_data_copy, image_height, image_width)) {
+                std::cout << "The resulting image was saved in the file: " + image_name << std::endl;
+            } else {
+                throw std::logic_error(std::string("Can't create a file: ") + image_name);
+            }
+            delete[]image_data_copy;
         }
 
     } catch (const std::exception& ex) {
