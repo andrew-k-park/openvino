@@ -5,8 +5,8 @@
 #pragma once
 
 #include "intel_gpu/graph/program.hpp"
-#if 0 // TODO(taylor)
 #include "layout_optimizer.h"
+#if 0 // TODO(taylor)
 #include "split_inst.h"
 #include "lstm_inst.h"
 #include "lstm_dynamic_inst.h"
@@ -205,7 +205,7 @@ private:
     void remove_redundant_reshape(program &p);
     layout_optimizer& _lo;
 };
-
+#endif
 class pre_replace_deconv : public base_pass {
 public:
     explicit pre_replace_deconv(layout_optimizer& lo_ref) :
@@ -215,7 +215,7 @@ private:
     void run(program& p) override;
     layout_optimizer& _lo;
 };
-
+#if 0 // TODO(andrew)
 class pre_optimize_bias : public base_pass {
 public:
     explicit pre_optimize_bias(reorder_factory& rf_ref);

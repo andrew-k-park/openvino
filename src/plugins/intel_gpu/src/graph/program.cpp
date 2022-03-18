@@ -523,11 +523,11 @@ void program::pre_optimize_graph(bool is_internal) {
 
     layout_optimizer lo(output_size_handling_enabled);
     set_layout_optimizer_attributes(lo);
-#if 0 // TODO(andrew)
+
     reorder_factory rf;
     if (options.get<build_option_type::optimize_data>()->enabled()) {
         apply_opt_pass<pre_replace_deconv>(lo);
-
+#if 0 // TODO(andrew)
         apply_opt_pass<prepare_primitive_fusing>(lo);
 
         apply_opt_pass<reorder_inputs>(lo, rf);
@@ -546,8 +546,9 @@ void program::pre_optimize_graph(bool is_internal) {
 
         // trying to set stride to 1x1 by shrinking convolutions before eltwise if doable
         apply_opt_pass<eltwise_remove_stride>();
+#endif
     }
-
+#if 0 // TODO(andrew)
     apply_opt_pass<strided_slice_optimize>();
 
     apply_opt_pass<handle_reshape>();

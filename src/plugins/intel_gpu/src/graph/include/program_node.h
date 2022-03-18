@@ -237,12 +237,12 @@ public:
     bool is_marked() const { return user_mark != 0; }
     bool is_marked(uint8_t val) const { return user_mark == val; }
     uint8_t get_user_mark() const { return user_mark; }
-#if 0 // TODO(taylor)
+
     void add_fused_activation(activation_func activation_func,
                               activation_additional_params additional_params) {
         fused_activations.emplace_back(activation_func, additional_params);
     }
-#endif
+
     std::vector<activation_func> get_fused_activations_funcs() const {
         std::vector<activation_func> funcs;
         std::transform(fused_activations.begin(),
