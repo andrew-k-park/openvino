@@ -188,7 +188,7 @@ private:
     void run(program& p) override;
     void conv_eltwise_read_write_opt(program& p, program_node* node);
 };
-
+#endif
 class prepare_primitive_fusing : public base_pass {
 public:
     explicit prepare_primitive_fusing(layout_optimizer& lo_ref) :
@@ -205,7 +205,7 @@ private:
     void remove_redundant_reshape(program &p);
     layout_optimizer& _lo;
 };
-#endif
+
 class pre_replace_deconv : public base_pass {
 public:
     explicit pre_replace_deconv(layout_optimizer& lo_ref) :

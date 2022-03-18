@@ -301,20 +301,18 @@ bool program_node::recalc_output_layouts(bool invalidate_users_if_changed) {
     auto new_layouts = calc_output_layouts();
     return set_output_layouts(new_layouts, invalidate_users_if_changed);
 }
-#if 0 // TODO(taylor)
+
 bool program_node::has_padded_dependency() {
-    return std::any_of(get_dependencies().begin(), get_dependencies().end(), [](program_node* node) {
-        return node->is_padded();
+    return std::any_of(get_dependencies().begin(), get_dependencies().end(), [](const std::pair<program_node*, int>& dep) {
+        return dep.first->is_padded();
     });
 }
 
 bool program_node::has_padded_dependency() const {
-    return std::any_of(get_dependencies().begin(), get_dependencies().end(), [](const program_node* node) {
-        return node->is_padded();
+    return std::any_of(get_dependencies().begin(), get_dependencies().end(), [](const std::pair<program_node*, int>& dep) {
+        return dep.first->is_padded();
     });
 }
-
-#endif
 
 void program_node::invalidate_users() const {
     for (auto& user : users) {

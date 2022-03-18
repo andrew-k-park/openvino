@@ -70,10 +70,8 @@ struct fused_primitive_desc {
     std::vector<std::pair<primitive_id, size_t>> deps;
     std::map<primitive_id, size_t> fused_deps;
     size_t total_num_deps = 0;
-#if 0 // TODO(taylor)
     activation_func activation;
     activation_additional_params activation_params = { 0.f, 0.f };
-#endif
     layout input_layout = layout(data_types::f32, format::bfyx, tensor());
     layout output_layout = layout(data_types::f32, format::bfyx, tensor());
 };
@@ -251,7 +249,7 @@ public:
                        [](fused_activation_params const& p) { return p.func; });
         return funcs;
     }
-#if 0 // TODO(andrew)
+
     std::vector<activation_additional_params> get_fused_activations_params() const {
         std::vector<activation_additional_params> params;
         std::transform(fused_activations.begin(),
@@ -260,10 +258,10 @@ public:
                        [](fused_activation_params const& p) { return p.params; });
         return params;
     }
+#if 0 // TODO(andrew)
     void copy_fused_activation(const program_node& rhs) {
         fused_activations = rhs.fused_activations;
     }
-
 #endif
     // check/set if the node can be optimized out (removed from the network)
     bool can_be_optimized() const { return optimized; }
