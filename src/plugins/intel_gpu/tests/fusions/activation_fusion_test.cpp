@@ -104,12 +104,13 @@ TEST_P(activation_quantize_i8, basic) {
     create_topologies(
         input_layout("input", get_input_layout(p)),
         activation("act", input_info("input"), activation_func::relu),
-        data("in_low", get_mem(get_single_element_layout(p), min_random, 0)),
-        data("in_high", get_mem(get_single_element_layout(p), 1, max_random)),
-        data("out_low", get_mem(get_single_element_layout(p), -127, 0)),
-        data("out_high", get_mem(get_single_element_layout(p), 0, 127)),
-        quantize("quant", "act", "in_low", "in_high", "out_low", "out_high", 255, data_types::i8),
-        reorder("reorder_bfyx", "quant", p.default_format, data_types::f32)
+        data("in_low", {get_mem(get_single_element_layout(p), min_random, 0)}),
+        data("in_high", {get_mem(get_single_element_layout(p), 1, max_random)}),
+        data("out_low", {get_mem(get_single_element_layout(p), -127, 0)}),
+        data("out_high", {get_mem(get_single_element_layout(p), 0, 127)}),
+        quantize("quant", input_info("act"), input_info("in_low"), input_info("in_high"),
+                 input_info("out_low"), input_info("out_high"), 255, data_types::i8),
+        reorder("reorder_bfyx", input_info("quant"), p.default_format, data_types::f32)
     );
 
     tolerance = 1.0f;
@@ -120,13 +121,14 @@ TEST_P(activation_quantize_i8, per_channel) {
     auto p = GetParam();
     create_topologies(
         input_layout("input", get_input_layout(p)),
-        activation("act", "input", activation_func::relu),
-        data("in_low", get_mem(get_per_channel_layout(p), min_random, 0)),
-        data("in_high", get_mem(get_per_channel_layout(p), 1, max_random)),
-        data("out_low", get_mem(get_single_element_layout(p), -127, 0)),
-        data("out_high", get_mem(get_single_element_layout(p), 0, 127)),
-        quantize("quant", "act", "in_low", "in_high", "out_low", "out_high", 255, data_types::i8),
-        reorder("reorder_bfyx", "quant", p.default_format, data_types::f32)
+        activation("act", input_info("input"), activation_func::relu),
+        data("in_low", {get_mem(get_per_channel_layout(p), min_random, 0)}),
+        data("in_high", {get_mem(get_per_channel_layout(p), 1, max_random)}),
+        data("out_low", {get_mem(get_single_element_layout(p), -127, 0)}),
+        data("out_high", {get_mem(get_single_element_layout(p), 0, 127)}),
+        quantize("quant", input_info("act"), input_info("in_low"), input_info("in_high"),
+                 input_info("out_low"), input_info("out_high"), 255, data_types::i8),
+        reorder("reorder_bfyx", input_info("quant"), p.default_format, data_types::f32)
     );
 
     tolerance = 1.0f;
@@ -163,16 +165,17 @@ TEST_P(activation_scale_activation_quantize_u8, basic) {
     auto p = GetParam();
     create_topologies(
         input_layout("input", get_input_layout(p)),
-        activation("act", "input", activation_func::relu),
-        data("scale_data", get_mem(get_single_element_layout(p), 1.0f / 255)),
-        data("in_low", get_mem(get_single_element_layout(p), 0)),
-        data("in_high", get_mem(get_single_element_layout(p), 1, max_random)),
-        data("out_low", get_mem(get_single_element_layout(p), -127)),
-        data("out_high", get_mem(get_single_element_layout(p), 127)),
-        scale("scale", "act", "scale_data"),
-        activation("act2", "scale", activation_func::softsign),
-        quantize("quant", "act2", "in_low", "in_high", "out_low", "out_high", 256, data_types::u8),
-        reorder("reorder_bfyx", "quant", p.default_format, data_types::f32)
+        activation("act", input_info("input"), activation_func::relu),
+        data("scale_data", {get_mem(get_single_element_layout(p), 1.0f / 255)}),
+        data("in_low", {get_mem(get_single_element_layout(p), 0)}),
+        data("in_high", {get_mem(get_single_element_layout(p), 1, max_random)}),
+        data("out_low", {get_mem(get_single_element_layout(p), -127)}),
+        data("out_high", {get_mem(get_single_element_layout(p), 127)}),
+        scale("scale", input_info("act"), input_info("scale_data")),
+        activation("act2", input_info("scale"), activation_func::softsign),
+        quantize("quant", input_info("act2"), input_info("in_low"), input_info("in_high"),
+                 input_info("out_low"), input_info("out_high"), 256, data_types::u8),
+        reorder("reorder_bfyx", input_info("quant"), p.default_format, data_types::f32)
     );
 
     tolerance = 1.f;
@@ -183,16 +186,17 @@ TEST_P(activation_scale_activation_quantize_u8, per_channel) {
     auto p = GetParam();
     create_topologies(
         input_layout("input", get_input_layout(p)),
-        activation("act", "input", activation_func::relu),
-        data("scale_data", get_mem(get_single_element_layout(p), 1.0f / 255)),
-        data("in_low", get_mem(get_per_channel_layout(p), 0)),
-        data("in_high", get_mem(get_per_channel_layout(p), 1, max_random)),
-        data("out_low", get_mem(get_single_element_layout(p), -127)),
-        data("out_high", get_mem(get_single_element_layout(p), 127)),
-        scale("scale", "act", "scale_data"),
-        activation("act2", "scale", activation_func::softsign),
-        quantize("quant", "act2", "in_low", "in_high", "out_low", "out_high", 256, data_types::u8),
-        reorder("reorder_bfyx", "quant", p.default_format, data_types::f32)
+        activation("act", input_info("input"), activation_func::relu),
+        data("scale_data", {get_mem(get_single_element_layout(p), 1.0f / 255)}),
+        data("in_low", {get_mem(get_per_channel_layout(p), 0)}),
+        data("in_high", {get_mem(get_per_channel_layout(p), 1, max_random)}),
+        data("out_low", {get_mem(get_single_element_layout(p), -127)}),
+        data("out_high", {get_mem(get_single_element_layout(p), 127)}),
+        scale("scale", input_info("act"), input_info("scale_data")),
+        activation("act2", input_info("scale"), activation_func::softsign),
+        quantize("quant", input_info("act2"), input_info("in_low"), input_info("in_high"),
+                 input_info("out_low"), input_info("out_high"), 256, data_types::u8),
+        reorder("reorder_bfyx", input_info("quant"), p.default_format, data_types::f32)
     );
 
     tolerance = 1.f;
@@ -228,11 +232,11 @@ TEST_P(activation_scale_activation, basic) {
     auto p = GetParam();
     create_topologies(
         input_layout("input", get_input_layout(p)),
-        activation("act", "input", activation_func::relu),
-        data("scale_data", get_mem(get_single_element_layout(p), 1.0f / 255)),
-        scale("scale", "act", "scale_data"),
-        activation("act2", "scale", activation_func::exp),
-        reorder("reorder_bfyx", "act2", p.default_format, data_types::f32)
+        activation("act", input_info("input"), activation_func::relu),
+        data("scale_data", {get_mem(get_single_element_layout(p), 1.0f / 255)}),
+        scale("scale", input_info("act"), input_info("scale_data")),
+        activation("act2", input_info("scale"), activation_func::exp),
+        reorder("reorder_bfyx", input_info("act2"), p.default_format, data_types::f32)
     );
 
     tolerance = 1e-05f;

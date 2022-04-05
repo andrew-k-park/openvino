@@ -4,9 +4,8 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 #pragma once
-#if 0 // TODO(taylor)
+
 #include "intel_gpu/primitives/activation.hpp"
-#endif
 #include "intel_gpu/primitives/arg_max_min.hpp"
 #if 0 // TODO(taylor)
 #include "intel_gpu/primitives/average_unpooling.hpp"
@@ -45,18 +44,24 @@
 #if 0 // TODO(taylor)
 #include "intel_gpu/primitives/pooling.hpp"
 #include "intel_gpu/primitives/pyramid_roi_align.hpp"
+#endif
 #include "intel_gpu/primitives/quantize.hpp"
+#if 0 // TODO(andrew)
 #include "intel_gpu/primitives/random_uniform.hpp"
 #include "intel_gpu/primitives/range.hpp"
 #include "intel_gpu/primitives/reduce.hpp"
 #include "intel_gpu/primitives/region_yolo.hpp"
+#endif
 #include "intel_gpu/primitives/reorder.hpp"
+#if 0 // TODO(andrew)
 #include "intel_gpu/primitives/reorg_yolo.hpp"
 #include "intel_gpu/primitives/reshape.hpp"
 #include "intel_gpu/primitives/reverse_sequence.hpp"
 #include "intel_gpu/primitives/roi_align.hpp"
 #include "intel_gpu/primitives/roi_pooling.hpp"
+#endif
 #include "intel_gpu/primitives/scale.hpp"
+#if 0 // TODO(andrew)
 #include "intel_gpu/primitives/scatter_update.hpp"
 #include "intel_gpu/primitives/scatter_elements_update.hpp"
 #include "intel_gpu/primitives/scatter_nd_update.hpp"
@@ -77,6 +82,7 @@
 #include "generic_layer.hpp"
 #endif
 
+
 namespace cldnn {
 namespace ocl {
 void register_implementations();
@@ -88,9 +94,7 @@ namespace detail {
         attach_##prim##_impl();          \
     }
 
-#if 0 // TODO(taylor)
 REGISTER_OCL(activation);
-#endif
 REGISTER_OCL(arg_max_min);
 #if 0 // TODO(taylor)
 REGISTER_OCL(average_unpooling);
@@ -135,18 +139,24 @@ REGISTER_OCL(permute);
 #if 0 // TODO(taylor)
 REGISTER_OCL(pooling);
 REGISTER_OCL(pyramid_roi_align);
+#endif
 REGISTER_OCL(quantize);
+#if 0 // TODO(andrew)
 REGISTER_OCL(random_uniform);
 REGISTER_OCL(range);
 REGISTER_OCL(reduce);
 REGISTER_OCL(region_yolo);
+#endif
 REGISTER_OCL(reorder);
+#if 0 // TODO(andrew)
 REGISTER_OCL(reorg_yolo);
 REGISTER_OCL(reshape);
 REGISTER_OCL(reverse_sequence);
 REGISTER_OCL(roi_align);
 REGISTER_OCL(roi_pooling);
+#endif
 REGISTER_OCL(scale);
+#if 0 // TODO(andrew)
 REGISTER_OCL(scatter_update);
 REGISTER_OCL(scatter_elements_update);
 REGISTER_OCL(scatter_nd_update);
