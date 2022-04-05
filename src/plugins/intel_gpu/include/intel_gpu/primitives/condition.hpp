@@ -41,7 +41,7 @@ struct condition : public primitive_base<condition> {
     /// @param offset             Offset for compare data.
     /// @param output_padding     Optional padding for output from primitive.
     condition(const primitive_id& id,
-              const primitive_id& input,
+              const input_info& input,
               const topology& topology_true,
               const topology& topology_false,
               const primitive_id& compare_data,
@@ -49,7 +49,7 @@ struct condition : public primitive_base<condition> {
               const tensor& offset = {0, 0, 0, 0, 0},
               const primitive_id& ext_prim_id = "",
               const padding& output_padding = padding())
-        : primitive_base(id, {input}, ext_prim_id, output_padding),
+        : primitive_base(id, {input}, ext_prim_id, {output_padding}),
           topology_true(topology_true),
           topology_false(topology_false),
           compare_data(compare_data),
@@ -68,7 +68,7 @@ struct condition : public primitive_base<condition> {
     tensor offset;
 
 protected:
-    std::vector<std::reference_wrapper<const primitive_id>> get_dependencies() const override { return {compare_data}; }
+    std::vector<std::pair<std::reference_wrapper<const primitive_id>, int>> get_dependencies() const override { return {{std::ref(compare_data), 0}}; }
 };
 }  // namespace cldnn
   /// @}

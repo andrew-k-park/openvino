@@ -37,14 +37,14 @@ private:
         program::ptr _program = nullptr;
 
         void add_or_change_input_layout(const program_node& node) {
-            auto layout = node.get_dependency(0).get_output_layout();
+            auto layout = node.get_dependency(0).first->get_output_layout();
             auto input_id = node.as<condition>().result_id();
             if (_topology.get_primitives().count(input_id) == 0) {
                 _topology.add_primitive(std::make_shared<input_layout>(input_id, layout));
                 for (auto& prim : _topology.get_primitives()) {
                     for (auto& inp : prim.second->input) {
-                        if (inp == node.id())
-                            inp = input_id;
+                        if (inp.pid == node.id())
+                            inp.pid = input_id;
                     }
                 }
             } else {
@@ -61,8 +61,8 @@ public:
           _branch_true(this->get_primitive()->topology_true),
           _branch_false(this->get_primitive()->topology_false) {}
 
-    program_node& input() const { return get_dependency(0); }
-    program_node& compare() const { return get_dependency(1); }
+    program_node& input() const { return *get_dependency(0).first; }
+    program_node& compare() const { return *get_dependency(1).first; }
     cond_functions func() const { return get_primitive()->function; }
     tensor offset() const { return get_primitive()->offset; }
     void set_branches() const {

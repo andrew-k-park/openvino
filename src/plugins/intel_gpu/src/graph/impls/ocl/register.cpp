@@ -12,9 +12,7 @@ namespace ocl {
     static detail::attach_##prim##_impl attach_##prim
 
 void register_implementations() {
-#if 0
     REGISTER_OCL(activation);
-#endif
     REGISTER_OCL(arg_max_min);
 #if 0
     REGISTER_OCL(average_unpooling);
@@ -55,18 +53,24 @@ void register_implementations() {
 #if 0
     REGISTER_OCL(pooling);
     REGISTER_OCL(pyramid_roi_align);
+#endif
     REGISTER_OCL(quantize);
+#if 0 // TODO(andrew)
     REGISTER_OCL(random_uniform);
     REGISTER_OCL(range);
     REGISTER_OCL(reduce);
     REGISTER_OCL(region_yolo);
+#endif
     REGISTER_OCL(reorder);
+#if 0 // TODO(andrew)
     REGISTER_OCL(reorg_yolo);
     REGISTER_OCL(reshape);
     REGISTER_OCL(reverse_sequence);
     REGISTER_OCL(roi_align);
     REGISTER_OCL(roi_pooling);
+#endif
     REGISTER_OCL(scale);
+#if 0 // TODO(andrew)
     REGISTER_OCL(scatter_update);
     REGISTER_OCL(scatter_nd_update);
     REGISTER_OCL(scatter_elements_update);
