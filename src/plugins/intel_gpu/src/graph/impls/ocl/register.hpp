@@ -15,8 +15,8 @@
 #include "intel_gpu/primitives/broadcast.hpp"
 #endif
 #include "intel_gpu/primitives/concatenation.hpp"
-#if 0 // TODO(taylor)
 #include "intel_gpu/primitives/convolution.hpp"
+#if 0 // TODO(taylor)
 #include "intel_gpu/primitives/crop.hpp"
 #include "intel_gpu/primitives/custom_gpu_primitive.hpp"
 #include "intel_gpu/primitives/deconvolution.hpp"
@@ -104,8 +104,8 @@ REGISTER_OCL(border);
 REGISTER_OCL(broadcast);
 #endif
 REGISTER_OCL(concatenation);
-#if 0 // TODO(taylor)
 REGISTER_OCL(convolution);
+#if 0 // TODO(taylor)
 REGISTER_OCL(crop);
 REGISTER_OCL(custom_gpu_primitive);
 #endif

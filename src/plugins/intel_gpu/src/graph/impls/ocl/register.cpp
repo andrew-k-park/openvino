@@ -21,8 +21,8 @@ void register_implementations() {
     REGISTER_OCL(broadcast);
 #endif
     REGISTER_OCL(concatenation);
-#if 0
     REGISTER_OCL(convolution);
+#if 0
     REGISTER_OCL(crop);
     REGISTER_OCL(custom_gpu_primitive);
     REGISTER_OCL(deconvolution);

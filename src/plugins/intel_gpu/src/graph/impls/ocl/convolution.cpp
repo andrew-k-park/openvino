@@ -109,9 +109,9 @@ public:
                                 (uint32_t)dilation.spatial[1],
                                 (uint32_t)dilation.spatial[2]};
 
-        if ((arg.get_dependency(0).get_output_layout().data_type == data_types::u8 ||
-             arg.get_dependency(0).get_output_layout().data_type == data_types::i8) &&
-            arg.get_dependency(1).get_output_layout().data_type == data_types::i8) {
+        if ((arg.get_dependency(0).first->get_output_layout().data_type == data_types::u8 ||
+             arg.get_dependency(0).first->get_output_layout().data_type == data_types::i8) &&
+            arg.get_dependency(1).first->get_output_layout().data_type == data_types::i8) {
             if (!primitive->weights_zero_points.empty() && !primitive->activations_zero_points.empty()) {
                 conv_params.quantization = kernel_selector::QuantizationType::ASYMMETRIC_DATA_AND_WEIGHTS;
             } else if (!primitive->weights_zero_points.empty()) {
