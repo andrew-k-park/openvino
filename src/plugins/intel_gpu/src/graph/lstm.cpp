@@ -15,11 +15,11 @@ primitive_type_id lstm::type_id() {
     return &instance;
 }
 
-layout lstm_inst::calc_output_layout(lstm_node const& node) {
+layout lstm_inst::calc_output_layout(lstm_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for lstm_node!");
-    auto input_layout = node.input().get_output_layout();
-    auto hidden_layout = node.inital_hidden().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
+    auto hidden_layout = impl_param.input_layouts.at((node.bias_term() ? 4 : 3));
 
     // input     = [ batch,  sequence,       direction,      input_size ]
     // weights   = [     1, direction, 4 * hidden_size,      input_size ]

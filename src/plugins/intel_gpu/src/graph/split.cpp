@@ -15,13 +15,13 @@ primitive_type_id split::type_id() {
     return &instance;
 }
 
-layout split_inst::calc_output_layout(split_node const& node) {
+layout split_inst::calc_output_layout(split_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for split_node!");
     auto output_ids = node.get_primitive()->output_ids;
     auto output_offsets = node.get_primitive()->output_offsets;
     auto param_num = output_ids.size();
-    auto input_sizes = node.get_dependency(0).get_non_padded_output_layout().get_tensor();
+    auto input_sizes = impl_param.get_non_padded_input_layout().get_tensor();
     tensor null_tensor { 0, 0, 0, 0 };
 
     // check if output_ids count equals output_offsets count
@@ -59,7 +59,7 @@ layout split_inst::calc_output_layout(split_node const& node) {
                                            "Invalid output_offsets: dims cannot be less than 0");
     }
 
-    return node.input().get_non_padded_output_layout();
+    return impl_param.get_non_padded_input_layout();
 }
 
 std::string split_inst::to_string(split_node const& node) {

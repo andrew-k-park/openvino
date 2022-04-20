@@ -18,13 +18,13 @@ primitive_type_id deconvolution::type_id() {
     return &instance;
 }
 
-layout deconvolution_inst::calc_output_layout(deconvolution_node const& node) {
+layout deconvolution_inst::calc_output_layout(deconvolution_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for deconvolution_node!");
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
-    auto weights_layout = node.weights(0).get_output_layout().convert_to_weights_layout(desc->grouped_weights_shape);
+    auto input_layout = impl_param.input_layouts.at(0);
+    auto weights_layout = impl_param.weights_layout.convert_to_weights_layout(desc->grouped_weights_shape);
 
     auto data_type = input_layout.data_type;
     if ((input_layout.data_type == data_types::i8 || input_layout.data_type == data_types::u8) && !node.has_fused_primitives()) {

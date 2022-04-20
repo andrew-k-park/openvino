@@ -355,9 +355,9 @@ void prior_box_node::calc_result() {
                                                                              *typed_desc());
 }
 
-layout prior_box_inst::calc_output_layout(prior_box_node const& node) {
+layout prior_box_inst::calc_output_layout(prior_box_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
 
     const int layer_width = input_layout.spatial(0);
     const int layer_height = input_layout.spatial(1);

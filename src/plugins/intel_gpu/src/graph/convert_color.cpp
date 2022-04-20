@@ -15,7 +15,7 @@ primitive_type_id convert_color::type_id() {
     return &instance;
 }
 
-layout convert_color_inst::calc_output_layout(convert_color_node const& node) {
+layout convert_color_inst::calc_output_layout(convert_color_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
     return desc->output_layout;
 }

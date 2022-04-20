@@ -17,10 +17,10 @@ primitive_type_id quantize::type_id() {
     return &instance;
 }
 
-layout quantize_inst::calc_output_layout(quantize_node const& node) {
+layout quantize_inst::calc_output_layout(quantize_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto output_format = input_layout.format;
     auto out_dt = input_layout.data_type;
     if (node.get_primitive()->output_data_type)

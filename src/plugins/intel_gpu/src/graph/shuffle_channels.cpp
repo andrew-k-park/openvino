@@ -15,10 +15,10 @@ primitive_type_id shuffle_channels::type_id() {
     return &instance;
 }
 
-layout shuffle_channels_inst::calc_output_layout(shuffle_channels_node const& node) {
+layout shuffle_channels_inst::calc_output_layout(shuffle_channels_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input(0).get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto input_format = input_layout.format;
 
     const int32_t number_of_dims = 4;

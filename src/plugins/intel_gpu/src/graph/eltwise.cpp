@@ -17,7 +17,7 @@ primitive_type_id eltwise::type_id() {
     return &instance;
 }
 
-layout eltwise_inst::calc_output_layout(eltwise_node const& node) {
+layout eltwise_inst::calc_output_layout(eltwise_node const& node, kernel_impl_params const& impl_param) {
     size_t primary_input_idx = 0;
     if (node.input(primary_input_idx).is_constant()) {
         for (size_t i = 1; i < node.get_dependencies().size(); i++) {
@@ -27,7 +27,7 @@ layout eltwise_inst::calc_output_layout(eltwise_node const& node) {
             }
         }
     }
-    auto input_node_layout = node.input(primary_input_idx).get_non_padded_output_layout();
+    auto input_node_layout = impl_param.get_non_padded_input_layout(primary_input_idx);
 
     auto output_type = node.get_primitive()->output_data_type ? *node.get_primitive()->output_data_type : input_node_layout.data_type;
 
@@ -39,7 +39,7 @@ layout eltwise_inst::calc_output_layout(eltwise_node const& node) {
                 if (i == primary_input_idx)
                     continue;
 
-                auto l = node.input(i).get_non_padded_output_layout();
+                auto l = impl_param.get_non_padded_input_layout(i);
                 size = tensor::max(size, l.get_tensor());
                 if (l.format == format::b_fs_zyx_fsv16)  // use optimized 5D
                     format = format::b_fs_zyx_fsv16;
@@ -50,7 +50,7 @@ layout eltwise_inst::calc_output_layout(eltwise_node const& node) {
         } else {
             ov::PartialShape out_pshape;
             for (size_t i = 0; i < node.inputs_count(); i++) {
-                auto l = node.input(i).get_non_padded_output_layout();
+                auto l = impl_param.get_non_padded_input_layout(i);
                 if (!ov::PartialShape::broadcast_merge_into(out_pshape, l.size, ov::op::AutoBroadcastSpec(ov::op::AutoBroadcastType::NUMPY))) {
                     IE_THROW() << "incorrect input shapes\n";
                 }

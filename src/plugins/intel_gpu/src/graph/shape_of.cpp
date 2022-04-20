@@ -15,7 +15,7 @@ primitive_type_id shape_of::type_id() {
     return &instance;
 }
 
-layout shape_of_inst::calc_output_layout(shape_of_node const& node) {
+layout shape_of_inst::calc_output_layout(shape_of_node const& node, kernel_impl_params const& impl_param) {
     auto prim = node.get_primitive();
 
     data_types dt = data_types::i32;

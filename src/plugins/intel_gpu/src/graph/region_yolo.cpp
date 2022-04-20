@@ -13,11 +13,11 @@ primitive_type_id region_yolo::type_id() {
     return &instance;
 }
 
-layout region_yolo_inst::calc_output_layout(region_yolo_node const& node) {
+layout region_yolo_inst::calc_output_layout(region_yolo_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for "
            "region_yolo_node!");
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto desc = node.get_primitive();
 
     if (desc->do_softmax) {

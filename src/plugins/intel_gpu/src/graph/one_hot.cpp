@@ -18,8 +18,8 @@ primitive_type_id one_hot::type_id() {
     return &instance;
 }
 
-layout one_hot_inst::calc_output_layout(one_hot_node const& node) {
-    auto input_layout = node.input().get_output_layout();
+layout one_hot_inst::calc_output_layout(one_hot_node const& node, kernel_impl_params const& impl_param) {
+    auto input_layout = impl_param.input_layouts.at(0);
     auto desc = node.get_primitive();
 
     auto dt = desc->output_data_type ? *desc->output_data_type : input_layout.data_type;

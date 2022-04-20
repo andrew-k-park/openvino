@@ -15,11 +15,11 @@ primitive_type_id gather_nd::type_id() {
     return &instance;
 }
 
-layout gather_nd_inst::calc_output_layout(gather_nd_node const& node) {
+layout gather_nd_inst::calc_output_layout(gather_nd_node const& node, kernel_impl_params const& impl_param) {
     auto op = node.get_primitive();
 
-    auto input_layout_origin = node.input(0).get_output_layout();
-    auto indices_layout_origin = node.input(1).get_output_layout();
+    auto input_layout_origin = impl_param.input_layouts.at(0);
+    auto indices_layout_origin = impl_param.input_layouts.at(1);
 
     auto input_layout = input_layout_origin.get_dims();
     auto indices_layout = indices_layout_origin.get_dims();
@@ -100,7 +100,7 @@ std::string gather_nd_inst::to_string(gather_nd_node const& node) {
     gather_nd_info.add("indices shape", node.input(1).get_output_layout().to_string());
     gather_nd_info.add("indices rank", desc->indices_rank);
     gather_nd_info.add("batch dims", desc->batch_dims);
-    gather_nd_info.add("output shape", calc_output_layout(node).to_string());
+    gather_nd_info.add("output shape", calc_output_layout(node, node.get_kernel_impl_params()).to_string());
 
     node_info->add("gather_nd info", gather_nd_info);
     node_info->dump(primitive_description);

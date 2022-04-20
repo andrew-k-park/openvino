@@ -15,13 +15,13 @@ primitive_type_id scatter_elements_update::type_id() {
     return &instance;
 }
 
-layout scatter_elements_update_inst::calc_output_layout(scatter_elements_update_node const& node) {
+layout scatter_elements_update_inst::calc_output_layout(scatter_elements_update_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
     const int32_t axis = desc->axis;
-    const size_t input_number_of_dims = node.input(0).get_output_layout().get_rank();
+    const size_t input_number_of_dims = impl_param.input_layouts.at(0).get_rank();
 
-    auto input_layout = node.input(0).get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
 
     auto output_shape = input_layout.size;
     auto input_format = input_layout.format;

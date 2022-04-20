@@ -15,10 +15,10 @@ primitive_type_id deformable_conv::type_id() {
     return &instance;
 }
 
-layout deformable_conv_inst::calc_output_layout(deformable_conv_node const& node) {
+layout deformable_conv_inst::calc_output_layout(deformable_conv_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
 
     auto input_type = input_layout.data_type;
     auto output_type = node.get_primitive()->output_data_type ? *node.get_primitive()->output_data_type : input_type;
@@ -61,10 +61,10 @@ primitive_type_id deformable_interp::type_id() {
     return &instance;
 }
 
-layout deformable_interp_inst::calc_output_layout(deformable_interp_node const& node) {
+layout deformable_interp_inst::calc_output_layout(deformable_interp_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
 
     auto kernel_size = desc->kernel_size;
     auto input_type = input_layout.data_type;

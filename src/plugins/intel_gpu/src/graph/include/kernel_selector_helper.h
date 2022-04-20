@@ -152,6 +152,12 @@ struct kernel_impl_params {
                          activations_zero_points_term(_activations_zero_points_term), activations_zero_points_layout(_activations_zero_points_layout),
                          compensation_term(_compensation_term), compensation_layout(_compensation_layout) {}
 
+    layout get_non_padded_input_layout(size_t idx = 0) const {
+        auto input_layout = input_layouts.at(idx);
+        auto result = layout({input_layout.data_type, input_layout.format, input_layout.size});
+        return result;
+    }
+
     template <class PType>
     std::shared_ptr<const PType> typed_desc() const { return std::static_pointer_cast<const PType>(desc); }
 };

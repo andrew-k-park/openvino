@@ -15,11 +15,11 @@ primitive_type_id select::type_id() {
     return &instance;
 }
 
-layout select_inst::calc_output_layout(select_node const& node) {
+layout select_inst::calc_output_layout(select_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for select_node!");
 
-    auto output_layout = node.input(1).get_non_padded_output_layout();
+    auto output_layout = impl_param.get_non_padded_input_layout(1);
 
     if (node.get_primitive()->broadcast_type == "numpy") {
         auto max_tensor = tensor::max(node.input(1).get_output_layout().get_tensor(), node.input(2).get_output_layout().get_tensor());

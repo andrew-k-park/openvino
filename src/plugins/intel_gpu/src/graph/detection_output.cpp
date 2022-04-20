@@ -14,7 +14,7 @@ primitive_type_id detection_output::type_id() {
     return &instance;
 }
 
-layout detection_output_inst::calc_output_layout(detection_output_node const& node) {
+layout detection_output_inst::calc_output_layout(detection_output_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for "
            "detection_output_node!");
@@ -25,7 +25,7 @@ layout detection_output_inst::calc_output_layout(detection_output_node const& no
                           static_cast<size_t>(3),
                           "");
 
-    auto input_layout = node.location().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
 
     // Batch size and feature size are 1.
     // Number of bounding boxes to be kept is set to keep_top_k*batch size.

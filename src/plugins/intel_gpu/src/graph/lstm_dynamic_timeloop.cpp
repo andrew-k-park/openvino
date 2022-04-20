@@ -82,13 +82,13 @@ size_t lstm_dynamic_timeloop_node::get_dependency_idx(std::string val) const {
 // recurr_tensor:  [b: 1, f: direction, x: hidden_size, y: 4 * hidden_size]
 // init_cell:      [b: batch, f: 1, x: hidden_size, y: direction]
 // output_tensor:  [b: batch, f: max_sequence_length, x: hidden_size, y: direction]
-layout lstm_dynamic_timeloop_inst::calc_output_layout(lstm_dynamic_timeloop_node const& node) {
+layout lstm_dynamic_timeloop_inst::calc_output_layout(lstm_dynamic_timeloop_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for lstm_dynamic_node!");
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto batch = input_layout.batch();
     auto output_sequence = input_layout.feature();
-    auto reccurent_layout = node.recurrent().get_output_layout();
+    auto reccurent_layout = impl_param.input_layouts.at(node.get_dependency_idx("recurrent"));
     auto hidden_size = reccurent_layout.spatial(0);
     auto direction = reccurent_layout.feature();
     return layout(input_layout.data_type, input_layout.format, tensor(batch, output_sequence, hidden_size, direction));

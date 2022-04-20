@@ -14,10 +14,10 @@ primitive_type_id scale::type_id() {
     return &instance;
 }
 
-layout scale_inst::calc_output_layout(scale_node const& node) {
+layout scale_inst::calc_output_layout(scale_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
-    auto result = node.input().get_non_padded_output_layout();
-    auto scale_layout = node.scale_in().get_non_padded_output_layout();
+    auto result = impl_param.get_non_padded_input_layout(0);
+    auto scale_layout = impl_param.get_non_padded_input_layout(1);
 
     auto scale_x_size = scale_layout.spatial(0);
     auto scale_y_size = scale_layout.spatial(1);
@@ -28,9 +28,8 @@ layout scale_inst::calc_output_layout(scale_node const& node) {
     auto input_z_size = result.spatial(2);
 
     if ((result.data_type == data_types::u8 || result.data_type == data_types::i8 || result.data_type == data_types::i32) &&
-        (node.scale_in().get_non_padded_output_layout().data_type == data_types::f32 ||
-         node.scale_in().get_non_padded_output_layout().data_type == data_types::f16))
-        result.data_type = node.scale_in().get_non_padded_output_layout().data_type;
+        (scale_layout.data_type == data_types::f32 || scale_layout.data_type == data_types::f16))
+        result.data_type = scale_layout.data_type;
 
     if (desc->output_data_type)
         result.data_type = *desc->output_data_type;

@@ -13,8 +13,8 @@ primitive_type_id mvn::type_id() {
     return &instance;
 }
 
-layout mvn_inst::calc_output_layout(mvn_node const& node) {
-    auto input_node_layout = node.input().get_non_padded_output_layout();
+layout mvn_inst::calc_output_layout(mvn_node const& node, kernel_impl_params const& impl_param) {
+    auto input_node_layout = impl_param.get_non_padded_input_layout();
     auto output_type = node.get_primitive()->output_data_type ? *node.get_primitive()->output_data_type : input_node_layout.data_type;
 
     if (node.has_fused_primitives()) {

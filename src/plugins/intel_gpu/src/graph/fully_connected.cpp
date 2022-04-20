@@ -91,11 +91,11 @@ format::type get_preferred_format(const fully_connected_node& node) {
 
 }  // namespace
 
-layout fully_connected_inst::calc_output_layout(fully_connected_node const& node) {
+layout fully_connected_inst::calc_output_layout(fully_connected_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
-    auto weights_layout = node.weights().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
+    auto weights_layout = impl_param.weights_layout;
     auto output_type = input_layout.data_type;
     if ((output_type == data_types::u8 || output_type == data_types::i8) && desc->output_data_type)
         output_type = *desc->output_data_type;

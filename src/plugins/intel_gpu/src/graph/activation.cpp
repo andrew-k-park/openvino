@@ -15,11 +15,11 @@ primitive_type_id activation::type_id() {
     return &instance;
 }
 
-layout activation_inst::calc_output_layout(activation_node const& node) {
+layout activation_inst::calc_output_layout(activation_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for activation_node!");
 
-    auto input_node_layout = node.input().get_non_padded_output_layout();
+    auto input_node_layout = impl_param.get_non_padded_input_layout();
     auto func = node.get_primitive()->activation_function;
 
     std::vector<activation_func> activations_int8 = {

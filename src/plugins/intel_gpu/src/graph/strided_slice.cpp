@@ -19,9 +19,9 @@ primitive_type_id strided_slice::type_id() {
     return &instance;
 }
 
-layout strided_slice_inst::calc_output_layout(strided_slice_node const& node) {
+layout strided_slice_inst::calc_output_layout(strided_slice_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
-    auto input_layout = node.input(0).get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto output_format = format::get_default_format(desc->out_size.size());
 
     if (!node.const_mem.empty()) {

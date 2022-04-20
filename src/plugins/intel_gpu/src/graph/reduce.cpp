@@ -17,10 +17,10 @@ primitive_type_id reduce::type_id() {
     return &instance;
 }
 
-layout reduce_inst::calc_output_layout(reduce_node const& node) {
+layout reduce_inst::calc_output_layout(reduce_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input(0).get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto input_format = input_layout.format;
     auto format_dim = input_format.dimension();
     auto output_type = input_layout.data_type;

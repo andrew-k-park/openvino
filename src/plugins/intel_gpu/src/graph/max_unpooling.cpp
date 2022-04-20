@@ -21,13 +21,13 @@ max_unpooling_node::typed_program_node(const std::shared_ptr<max_unpooling> prim
     can_share_buffer(false);  // for max_unpooling initial zero values are significant
 }
 
-layout max_unpooling_inst::calc_output_layout(max_unpooling_node const& node) {
+layout max_unpooling_inst::calc_output_layout(max_unpooling_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for max_unpooling_node!");
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
-    auto argmax_layout = node.argmax().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
+    auto argmax_layout = impl_param.input_layouts.at(1);
 
     CLDNN_ERROR_NOT_EQUAL(node.id(),
                           "Argmax data type",

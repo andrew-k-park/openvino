@@ -15,11 +15,11 @@ primitive_type_id crop::type_id() {
     return &instance;
 }
 
-layout crop_inst::calc_output_layout(crop_node const& node) {
+layout crop_inst::calc_output_layout(crop_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for crop_node!");
     const auto& ref_in_sizes = node.get_primitive()->reference_input;
-    const auto in_layout = node.input().get_output_layout();
+    const auto in_layout = impl_param.input_layouts.at(0);
     const auto& in_sizes = in_layout.get_tensor();
     const auto& offsets = node.get_primitive()->offsets;
 

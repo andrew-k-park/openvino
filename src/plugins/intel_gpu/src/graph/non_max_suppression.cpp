@@ -14,7 +14,7 @@ primitive_type_id non_max_suppression::type_id() {
     return &instance;
 }
 
-layout non_max_suppression_inst::calc_output_layout(non_max_suppression_node const& node) {
+layout non_max_suppression_inst::calc_output_layout(non_max_suppression_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
     auto output_type = desc->output_data_type ? *desc->output_data_type : data_types::i32;

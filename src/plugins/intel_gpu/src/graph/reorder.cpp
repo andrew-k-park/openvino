@@ -18,8 +18,8 @@ primitive_type_id reorder::type_id() {
     return &instance;
 }
 
-layout reorder_inst::calc_output_layout(reorder_node const& node) {
-    auto input_layout = node.input().get_output_layout();
+layout reorder_inst::calc_output_layout(reorder_node const& node, kernel_impl_params const& impl_param) {
+    auto input_layout = impl_param.input_layouts.at(0);
     auto ifmt = input_layout.format;
 
     auto odt = *node.get_primitive()->output_data_type;

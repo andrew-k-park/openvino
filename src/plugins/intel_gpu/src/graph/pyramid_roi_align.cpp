@@ -15,15 +15,15 @@ primitive_type_id pyramid_roi_align::type_id() {
     return &instance;
 }
 
-layout pyramid_roi_align_inst::calc_output_layout(pyramid_roi_align_node const& node) {
+layout pyramid_roi_align_inst::calc_output_layout(pyramid_roi_align_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for "
            "pyramid_roi_align node!");
 
     auto desc = node.get_primitive();
 
-    auto boxes_layout = node.input().get_output_layout();
-    auto P2_layout = node.P2().get_output_layout();
+    auto boxes_layout = impl_param.input_layouts.at(0);
+    auto P2_layout = impl_param.input_layouts.at(1);
 
     int32_t output_b = boxes_layout.batch();
     int32_t output_f = P2_layout.feature();

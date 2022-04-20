@@ -19,11 +19,11 @@ primitive_type_id gemm::type_id() {
     return &instance;
 }
 
-layout gemm_inst::calc_output_layout(gemm_node const& node) {
+layout gemm_inst::calc_output_layout(gemm_node const& node, kernel_impl_params const& impl_param) {
     auto prim = node.get_primitive();
 
-    auto input0_layout = node.input(0).get_output_layout();
-    auto input1_layout = node.input(1).get_output_layout();
+    auto input0_layout = impl_param.input_layouts.at(0);
+    auto input1_layout = impl_param.input_layouts.at(1);
 
     ov::op::v0::MatMul op;
     op.set_transpose_a(prim->transpose_input0);
@@ -31,8 +31,8 @@ layout gemm_inst::calc_output_layout(gemm_node const& node) {
 
     std::vector<ov::PartialShape> output_shapes = {ov::PartialShape()};
     std::vector<ov::PartialShape> input_shapes = {
-        node.get_dependency(0).get_output_layout().size,
-        node.get_dependency(1).get_output_layout().size,
+        impl_param.input_layouts.at(0).size,
+        impl_param.input_layouts.at(1).size,
     };
 
     shape_infer(&op, input_shapes, output_shapes);

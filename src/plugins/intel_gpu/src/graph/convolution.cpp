@@ -19,11 +19,11 @@ primitive_type_id convolution::type_id() {
     return &instance;
 }
 
-layout convolution_inst::calc_output_layout(convolution_node const& node) {
+layout convolution_inst::calc_output_layout(convolution_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
-    auto weights_layout = node.weights(0).get_output_layout().convert_to_weights_layout(desc->grouped_weights_shape);
+    auto input_layout = impl_param.input_layouts.at(0); node.input().get_output_layout();
+    auto weights_layout = impl_param.weights_layout.convert_to_weights_layout(desc->grouped_weights_shape);
 
     auto pad = desc->pad;
     auto stride = desc->stride;

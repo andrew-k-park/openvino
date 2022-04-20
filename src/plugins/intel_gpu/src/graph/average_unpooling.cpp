@@ -15,13 +15,13 @@ primitive_type_id average_unpooling::type_id() {
     return &instance;
 }
 
-layout average_unpooling_inst::calc_output_layout(average_unpooling_node const& node) {
+layout average_unpooling_inst::calc_output_layout(average_unpooling_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for "
            "average_unpooling_node!");
     auto desc = node.get_primitive();
 
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
 
     auto stride = desc->stride;
     auto window_size = desc->size;

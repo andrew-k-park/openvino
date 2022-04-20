@@ -19,10 +19,10 @@ primitive_type_id permute::type_id() {
     return &instance;
 }
 
-layout permute_inst::calc_output_layout(permute_node const& node) {
+layout permute_inst::calc_output_layout(permute_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for permute_node!");
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     auto permute_order = node.get_primitive()->permute_order;
     ov::PartialShape output_shape;
 

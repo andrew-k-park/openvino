@@ -16,9 +16,9 @@ primitive_type_id arg_max_min::type_id() {
     return &instance;
 }
 
-layout arg_max_min_inst::calc_output_layout(arg_max_min_node const& node) {
+layout arg_max_min_inst::calc_output_layout(arg_max_min_node const& node, kernel_impl_params const& impl_param) {
     auto desc = node.get_primitive();
-    auto input_layout = node.input().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
     bool values_first = desc->values_first;
     data_types output_data_type;
     data_types output_idx_type;

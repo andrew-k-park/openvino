@@ -28,7 +28,7 @@ class typed_primitive_inst<custom_gpu_primitive> : public typed_primitive_inst_b
     using parent = typed_primitive_inst_base<custom_gpu_primitive>;
 
 public:
-    static layout calc_output_layout(custom_gpu_primitive_node const& node) {
+    static layout calc_output_layout(custom_gpu_primitive_node const& node, kernel_impl_params const& impl_param) {
         assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
                "Output data type forcing is not supported for "
                "custom_gpu_primitive_node!");
@@ -37,7 +37,7 @@ public:
         // if the output layout format was set to any, it means the layer output format will be the same as the first
         // input
         if (output_layout.format == format::any) {
-            output_layout.format = node.get_dependency(0).get_output_layout().format;
+            output_layout.format = impl_param.input_layouts.at(0).format;
         }
         return output_layout;
     }

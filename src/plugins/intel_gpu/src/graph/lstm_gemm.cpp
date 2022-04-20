@@ -15,12 +15,11 @@ primitive_type_id lstm_gemm::type_id() {
     return &instance;
 }
 
-layout lstm_gemm_inst::calc_output_layout(lstm_gemm_node const& node) {
+layout lstm_gemm_inst::calc_output_layout(lstm_gemm_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for lstm_gemm_node!");
-    auto desc = node.get_primitive();
-    auto input_layout = node.input().get_output_layout();
-    auto weights_layout = node.weights().get_output_layout();
+    auto input_layout = impl_param.input_layouts.at(0);
+    auto weights_layout = impl_param.input_layouts.at(1);
 
     //   input{bfyx}     = [b: batch, f: sequence,   x: input_size,      y: 1]
     //   weights{bfyx}   = [b: 1,     f: direction,  x: 4 * hidden_size, y: input_size ]
