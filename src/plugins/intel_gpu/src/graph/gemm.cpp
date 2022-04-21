@@ -48,7 +48,6 @@ layout gemm_inst::calc_output_layout(gemm_node const& node) {
     auto output_format = input0_layout.format;
 
     return layout(output_type, output_format, output_shapes[0], prim->output_padding);
-
 }
 
 std::string gemm_inst::to_string(gemm_node const& node) {
