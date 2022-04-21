@@ -104,6 +104,8 @@ private:
     void allocate_inputs_dynamic();
     void allocate_outputs_dynamic();
 
+    InferenceEngine::Blob::Ptr reinterpret_device_blob(InferenceEngine::Blob::Ptr data, const InferenceEngine::TensorDesc& new_desc);
+
     std::map<cldnn::primitive_id, cldnn::network_output> internal_outputs;
     std::vector<std::map<cldnn::primitive_id, cldnn::network_output>> internal_outputs_dynamic;
 };
