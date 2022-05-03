@@ -646,9 +646,22 @@ kernel_selector::dev_type get_device_type(cldnn::device_type type) {
     }
 }
 
+inline cldnn::tensor tensor_from_dims(const std::vector<int32_t>& dims, int def = 1) {
+    switch (dims.size()) {
+    case 0: return cldnn::tensor(cldnn::batch(def), cldnn::feature(def), cldnn::spatial(def, def));
+    case 1: return cldnn::tensor(cldnn::batch(dims[0]), cldnn::feature(def), cldnn::spatial(def, def));
+    case 2: return cldnn::tensor(cldnn::batch(dims[0]), cldnn::feature(dims[1]), cldnn::spatial(def, def));
+    case 3: return cldnn::tensor(cldnn::batch(dims[0]), cldnn::feature(dims[1]), cldnn::spatial(def, dims[2]));
+    case 4: return cldnn::tensor(cldnn::batch(dims[0]), cldnn::feature(dims[1]), cldnn::spatial(dims[3], dims[2]));
+    case 5: return cldnn::tensor(cldnn::batch(dims[0]), cldnn::feature(dims[1]), cldnn::spatial(dims[4], dims[3], dims[2]));
+    case 6: return cldnn::tensor(cldnn::batch(dims[0]), cldnn::feature(dims[1]), cldnn::spatial(dims[5], dims[4], dims[3], dims[2]));
+    default: throw std::runtime_error("Invalid dimensions size(" + std::to_string(dims.size()) + ") for gpu tensor");
+    }
+}
+
 kernel_selector::data_tensor convert_data_tensor(const layout& l, uint32_t split, const tensor view_offset) {
     const auto& pad = l.data_padding;
-    const auto& vals = l.get_dims();
+    const auto& vals = tensor_from_dims(l.get_dims()).sizes(l.format);
     const auto& add_offsets = view_offset.sizes(l.format);
     const auto& lower_pad = pad.lower_size().sizes(l.format);
     const auto& upper_pad = pad.upper_size().sizes(l.format);

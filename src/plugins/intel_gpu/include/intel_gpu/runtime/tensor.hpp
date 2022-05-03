@@ -424,6 +424,14 @@ public:
         return sizes;
     }
 
+   /// @brief Returns a vector of tensors values, ordered batch, feature, spatial_x, spatial_y eqaul to @p size.
+    std::vector<value_type> sizes(size_t size) const {
+        std::vector<value_type> sizes(size, 0);
+        for (size_t i = 0; i < size; ++i)
+            sizes[i] = _sizes[i];
+        return sizes;
+    }
+
     /// @brief Returns a vector of tensors values, ordered batch, feature, spatial_x, spatial_y.
     std::vector<value_type> sizes() const {
         std::vector<value_type> sizes(sizeof(_sizes) / sizeof(_sizes[0]), 0);

@@ -21,9 +21,9 @@ static void CreateCommonConvertColorOp(Program& p, const std::shared_ptr<ngraph:
 
     auto outDatatype = DataTypeFromPrecision(op->get_input_element_type(0));
     auto outShape = tensor_from_dims(op->get_output_shape(0));
-    outShape = { outShape.sizes()[0], outShape.sizes()[2], outShape.sizes()[3], outShape.sizes()[1] };
-
-    auto out_layout = cldnn::layout(outDatatype, cldnn::format::byxf, outShape);
+    outShape = { outShape.sizes()[0], outShape.sizes()[2], outShape.sizes()[1], outShape.sizes()[3] };
+    auto outDims = outShape.sizes(op->get_output_shape(0).size());
+    auto out_layout = cldnn::layout(outDatatype, cldnn::format::byxf, ov::PartialShape(ov::Shape(outDims.begin(), outDims.end())));
 
     auto memory_type = cldnn::convert_color::memory_type::buffer;
     if (op->get_input_node_ptr(0)->output(0).get_rt_info().count(ov::preprocess::TensorInfoMemoryType::get_type_info_static())) {
