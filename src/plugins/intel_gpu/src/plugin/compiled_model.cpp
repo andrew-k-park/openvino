@@ -119,18 +119,22 @@ IInferRequestInternal::Ptr CompiledModel::CreateInferRequest() {
         }
     }
 
+    bool is_legacy = false;
     if (this->_plugin) {
         const auto& core = _plugin->GetCore();
         if (core && core->isNewAPI())
             internalRequest = CreateInferRequestImpl(_parameters, _results);
     }
-    if (!internalRequest)
+    if (!internalRequest) {
         internalRequest = CreateInferRequestImpl(_networkInputs, _networkOutputs);
+        is_legacy = true;
+    }
     internalRequest->setPointerToExecutableNetworkInternal(shared_from_this());
-    return std::make_shared<AsyncInferRequest>(std::static_pointer_cast<InferRequest>(internalRequest),
+    return std::make_shared<AsyncInferRequest>(internalRequest,
                                                m_taskExecutor,
                                                m_waitExecutor,
-                                               _callbackExecutor);
+                                               _callbackExecutor,
+                                               is_legacy);
 }
 
 std::shared_ptr<ngraph::Function> CompiledModel::GetExecGraphInfo() {
