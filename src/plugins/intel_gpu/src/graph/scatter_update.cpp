@@ -37,8 +37,8 @@ layout scatter_update_inst::calc_output_layout(scatter_update_node const& node) 
 
     const int32_t axis = desc->axis;
     const size_t indices_size = node.input(1).get_output_layout().count();
-    const size_t input_number_of_dims = node.input(0).get_output_layout().get_rank();
-    const size_t updates_number_of_dims = node.input(2).get_output_layout().get_rank();
+    const size_t input_number_of_dims = node.input(0).get_output_layout().get_tensor().sizes().size();
+    const size_t updates_number_of_dims = node.input(2).get_output_layout().get_tensor().sizes().size();
     const size_t nonempty_indices_dims = GetNonEmptyDimsNumber(node.input(1).get_output_layout());
 
     auto input_layout = node.input(0).get_output_layout();
