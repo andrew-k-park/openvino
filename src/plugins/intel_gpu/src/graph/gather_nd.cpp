@@ -72,7 +72,7 @@ layout gather_nd_inst::calc_output_layout(gather_nd_node const& node) {
         output_format = cldnn::format::bfwzyx;
     }
 
-    auto output_sizes_tensor = tensor(output_format, final_output_sizes);
+    auto output_sizes_tensor = tensor(tensor(final_output_sizes).sizes(output_format));
     auto padding = op->output_padding;
 
     if (node.has_fused_primitives()) {
