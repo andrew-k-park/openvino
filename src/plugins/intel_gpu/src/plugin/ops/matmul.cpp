@@ -190,71 +190,71 @@ static void CreateMatMulOp(Program& p, const std::shared_ptr<ngraph::op::v0::Mat
         return;
     }  while (false);
 
-    // auto output_pshape = op->get_output_partial_shape(0);
-    // auto output_rank = output_pshape.rank().get_length();
+    auto output_pshape = op->get_output_partial_shape(0);
+    auto output_rank = output_pshape.rank().get_length();
 
-    // // Preprocess inputs
-    // for (size_t i = 0; i < inputPrimitives.size(); ++i) {
-    //     auto input_pshape = op->get_input_partial_shape(i);
-    //     auto input_rank = input_pshape.rank().get_length();
+    // Preprocess inputs
+    for (size_t i = 0; i < inputPrimitives.size(); ++i) {
+        auto input_pshape = op->get_input_partial_shape(i);
+        auto input_rank = input_pshape.rank().get_length();
 
-    //     // Add reorder if changing number of dimensions requires changing format
-    //     auto target_format = cldnn::format::get_default_format(output_rank);
+        // Add reorder if changing number of dimensions requires changing format
+        auto target_format = cldnn::format::get_default_format(output_rank);
 
-    //     if (target_format.value != cldnn::format::get_default_format(input_rank).value) {
-    //         auto reorderName = layerName + "_cldnn_in" + std::to_string(i) + "_reorder";
-    //         auto targetDatatype = DataTypeFromPrecision(op->get_output_element_type(0));
-    //         auto reorderPrim = cldnn::reorder(reorderName,
-    //                                           inputPrimitives[i],
-    //                                           target_format,
-    //                                           targetDatatype,
-    //                                           std::vector<float>(),
-    //                                           cldnn::reorder_mean_mode::subtract,
-    //                                           op->get_friendly_name());
+        if (target_format.value != cldnn::format::get_default_format(input_rank).value) {
+            auto reorderName = layerName + "_cldnn_in" + std::to_string(i) + "_reorder";
+            auto targetDatatype = DataTypeFromPrecision(op->get_output_element_type(0));
+            auto reorderPrim = cldnn::reorder(reorderName,
+                                              inputPrimitives[i],
+                                              target_format,
+                                              targetDatatype,
+                                              std::vector<float>(),
+                                              cldnn::reorder_mean_mode::subtract,
+                                              op->get_friendly_name());
 
-    //         p.AddPrimitive(reorderPrim);
-    //         p.AddInnerPrimitiveToProfiler(reorderName, layerName, op);
+            p.AddPrimitive(reorderPrim);
+            p.AddInnerPrimitiveToProfiler(reorderName, layerName, op);
 
-    //         inputPrimitives[i] = reorderName;
-    //     }
+            inputPrimitives[i] = reorderName;
+        }
 
-    //     // Reshape input if they differ or gemm specific shape matches default one
-    //     if (input_rank != output_rank || input_rank < 4) {
-    //         auto reshapeName = layerName + "_cldnn_in" + std::to_string(i) + "_reshape";
+        // Reshape input if they differ or gemm specific shape matches default one
+        if (input_rank != output_rank || input_rank < 4) {
+            auto reshapeName = layerName + "_cldnn_in" + std::to_string(i) + "_reshape";
 
-    //         // Extend input dimensions by prepending ones
-    //         if (input_rank == 1) {
-    //             // One-dimensional tensors unsqueezing is applied for each input independently.
-    //             // The axes inserted in this step are not included in the output shape.
-    //             // * If rank of the **first** input is equal to 1, it is always unsqueezed to 2D tensor **row vector** (regardless of `transpose_a`)
-    //             // by adding axes with size 1 at ROW_INDEX_DIM, to the **left** of the shape. For example `[S]` will be reshaped to `[1, S]`.
-    //             // * If rank of the **second** input is equal to 1, it is always unsqueezed to 2D tensor **column vector** (regardless of `transpose_b`)
-    //             // by adding axes with size 1 at COL_INDEX_DIM, to the **right** of the shape. For example `[S]` will be reshaped to `[S, 1]`.
-    //             bool transpose = false;
-    //             if (i == 0) {
-    //                 transpose = op->get_transpose_a();
-    //                 input_pshape.insert(input_pshape.begin(), 1);
-    //             } else {
-    //                 transpose = op->get_transpose_b();
-    //                 input_pshape.insert(input_pshape.end(), 1);
-    //             }
-    //             // Specs says that shapes must be unsqueezed regardless of tranpose flag, but primitive implementation always respects transposes
-    //             // so we have to swap dimensions correspondingly to have consistent shapes.
-    //             if (transpose) {
-    //                 std::swap(input_pshape[0], input_pshape[1]);
-    //             }
-    //         }
-    //         if (input_rank < output_rank)
-    //             input_pshape.insert(input_pshape.begin(), output_rank - input_rank, 1ul);
+            // Extend input dimensions by prepending ones
+            if (input_rank == 1) {
+                // One-dimensional tensors unsqueezing is applied for each input independently.
+                // The axes inserted in this step are not included in the output shape.
+                // * If rank of the **first** input is equal to 1, it is always unsqueezed to 2D tensor **row vector** (regardless of `transpose_a`)
+                // by adding axes with size 1 at ROW_INDEX_DIM, to the **left** of the shape. For example `[S]` will be reshaped to `[1, S]`.
+                // * If rank of the **second** input is equal to 1, it is always unsqueezed to 2D tensor **column vector** (regardless of `transpose_b`)
+                // by adding axes with size 1 at COL_INDEX_DIM, to the **right** of the shape. For example `[S]` will be reshaped to `[S, 1]`.
+                bool transpose = false;
+                if (i == 0) {
+                    transpose = op->get_transpose_a();
+                    input_pshape.insert(input_pshape.begin(), 1);
+                } else {
+                    transpose = op->get_transpose_b();
+                    input_pshape.insert(input_pshape.end(), 1);
+                }
+                // Specs says that shapes must be unsqueezed regardless of tranpose flag, but primitive implementation always respects transposes
+                // so we have to swap dimensions correspondingly to have consistent shapes.
+                if (transpose) {
+                    std::swap(input_pshape[0], input_pshape[1]);
+                }
+            }
+            if (input_rank < output_rank)
+                input_pshape.insert(input_pshape.begin(), output_rank - input_rank, 1ul);
 
-    //         auto reshapePrim = cldnn::reshape(reshapeName, inputPrimitives[i], input_pshape, op->get_friendly_name());
+            auto reshapePrim = cldnn::reshape(reshapeName, inputPrimitives[i], input_pshape, op->get_friendly_name());
 
-    //         p.AddPrimitive(reshapePrim);
-    //         p.AddInnerPrimitiveToProfiler(reshapeName, layerName, op);
+            p.AddPrimitive(reshapePrim);
+            p.AddInnerPrimitiveToProfiler(reshapeName, layerName, op);
 
-    //         inputPrimitives[i] = reshapeName;
-    //     }
-    // }
+            inputPrimitives[i] = reshapeName;
+        }
+    }
 
     // Add actual gemm
     auto alpha = 1.0f;
@@ -276,15 +276,15 @@ static void CreateMatMulOp(Program& p, const std::shared_ptr<ngraph::op::v0::Mat
     auto lastLayerName = layerName;
 
     // Reshape output if gemm specific shape does not match default one
-    // if (output_rank < 4) {
-    //     auto outReshapeName = layerName + "_cldnn_out_reshape";
-    //     auto outReshapePrim = cldnn::reshape(outReshapeName, layerName, output_pshape, op->get_friendly_name());
+    if (output_rank < 4) {
+        auto outReshapeName = layerName + "_cldnn_out_reshape";
+        auto outReshapePrim = cldnn::reshape(outReshapeName, layerName, output_pshape, op->get_friendly_name());
 
-    //     p.AddPrimitive(outReshapePrim);
-    //     p.AddInnerPrimitiveToProfiler(outReshapeName, layerName, op);
+        p.AddPrimitive(outReshapePrim);
+        p.AddInnerPrimitiveToProfiler(outReshapeName, layerName, op);
 
-    //     lastLayerName = outReshapeName;
-    // }
+        lastLayerName = outReshapeName;
+    }
 
     p.AddPrimitiveToProfiler(op, lastLayerName);
 }
