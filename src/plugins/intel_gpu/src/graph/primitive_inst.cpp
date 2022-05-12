@@ -125,7 +125,7 @@ void primitive_inst::update_shape() {
         GPU_DEBUG_COUT << id() << " update shape: was: " << out_layout_str << " now: " << new_layout.to_string() << std::endl;
     }
 
-    if (out_layout != new_layout)
+    if (!_node.is_valid_output_layout() || _node.get_output_layout() != new_layout)
         set_shape_change();
 
     // TODO: Get rid of this const_cast
