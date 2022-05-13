@@ -247,6 +247,21 @@ static void CreateMatMulOp(Program& p, const std::shared_ptr<ngraph::op::v0::Mat
             if (input_rank < output_rank)
                 input_pshape.insert(input_pshape.begin(), output_rank - input_rank, 1ul);
 
+            auto gemmSpecificPartialShape =  [](ov::PartialShape& pshape) {
+                switch (pshape.rank().get_length()) {
+                    case 2: { // batch, feature representation (rank == 2)
+                        pshape.insert(pshape.begin(), 1ul);
+                        pshape.insert(pshape.begin(), 1ul);
+                        break;
+                    }
+                    case 3 : { // feature representation (rank == 3)
+                        pshape.insert(pshape.begin(), 1, 1ul);
+                        break;
+                    }
+                }
+            };
+            gemmSpecificPartialShape(input_pshape);
+
             auto reshapePrim = cldnn::reshape(reshapeName, inputPrimitives[i], input_pshape, op->get_friendly_name());
 
             p.AddPrimitive(reshapePrim);
