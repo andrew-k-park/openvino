@@ -124,6 +124,17 @@ static void CreateConstantOp(Program& p, const std::shared_ptr<ngraph::op::v0::C
 }
 
 void createClDnnConstant(Program& p, const ngraph::Shape& constDims, const std::shared_ptr<ngraph::op::v0::Constant>& op, const ConstProperties& props) {
+    auto constSpecificShape = [&](const ngraph::Shape& nshape) {
+        ngraph::Shape shape(nshape.begin(), nshape.end());
+        switch (shape.size()) {
+            case 1: { // feature representation when needsBatchInterpretation is false
+                if (!props.needsBatchInterpretation)
+                shape.insert(shape.begin(), 1);
+            }
+        }
+        return shape;
+    };
+    ngraph::Shape finalDims = constSpecificShape(constDims);
     auto constFormat = DefaultFormatForDims(constDims.size());
 
     // Swap O and I dimensions to match expected deconvolution weights format
@@ -147,11 +158,12 @@ void createClDnnConstant(Program& p, const ngraph::Shape& constDims, const std::
             outputFeatureElements = newDims[0];
             groups = 1;
         }
+        finalDims = constSpecificShape(newDims);;
     }
 
     cldnn::layout constLayout = cldnn::layout(DataTypeFromPrecision(op->get_output_element_type(0)),
                                               constFormat,
-                                              ov::PartialShape{newDims});
+                                              ov::PartialShape{finalDims});
 
     cldnn::primitive_id initialconstPrimID = layer_type_name_ID(op);
     cldnn::primitive_id constPrimID;
