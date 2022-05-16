@@ -61,7 +61,7 @@ broadcast_inst::typed_primitive_inst(network& network, broadcast_node const& nod
     std::vector<tensor::value_type> input_dims = input_layout.get_dims();
     size_t max_axes_num = input_layout.get_rank();
 
-    std::vector<tensor::value_type> reordered_input_dims(5, 0);
+    std::vector<tensor::value_type> reordered_input_dims(max_axes_num, 0);
     std::set<uint16_t> existing;
 
     const auto& broadcast_axes = node.get_primitive()->broadcast_axes;
@@ -109,18 +109,7 @@ broadcast_inst::typed_primitive_inst(network& network, broadcast_node const& nod
             ++input_index;
         }
     }
-    tensor input_sizes_to_compare;
-    if (format == format::bfzyx)
-        input_sizes_to_compare = {reordered_input_dims.at(0),
-                                  reordered_input_dims.at(1),
-                                  reordered_input_dims.at(4),
-                                  reordered_input_dims.at(3),
-                                  reordered_input_dims.at(2)};
-    else
-        input_sizes_to_compare = {reordered_input_dims.at(0),
-                                  reordered_input_dims.at(1),
-                                  reordered_input_dims.at(3),
-                                  reordered_input_dims.at(2)};
+    tensor input_sizes_to_compare = tensor(format::get_default_format(reordered_input_dims.size()), reordered_input_dims);
 
     CLDNN_ERROR_TENSOR_SIZES_NOT_DIVIDABLE(node.id(),
                                            "Broadcast sizes",
