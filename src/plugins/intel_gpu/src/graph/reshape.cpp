@@ -94,7 +94,7 @@ reshape_inst::typed_primitive_inst(network& network, reshape_node const& node) :
     // then create new memory object as the reinterpreted output of the previous primitive
     if (!node.can_be_optimized() && _node.get_output_layout().is_static())
         _output = allocate_output();
-    else if (_exec_deps.size() > 0 && input_memory_ptr())
+    else
         reuse_input();
 }
 
