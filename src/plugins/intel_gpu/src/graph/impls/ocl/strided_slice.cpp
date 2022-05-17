@@ -79,10 +79,10 @@ public:
         auto new_axis_mask_ = arg.get_primitive()->new_axis_mask;
         auto shrink_axis_mask_ = arg.get_primitive()->shrink_axis_mask;
 
-        std::vector<uint8_t> begin_mask(begin_mask_.end(), begin_mask_.end());
-        std::vector<uint8_t> end_mask(end_mask_.end(), end_mask_.end());
-        std::vector<uint8_t> new_axis_mask(new_axis_mask_.end(), new_axis_mask_.end());
-        std::vector<uint8_t> shrink_axis_mask(shrink_axis_mask_.end(), shrink_axis_mask_.end());
+        std::vector<uint8_t> begin_mask(begin_mask_.begin(), begin_mask_.end());
+        std::vector<uint8_t> end_mask(end_mask_.begin(), end_mask_.end());
+        std::vector<uint8_t> new_axis_mask(new_axis_mask_.begin(), new_axis_mask_.end());
+        std::vector<uint8_t> shrink_axis_mask(shrink_axis_mask_.begin(), shrink_axis_mask_.end());
         // Plugin requires inverted mask values. Consider changing primitive impl to be aligned with the spec.
         for (auto& b : begin_mask) {
             b = 1 - b;
