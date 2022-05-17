@@ -156,7 +156,7 @@ static void CreateParameterOp(Program& p, const std::shared_ptr<ngraph::op::v0::
         }
 
         if (networkInputLayout.format == cldnn::format::nv12 && networkInputLayout.batch() > 1) {
-            networkInputLayout.size = { 1, inputDims[3], inputDims[2], inputDims[1] };
+            networkInputLayout.size = { 1, inputDims[3], inputDims[1], inputDims[2] };
 
             std::vector<cldnn::primitive_id> inputs;
             for (size_t i = 0; i < inputDims[0].get_length(); ++i) {
@@ -168,7 +168,7 @@ static void CreateParameterOp(Program& p, const std::shared_ptr<ngraph::op::v0::
             }
         } else {
             networkInputLayout.size = { inputDims[0], inputDims[3],
-                                        inputDims[2], inputDims[1] };
+                                        inputDims[1], inputDims[2] };
 
             p.inputLayouts.insert({ inputInfo->name(), networkInputLayout });
             p.AddPrimitive(cldnn::input_layout(inputName, networkInputLayout, inputInfo->name()));
