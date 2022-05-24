@@ -202,9 +202,9 @@ void primitive_inst::update_impl() {
 void primitive_inst::check_memory_to_set(const memory& mem, const layout& layout) const {
     CLDNN_ERROR_LAYOUT_MISMATCH("network layout",
         "set memory layout",
-        mem.get_layout(),
+        mem.get_layout().get_layout_with_dims(),
         "expected layout",
-        layout,
+        layout.get_layout_with_dims(),
         "");
 
     // check shared image/buffer compatibility, if applicable
