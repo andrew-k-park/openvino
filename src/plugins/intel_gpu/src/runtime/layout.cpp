@@ -136,6 +136,18 @@ layout layout::convert_to_weights_layout(bool is_grouped) const {
     return layout{data_type, fmt, size};
 }
 
+layout layout::get_layout_with_dims() const {
+    if (is_dynamic())
+        throw std::runtime_error("[GPU] get_layout_with_dims() is called for dynamic shape");
+
+    if (size.size() < format.dimension()) {
+        auto dims = get_dims();
+        auto pshape = ov::PartialShape(ov::Shape(dims.begin(), dims.end()));
+        return layout{data_type, format, pshape, data_padding};
+    }
+    return layout{data_type, format, size, data_padding};
+}
+
 std::vector<tensor::value_type> layout::get_ordered_dims() const {
     throw std::runtime_error("get_ordered_dims is not implemented yet");
 }

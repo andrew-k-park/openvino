@@ -26,6 +26,9 @@ layout reshape_inst::calc_output_layout(reshape_node const& node) {
 
     if (input_layout.is_static()) {
         auto sizes = prim->output_shape;
+        if (sizes.size() < input_layout.format.dimension()) {
+            sizes.insert(sizes.end(), input_layout.format.dimension() - sizes.size(), 1);
+        }
         auto input_sizes = input_layout.get_dims();
         int64_t need_recalc = -1;
         ov::Dimension::value_type shape_count = 1;
