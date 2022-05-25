@@ -72,8 +72,18 @@ activation_inst::typed_primitive_inst(network& network, activation_node const& n
                           "Relu input/output rank mismatch");
 
     if (is_parameterized()) {
+        auto get_slope_layout = [&](const layout& l){
+            auto layout = l;
+            if (layout.size.size() == 1) { // feature representation when shape has a dimension = 1
+                auto pshape = layout.size;
+                pshape.insert(pshape.begin(), 1);
+                layout.size = pshape;
+                return layout;
+            }
+            return layout;
+        };
         /// Slope input x dimension should be equal to input feature size (one slope per channel).
-        auto slope_layout = node.slope_input().get_output_layout();
+        auto slope_layout = get_slope_layout(node.slope_input().get_output_layout());
 
         CLDNN_ERROR_LESS_THAN(node.id(),
                               "Slope x size",
