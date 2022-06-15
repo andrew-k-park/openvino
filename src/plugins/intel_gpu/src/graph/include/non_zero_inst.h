@@ -35,7 +35,7 @@ class typed_primitive_inst<count_nonzero> : public typed_primitive_inst_base<cou
     using parent = typed_primitive_inst_base<count_nonzero>;
 
 public:
-    static layout calc_output_layout(count_nonzero_node const& node);
+    static layout calc_output_layout(count_nonzero_node const& node, kernel_impl_params const& impl_param);
     static std::string to_string(count_nonzero_node const& node);
 
     typed_primitive_inst(network& network, count_nonzero_node const& node);
@@ -69,7 +69,7 @@ class typed_primitive_inst<gather_nonzero> : public typed_primitive_inst_base<ga
     using parent = typed_primitive_inst_base<gather_nonzero>;
 
 public:
-    static layout calc_output_layout(gather_nonzero_node const& node);
+    static layout calc_output_layout(gather_nonzero_node const& node, kernel_impl_params const& impl_param);
     static std::string to_string(gather_nonzero_node const& node);
 
     typed_primitive_inst(network& network, gather_nonzero_node const& node);

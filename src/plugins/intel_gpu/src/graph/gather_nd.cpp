@@ -100,7 +100,7 @@ std::string gather_nd_inst::to_string(gather_nd_node const& node) {
     gather_nd_info.add("indices shape", node.input(1).get_output_layout().to_string());
     gather_nd_info.add("indices rank", desc->indices_rank);
     gather_nd_info.add("batch dims", desc->batch_dims);
-    gather_nd_info.add("output shape", calc_output_layout(node, node.get_kernel_impl_params()).to_string());
+    gather_nd_info.add("output shape", calc_output_layout(node, *(node.get_kernel_impl_params())).to_string());
 
     node_info->add("gather_nd info", gather_nd_info);
     node_info->dump(primitive_description);

@@ -21,7 +21,7 @@ primitive_type_id count_nonzero::type_id() {
     return &instance;
 }
 
-layout count_nonzero_inst::calc_output_layout(count_nonzero_node const& node) {
+layout count_nonzero_inst::calc_output_layout(count_nonzero_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for count_nonzero_node!");
     return layout{cldnn::data_types::i32, cldnn::format::bfyx, tensor{1, 1, 1, 4}};
@@ -72,7 +72,7 @@ primitive_type_id gather_nonzero::type_id() {
     return &instance;
 }
 
-layout gather_nonzero_inst::calc_output_layout(gather_nonzero_node const& node) {
+layout gather_nonzero_inst::calc_output_layout(gather_nonzero_node const& node, kernel_impl_params const& impl_param) {
     assert(static_cast<bool>(node.get_primitive()->output_data_type) == false &&
            "Output data type forcing is not supported for gather_nonzero_node!");
     if (node.is_valid_output_layout()) {

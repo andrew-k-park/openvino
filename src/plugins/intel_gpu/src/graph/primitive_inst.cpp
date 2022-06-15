@@ -117,7 +117,7 @@ void primitive_inst::update_shape() {
     if (!_network.shape_changed())
         return;
 
-    auto new_layout = _node.type()->calc_output_layout(_node);
+    auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params()));
 
     auto out_layout = _node.is_valid_output_layout() ? _node.get_output_layout() : layout(data_types::f32, format::any, tensor{});
     auto out_layout_str = _node.is_valid_output_layout() ? out_layout.to_string() : "invalid";

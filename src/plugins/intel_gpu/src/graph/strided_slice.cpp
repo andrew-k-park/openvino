@@ -92,7 +92,7 @@ void strided_slice_inst::update_shape() {
     node.const_mem = {in_mem1, in_mem2, in_mem3};
 
     GPU_DEBUG_GET_INSTANCE(debug_config);
-    auto new_layout = _node.type()->calc_output_layout(_node);
+    auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params()));
     auto out_layout = _node.is_valid_output_layout() ? _node.get_output_layout() : layout(data_types::f32, format::any, tensor{});
     auto out_layout_str = _node.is_valid_output_layout() ? out_layout.to_string() : "invalid";
     GPU_DEBUG_IF(debug_config->verbose >= 4) {

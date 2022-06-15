@@ -47,8 +47,8 @@ std::string gather_elements_inst::to_string(gather_elements_node const& node) {
     gather_elements_info.add("input id", input.id());
     gather_elements_info.add("input shape", node.input(0).get_output_layout().to_string());
     gather_elements_info.add("indices shape", node.input(1).get_output_layout().to_string());
-    gather_elements_info.add("output format", calc_output_layout(node, node.get_kernel_impl_params()).format);
-    gather_elements_info.add("output shape", calc_output_layout(node, node.get_kernel_impl_params()).to_string());
+    gather_elements_info.add("output format", calc_output_layout(node, *(node.get_kernel_impl_params())).format);
+    gather_elements_info.add("output shape", calc_output_layout(node, *(node.get_kernel_impl_params())).to_string());
     gather_elements_info.add("axis", desc->axis);
 
     node_info->add("gather_elements info", gather_elements_info);
