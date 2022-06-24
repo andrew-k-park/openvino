@@ -123,6 +123,31 @@ public:
     void reset_shape_change() { _shape_changed = false; }
     void set_shape_change() { _shape_changed = true; }
 
+    void set_output_padding(padding const& padd) {
+        _output_layout.data_padding = padd;
+    }
+
+    void merge_output_padding(padding const& padd) {
+        set_output_padding(padding::max(padd, _output_layout.data_padding));
+    }
+
+    // layout get_output_layout(bool invalidate_users_if_changed = true);
+
+    layout get_output_layout() const;
+
+    bool set_output_layout(layout& new_layout, bool invalidate_users_if_changed = true);
+
+    void invalidate_users() const;
+    bool is_valid_output_layout() const { return _valid_output_layout; }
+
+    std::vector<layout> const get_input_layouts() const {
+        std::vector<layout> layouts;
+        for (const auto& in : _node.get_dependencies()) {
+            layouts.push_back(_network.get_primitive(in->id())->get_output_layout());
+        }
+        return layouts;
+    }
+
     void build_deps();
 
     memory::ptr fused_memory(size_t dep_id) const {
@@ -156,6 +181,8 @@ public:
     void allocate_internal_buffers();
     static memory::ptr allocate_output(engine& engine, memory_pool& pool,
                                         const program_node& _node, bool is_internal);
+    static memory::ptr allocate_output(engine& engine, network& network, memory_pool& pool,
+                                       const program_node& _node, const layout& layout, bool is_internal);
 
     std::vector<memory::cptr> get_intermediates_memories() const { return _intermediates_memory; }
 
@@ -188,6 +215,9 @@ protected:
     // buffer or attach input as output
     // depending on reshape_node.is_in_place())
     memory::ptr _output;
+
+    bool _valid_output_layout = false;
+    layout _output_layout = layout(data_types::f32, format::bfyx, tensor());
 
     std::vector<memory::cptr> _intermediates_memory;
 

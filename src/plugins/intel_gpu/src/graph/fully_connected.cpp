@@ -148,7 +148,8 @@ void fully_connected_inst::update_weights() {
         return;
 
     auto& weights_params = _impl->_weights_reorder_params;
-    layout current_layout = node.get_dependency(1).get_output_layout();
+    // layout current_layout = node.get_dependency(1).get_output_layout();
+    layout current_layout = _network.get_primitive(node.get_dependency(1).id())->get_output_layout();
 
     bool requires_reorder = weights_params.engine != kernel_selector::GenericKernelParams::Engine::NONE &&
                             (!reordered_weights || reordered_weights->get_layout() != from_weights_tensor(weights_params.dest));

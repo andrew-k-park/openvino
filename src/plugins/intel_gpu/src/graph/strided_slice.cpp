@@ -92,16 +92,20 @@ void strided_slice_inst::update_shape() {
     node.const_mem = {in_mem1, in_mem2, in_mem3};
 
     GPU_DEBUG_GET_INSTANCE(debug_config);
-    auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params()));
-    auto out_layout = _node.is_valid_output_layout() ? _node.get_output_layout() : layout(data_types::f32, format::any, tensor{});
-    auto out_layout_str = _node.is_valid_output_layout() ? out_layout.to_string() : "invalid";
+    auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params(get_input_layouts(), get_output_layout())));
+    // auto out_layout = _node.is_valid_output_layout() ? _node.get_output_layout() : layout(data_types::f32, format::any, tensor{});
+    // auto out_layout_str = _node.is_valid_output_layout() ? out_layout.to_string() : "invalid";
+    auto out_layout = is_valid_output_layout() ? get_output_layout() : layout(data_types::f32, format::any, tensor{});
+    auto out_layout_str = is_valid_output_layout() ? out_layout.to_string() : "invalid";
     GPU_DEBUG_IF(debug_config->verbose >= 4) {
         GPU_DEBUG_COUT << id() << " update shape: was: " << out_layout_str << " now: " << new_layout.to_string() << std::endl;
     }
-    if (!_node.is_valid_output_layout() || _node.get_output_layout() != new_layout)
+    // if (!_node.is_valid_output_layout() || _node.get_output_layout() != new_layout)
+    if (!is_valid_output_layout() || get_output_layout() != new_layout)
         set_shape_change();
     // TODO: Get rid of this const_cast
-    node.set_output_layout(new_layout);
+    // node.set_output_layout(new_layout);
+    set_output_layout(new_layout);
 }
 
 std::string strided_slice_inst::to_string(strided_slice_node const& node) {
