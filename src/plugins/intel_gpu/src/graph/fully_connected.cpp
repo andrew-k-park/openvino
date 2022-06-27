@@ -39,8 +39,8 @@ bool is_batch_after_spatial(const std::string order) {
     return false;
 }
 
-format::type get_preferred_format(const fully_connected_node& node) {
-    auto input_layout = node.input().get_output_layout();
+format::type get_preferred_format(const fully_connected_node& node, const kernel_impl_params& impl_param) {
+    auto input_layout = impl_param.input_layouts.at(0);
 
     if (input_layout.is_dynamic())
         return format::bfyx;
@@ -104,7 +104,7 @@ layout fully_connected_inst::calc_output_layout(fully_connected_node const& node
         output_type = node.get_fused_output_layout().data_type;
     }
 
-    format output_format = get_preferred_format(node);
+    format output_format = get_preferred_format(node, impl_param);
     auto batch = input_layout.size[0];
     auto feature = input_layout.size[1];
     auto output_size = ov::PartialShape{batch, weights_layout.batch()};
