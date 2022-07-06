@@ -16,11 +16,11 @@ JitConstants BroadcastKernelBase::GetJitConstants(const broadcast_params& params
 }
 
 BroadcastKernelBase::DispatchData BroadcastKernelBase::SetDefault(const broadcast_params& params) {
-    const auto& output = params.outputs[0];
+    const auto& output = params.output;
 
     DispatchData dispatchData;
     auto in_layout = params.inputs[0].GetLayout();
-    auto out_layout = params.outputs[0].GetLayout();
+    auto out_layout = params.output.GetLayout();
     std::vector<std::vector<Tensor::DataChannelName>> dims_by_gws = {{ Tensor::DataChannelName::X },
                                                                      { Tensor::DataChannelName::Y, Tensor::DataChannelName::Z, Tensor::DataChannelName::W },
                                                                      { Tensor::DataChannelName::FEATURE, Tensor::DataChannelName::BATCH }};

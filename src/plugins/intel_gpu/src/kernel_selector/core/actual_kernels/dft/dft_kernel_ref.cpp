@@ -13,7 +13,7 @@ namespace {
 CommonDispatchData SetDefault(const dft_params& params) {
     CommonDispatchData dispatch_data;
     const auto in_layout = params.inputs.front().GetLayout();
-    const auto& output = params.outputs.front();
+    const auto& output = params.output;
     const auto out_layout = output.GetLayout();
     std::vector<std::vector<Tensor::DataChannelName>> dims_by_gws;
 
@@ -137,8 +137,8 @@ bool DFTKernelRef::Validate(const Params& p, const optional_params& o) const {
 
 JitConstants DFTKernelRef::GetJitConstants(const dft_params& params) const {
     auto jit = MakeBaseParamsJitConstants(params);
-    const auto out_layout = params.outputs.front().GetLayout();
-    const auto out_sizes = params.outputs.front().LogicalDims();
+    const auto out_layout = params.output.GetLayout();
+    const auto out_sizes = params.output.LogicalDims();
     const auto in_sizes = params.inputs.front().LogicalDims();
 
     // We are skipping X, since it contains complex pairs and should not be in axes

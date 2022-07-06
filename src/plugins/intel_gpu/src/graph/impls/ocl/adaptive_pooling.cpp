@@ -30,7 +30,7 @@ protected:
             args.inputs.push_back(instance.input_memory_ptr(i));
         }
 
-        args.outputs = {instance.output_memory_ptr()};
+        args.output = instance.output_memory_ptr();
         return args;
     }
 

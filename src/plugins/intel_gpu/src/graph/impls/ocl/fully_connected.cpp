@@ -50,7 +50,7 @@ public:
         const auto primitive = arg.get_primitive();
 
         if (primitive->input_size != 3)
-            fc_params.outputs = { fc_params.outputs[0].FlattenFeatureAndSpatials() };
+            fc_params.output = fc_params.output.FlattenFeatureAndSpatials();
 
         bool is_quantized = true;
         for (auto& input : arg.get_dependencies())

@@ -13,7 +13,7 @@ namespace {
 CommonDispatchData SetDefault(const roll_params& kernel_params) {
     CommonDispatchData dispatch_data;
     const auto in_layout = kernel_params.inputs.front().GetLayout();
-    const auto& output = kernel_params.outputs.front();
+    const auto& output = kernel_params.output;
     const auto out_layout = output.GetLayout();
     std::vector<std::vector<Tensor::DataChannelName>> dims_by_gws;
 

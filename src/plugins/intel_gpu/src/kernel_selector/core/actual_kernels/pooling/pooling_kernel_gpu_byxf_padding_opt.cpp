@@ -28,7 +28,7 @@ ParamsKey PoolingKernelGPUByxfPaddingOpt::GetSupportedKey() const {
 }
 
 PoolingKernelBase::DispatchData PoolingKernelGPUByxfPaddingOpt::SetDefault(const pooling_params& params) const {
-    const auto& output = params.outputs[0];
+    const auto& output = params.output;
 
     DispatchData dispatchData = PoolingKernelBase::SetDefault(params);
 

@@ -506,8 +506,7 @@ ParamsKey base_params::GetParamsKey() const {
     bool bPitches = false;
     bool bOffests = false;
     bool bDifferentTypes = false;
-    // TODO : multiple output support
-    bool bFP16Used = (outputs[0].GetDType() == Datatype::F16);
+    bool bFP16Used = (output.GetDType() == Datatype::F16);
 
     for (const auto& i : inputs) {
         k.EnableInputDataType(i.GetDType());
@@ -516,18 +515,18 @@ ParamsKey base_params::GetParamsKey() const {
         bBatching |= (i.Batch().v > 1);
         bPitches |= (i.PitchesDifferFromLogicalDims());
         bOffests |= (i.GetFirstElementOffset() != 0);
-        bDifferentTypes |= (i.GetDType() != outputs[0].GetDType());
+        bDifferentTypes |= (i.GetDType() != output.GetDType());
         bFP16Used |= (i.GetDType() == Datatype::F16);
     }
 
-    k.EnableOutputDataType(outputs[0].GetDType());
-    k.EnableOutputLayout(outputs[0].GetLayout());
+    k.EnableOutputDataType(output.GetDType());
+    k.EnableOutputLayout(output.GetLayout());
 
     if (bBatching) {
         k.EnableBatching();
     }
 
-    if (bPitches || outputs[0].PitchesDifferFromLogicalDims()) {
+    if (bPitches || output.PitchesDifferFromLogicalDims()) {
         k.EnableTensorPitches();
     }
 
@@ -535,7 +534,7 @@ ParamsKey base_params::GetParamsKey() const {
         k.EnableDifferentTypes();
     }
 
-    if (bOffests || outputs[0].GetFirstElementOffset() != 0) {
+    if (bOffests || output.GetFirstElementOffset() != 0) {
         k.EnableTensorOffset();
     }
 
@@ -583,7 +582,7 @@ std::string base_params::to_string() const {
     for (auto input : inputs) {
         s << toString(input) << "_";
     }
-    s << toString(outputs[0]);
+    s << toString(output);
 
     return s.str();
 }
@@ -594,7 +593,7 @@ std::string base_params::to_cache_string_v2() const {
     for (auto input : inputs) {
         s << toString_v2(input) << ";";
     }
-    s << toString_v2(outputs[0]);
+    s << toString_v2(output);
 
     return s.str();
 }

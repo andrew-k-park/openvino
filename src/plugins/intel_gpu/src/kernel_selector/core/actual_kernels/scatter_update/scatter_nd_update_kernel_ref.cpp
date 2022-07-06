@@ -48,7 +48,7 @@ ScatterNDUpdateKernelRef::SetDefault(const scatter_nd_update_params& params, con
     DispatchData dispatchData;
 
     if (!is_second) {
-        const auto& scope = params.outputs[0];
+        const auto& scope = params.output;
         dispatchData.indicesLastDim = 1;
         dispatchData.gws = { scope.X().v * scope.Y().v, scope.Z().v * scope.W().v, scope.Feature().v * scope.Batch().v };
     } else {
@@ -78,8 +78,8 @@ JitConstants ScatterNDUpdateKernelRef::GetJitConstants(const scatter_nd_update_p
     JitConstants jit = MakeBaseParamsJitConstants(params);
 
     if (!params.fused_ops.empty()) {
-        FusedOpsConfiguration conf1 = { "_FIRST_KERNEL", GetDefaultOrder(params.outputs[0].GetDims().size()), "val", params.inputs[0].GetDType() };
-        FusedOpsConfiguration conf2 = { "_SECOND_KERNEL", GetDefaultOrder(params.outputs[0].GetDims().size()), "val", params.inputs[0].GetDType() };
+        FusedOpsConfiguration conf1 = { "_FIRST_KERNEL", GetDefaultOrder(params.output.GetDims().size()), "val", params.inputs[0].GetDType() };
+        FusedOpsConfiguration conf2 = { "_SECOND_KERNEL", GetDefaultOrder(params.output.GetDims().size()), "val", params.inputs[0].GetDType() };
         jit.Merge(MakeFusedOpsJitConstants(params, {conf1, conf2}));
     }
 

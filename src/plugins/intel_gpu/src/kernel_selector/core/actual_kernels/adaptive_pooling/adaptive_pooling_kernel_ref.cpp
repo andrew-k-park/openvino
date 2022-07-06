@@ -55,7 +55,7 @@ bool AdaptivePoolingRef::Validate(const Params& p, const optional_params& o) con
 namespace {
 AdaptivePoolingRef::DispatchData SetDefault(const adaptive_pooling_params& params) {
     AdaptivePoolingRef::DispatchData dispatch_data;
-    const auto& output = params.outputs[0];
+    const auto& output = params.output;
 
     dispatch_data.gws[0] = output.X().v;
     dispatch_data.gws[1] = output.Y().v * output.Z().v;

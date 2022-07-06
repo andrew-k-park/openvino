@@ -30,7 +30,7 @@ static size_t GetGatherChannelIndex(const gather_params& params) {
             break;
     }
 
-    return DataTensor::Channelndex(params.outputs[0].GetLayout(), name);
+    return DataTensor::Channelndex(params.output.GetLayout(), name);
 }
 
 ParamsKey GatherKernelRef::GetSupportedKey() const {
@@ -128,12 +128,12 @@ static inline std::vector<std::string> GetOrder(size_t size) {
 }
 
 static std::string GetDictionaryIndexOrder(const gather_params& params, size_t axis) {
-    auto idx_order = GetOrder(params.outputs[0].GetDims().size());
-    auto input_axis_index_macro = "INPUT_AXIS_INDEX";
+    std::vector<std::string> idx_order = GetOrder(params.output.GetDims().size());
+    const std::string input_axis_index_macro = "INPUT_AXIS_INDEX";
     auto zero_val = "0";
 
     size_t dictionary_dims_num = GetNonEmptyDimsNumber(params.inputs[0]);
-    size_t indices_dims_num = GetNonEmptyDimsNumber(params.outputs[0]) - dictionary_dims_num + 1;
+    size_t indices_dims_num = GetNonEmptyDimsNumber(params.output) - dictionary_dims_num + 1;
 
     // Shift indices of Gather dictionary input related to output dims
     for (size_t i = axis + 1; i < dictionary_dims_num; i++)
@@ -143,7 +143,7 @@ static std::string GetDictionaryIndexOrder(const gather_params& params, size_t a
         idx_order[i] = zero_val;
 
     // Fix size to inputs[0] dims size
-    for (size_t i = 0; i < params.outputs[0].GetDims().size() - params.inputs[0].GetDims().size(); i++)
+    for (size_t i = 0; i < params.output.GetDims().size() - params.inputs[0].GetDims().size(); i++)
         idx_order.pop_back();
 
     idx_order[axis] = input_axis_index_macro;
@@ -152,8 +152,9 @@ static std::string GetDictionaryIndexOrder(const gather_params& params, size_t a
 }
 
 static std::string GetIndicesIdxOrder(const gather_params& params, size_t axis, int64_t batch_dim) {
-    std::vector<std::string> idx_order = GetOrder(params.outputs[0].GetDims().size());
-    auto zero_val = "0";
+    std::vector<std::string> idx_order = GetOrder(params.output.GetDims().size());
+
+    const std::string zero_val = "0";
 
     size_t indices_dims_num = GetNonEmptyDimsNumber(params.inputs[1]);
 
@@ -165,7 +166,7 @@ static std::string GetIndicesIdxOrder(const gather_params& params, size_t axis, 
         idx_order[i] = zero_val;
 
     // Fix size to inputs[1] dims size
-    for (size_t i = 0; i < params.outputs[0].GetDims().size() - params.inputs[1].GetDims().size(); i++)
+    for (size_t i = 0; i < params.output.GetDims().size() - params.inputs[1].GetDims().size(); i++)
         idx_order.pop_back();
 
     return GetOrderString(idx_order);
@@ -173,12 +174,12 @@ static std::string GetIndicesIdxOrder(const gather_params& params, size_t axis, 
 
 CommonDispatchData GatherKernelRef::SetDefault(const gather_params& params, const optional_params&) const {
     CommonDispatchData dispatchData;
-    const auto& output = params.outputs[0];
+    const auto& output = params.output;
     auto in_layout = params.inputs[0].GetLayout();
-    auto out_layout = params.outputs[0].GetLayout();
+    auto out_layout = params.output.GetLayout();
     std::vector<std::vector<Tensor::DataChannelName>> dims_by_gws;
 
-    int rank = params.outputs[0].Dimentions();
+    int rank = params.output.Dimentions();
     if (rank == 4) {
         dispatchData.gws = {output.X().v, output.Y().v, output.Feature().v * output.Batch().v};
         dims_by_gws = {{Tensor::DataChannelName::X},

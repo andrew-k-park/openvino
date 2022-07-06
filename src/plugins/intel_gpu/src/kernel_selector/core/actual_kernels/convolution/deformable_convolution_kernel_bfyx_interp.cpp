@@ -36,7 +36,7 @@ ParamsKey DeformableConvolutionKernel_bfyx_interp::GetSupportedKey() const {
 CommonDispatchData DeformableConvolutionKernel_bfyx_interp::SetDefault(const convolution_params& params) const {
     CommonDispatchData dispatchData;
 
-    const auto& out = params.outputs[0];
+    const auto& out = params.output;
 
     auto x = out.X().v;
     auto y = out.Y().v;

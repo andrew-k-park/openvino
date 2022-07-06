@@ -44,7 +44,7 @@ SoftmaxKerneItemsClassOptimized::Parent::DispatchData SoftmaxKerneItemsClassOpti
 
     auto& input = params.inputs[0];
 
-    const auto global = GetSoftmaxDimGlobalSizes(params.dim, params.outputs[0]);
+    const auto global = GetSoftmaxDimGlobalSizes(params.dim, params.output);
 
     assert(global.size() == 3);
 

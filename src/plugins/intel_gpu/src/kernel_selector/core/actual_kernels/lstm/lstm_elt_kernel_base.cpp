@@ -73,7 +73,7 @@ KernelsData LSTMEltKernelBase::GetCommonKernelsData(const Params& params, const 
     auto newParams = orgParams;
     newParams.inputs.resize(1);
     newParams.inputs[0] = input;
-    auto out = newParams.outputs[0];
+    auto out = newParams.output;
 
     auto& kernel = kd.kernels[0];
     auto cldnnJit = GetJitConstants(newParams);

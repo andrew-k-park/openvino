@@ -486,8 +486,8 @@ bool CheckInputsOutputNoPitchSameDims(const base_params& params) {
                     return false;
             }
         }
-        // TODO : check for multiple outputs
-        no_pitch_same_dims = no_pitch_same_dims && (params.inputs[0] == params.outputs[0]);
+
+        no_pitch_same_dims = no_pitch_same_dims && (params.inputs[0] == params.output);
     }
 
     return no_pitch_same_dims;

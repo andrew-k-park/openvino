@@ -29,7 +29,7 @@ ParamsKey PoolingKernelGPUBfyxBlockOpt::GetSupportedKey() const {
 }
 
 PoolingKernelBase::DispatchData PoolingKernelGPUBfyxBlockOpt::SetDefault(const pooling_params& params) const {
-    const auto& output = params.outputs[0];
+    const auto& output = params.output;
 
     DispatchData dispatchData = PoolingKernelBase::SetDefault(params);
 

@@ -34,7 +34,7 @@ ParamsKey ReverseKernelRef::GetSupportedKey() const {
 CommonDispatchData ReverseKernelRef::SetDefault(const reverse_params& params, const optional_params&) const {
     CommonDispatchData dispatchData;
     auto in = params.inputs[0];
-    auto out_layout = params.outputs[0].GetLayout();
+    auto out_layout = params.output.GetLayout();
     std::vector<std::vector<Tensor::DataChannelName>> dims_by_gws = {
         {Tensor::DataChannelName::BATCH},
         {Tensor::DataChannelName::FEATURE},

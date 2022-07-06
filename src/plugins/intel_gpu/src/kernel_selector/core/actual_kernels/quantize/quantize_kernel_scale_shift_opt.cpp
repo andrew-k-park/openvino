@@ -34,7 +34,7 @@ ParamsKey QuantizeKernelScaleShift::GetSupportedKey() const {
 CommonDispatchData QuantizeKernelScaleShift::SetDefault(const quantize_params& params, const optional_params&) const {
     CommonDispatchData dispatchData;
 
-    auto output = params.outputs[0];
+    auto output = params.output;
 
     if (output.GetLayout() == DataLayout::b_fs_yx_fsv16 || output.GetLayout() == DataLayout::b_fs_zyx_fsv32) {
         dispatchData.gws[0] = output.Z().v *output.Y().v * output.X().v;
@@ -72,21 +72,21 @@ CommonDispatchData QuantizeKernelScaleShift::SetDefault(const quantize_params& p
 JitConstants QuantizeKernelScaleShift::GetJitConstants(const quantize_params& params, const CommonDispatchData& dispatchData) const {
     JitConstants jit = Parent::GetJitConstants(params, dispatchData);
 
-    if (params.outputs[0].GetLayout() == DataLayout::b_fs_yx_fsv16 || params.outputs[0].GetLayout() == DataLayout::bs_fs_yx_bsv32_fsv32 ||
-        params.outputs[0].GetLayout() == DataLayout::b_fs_zyx_fsv32 ||
-        params.outputs[0].GetLayout() == DataLayout::bs_fs_yx_bsv16_fsv16 || params.outputs[0].GetLayout() == DataLayout::bs_fs_yx_bsv32_fsv16) {
+    if (params.output.GetLayout() == DataLayout::b_fs_yx_fsv16 || params.output.GetLayout() == DataLayout::bs_fs_yx_bsv32_fsv32 ||
+        params.output.GetLayout() == DataLayout::b_fs_zyx_fsv32 ||
+        params.output.GetLayout() == DataLayout::bs_fs_yx_bsv16_fsv16 || params.output.GetLayout() == DataLayout::bs_fs_yx_bsv32_fsv16) {
         jit.AddConstant(MakeJitConstant("FEATURE_BLOCKED_FORMAT", true));
         jit.AddConstant(MakeJitConstant("GWS_BATCH", 2));
         jit.AddConstant(MakeJitConstant("GWS_FEATURE", 1));
         jit.AddConstant(MakeJitConstant("GWS_YX", 0));
         jit.AddConstant(MakeJitConstant("SUB_GROUP_SIZE", sub_group_size));
     } else {
-        auto tensor_jits = GetTensorFriendlyWorkGroupsJit(params.outputs[0]);
+        auto tensor_jits = GetTensorFriendlyWorkGroupsJit(params.output);
         jit.Merge(tensor_jits);
     }
 
     auto can_use_output_range = params.per_tensor_output_range && params.out_lo < params.out_hi;
-    auto has_output_range_round = !(params.outputs[0].GetDType() == Datatype::INT8 || params.outputs[0].GetDType() == Datatype::UINT8);
+    auto has_output_range_round = !(params.output.GetDType() == Datatype::INT8 || params.output.GetDType() == Datatype::UINT8);
 
     jit.AddConstant(MakeJitConstant("HAS_POST_SCALE", params.has_post_scale));
     jit.AddConstant(MakeJitConstant("HAS_POST_SHIFT", params.has_post_shift));

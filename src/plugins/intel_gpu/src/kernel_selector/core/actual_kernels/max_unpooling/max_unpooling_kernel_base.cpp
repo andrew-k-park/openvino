@@ -16,7 +16,7 @@ bool MaxUnpoolingKernelBase::Validate(const Params& p, const optional_params& o)
 
 JitConstants MaxUnpoolingKernelBase::GetJitConstants(const max_unpooling_params& params) const {
     JitConstants jit = MakeBaseParamsJitConstants(params);
-    if (params.outputs[0].PitchesDifferFromLogicalDims())
+    if (params.output.PitchesDifferFromLogicalDims())
         jit.AddConstant(MakeJitConstant("OUTPUT_PADDED", 1));
     return jit;
 }

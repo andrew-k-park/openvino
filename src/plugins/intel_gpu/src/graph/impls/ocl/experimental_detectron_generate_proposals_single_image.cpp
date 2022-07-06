@@ -29,7 +29,7 @@ protected:
             args.inputs.push_back(instance.input_memory_ptr(i));
         }
 
-        args.outputs.push_back(instance.output_memory_ptr());
+        args.output = instance.output_memory_ptr();
         //TODO: Future improvement: To add second output parameter only when it's needed
         args.inputs.push_back(instance.output_roi_scores_memory());
 
