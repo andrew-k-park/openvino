@@ -260,13 +260,52 @@ KernelList kernel_selector_base::GetAllImplementations(const Params& params, con
     std::multiset<PriorityPair, decltype(comparePriority)> sortedImpls(comparePriority);
     KernelList result;
 
+    const std::string specified_name = "matmul:MatMul_";
+
     if (params.GetType() == kType && options.GetType() == kType) {
+        // if (params.layerID == specified_name) {
+        if (params.layerID.find(specified_name) != std::string::npos) {
+            std::cout << "**************************************************" << std::endl;
+            std::cout << "Before params kernel params : " << params.layerID << " - " << typeid(params).name() << std::endl;
+            {
+                const kernel_selector::base_params& bp = static_cast<const kernel_selector::base_params&>(params);
+                std::cout << bp.GetParamsKey().to_string() << std::endl;
+            }
+            // std::cout << params.GetParamsKey().to_string() << std::endl;
+            std::cout << "**************************************************" << std::endl;
+
+            std::cout << "**************************************************" << std::endl;
+            std::cout << "Before options.GetSupportedKey() kernel params : " << params.layerID << std::endl;
+            std::cout << options.GetSupportedKey().to_string() << std::endl;
+            std::cout << "**************************************************" << std::endl;
+        }
         ParamsKey requireKey = params.GetParamsKey().Merge(options.GetSupportedKey());
+        // if (params.layerID == specified_name) {
+        if (params.layerID.find(specified_name) != std::string::npos) {
+            std::cout << "**************************************************" << std::endl;
+            std::cout << "After requireKey kernel params : " << params.layerID << std::endl;
+            std::cout << requireKey.to_string() << std::endl;
+            std::cout << "**************************************************" << std::endl;
+        }
         bool forceImplementation = !params.forceImplementation.empty();
         for (auto& impl : implementations) {
             const ParamsKey implKey = impl->GetSupportedKey();
-            if (!implKey.Support(requireKey))
-                continue;
+            // if (params.layerID == specified_name) {
+            if (params.layerID.find(specified_name) != std::string::npos) {
+                std::cout << "**************************************************" << std::endl;
+                std::cout << " Checking Key kernel params : " << impl->GetName() << std::endl;
+                std::cout << implKey.to_string() << std::endl;
+                std::cout << "**************************************************" << std::endl;
+                if (!implKey.Support_v2(requireKey)) {
+                    std::cout << "Fail to check !!" << std::endl;
+                    continue;
+                }
+            } else {
+                if (!implKey.Support(requireKey))
+                    continue;
+            }
+            // if (!implKey.Support(requireKey))
+            //     continue;
             if (forceImplementation && params.forceImplementation != impl->GetName())
                 continue;
             sortedImpls.emplace(impl->GetKernelsPriority(params, options), impl);
@@ -279,6 +318,16 @@ KernelList kernel_selector_base::GetAllImplementations(const Params& params, con
             [](const PriorityPair& impl) {
                 return std::move(impl.second);
             });
+    }
+
+    // if (params.layerID == specified_name) {
+    if (params.layerID.find(specified_name) != std::string::npos) {
+        std::cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << std::endl;
+        std::cout << "kernel candidates for " << params.layerID << " : " << std::endl;
+        for (auto& r : result) {
+            std::cout << " * " << r->GetName() << std::endl;
+        }
+        std::cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << std::endl;
     }
 
     return result;

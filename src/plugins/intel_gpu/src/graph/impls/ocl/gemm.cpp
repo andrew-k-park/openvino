@@ -28,6 +28,17 @@ public:
         auto gemm_optional_params =
             get_default_optional_params<kernel_selector::gemm_optional_params>(arg.get_program());
 
+        const std::string specified_name = "matmul:MatMul_";
+        if (gemm_params.layerID.find(specified_name) !=std::string::npos) {
+            std::cout <<  "GEMM creation : " << gemm_params.layerID << ", inputs_count = " << arg.inputs_count() << std::endl;
+            for (size_t i = 0; i < arg.inputs_count(); i++) {
+                std::cout << " - " << arg.input(i).id()
+                          << " layout: " << arg.input(i).get_output_layout().to_string()
+                          << ", lower_size: " << arg.input(i).get_output_layout().data_padding.lower_size().to_string()
+                          << ", upper_size: " << arg.input(i).get_output_layout().data_padding.upper_size().to_string()
+                          << ", data_type: " << data_type_traits::name(arg.input(i).get_output_layout().data_type) << std::endl;
+            }
+        }
         for (size_t i = 1; i < arg.inputs_count(); i++) {
             gemm_params.inputs.push_back(convert_data_tensor(arg.input(i).get_output_layout()));
         }
