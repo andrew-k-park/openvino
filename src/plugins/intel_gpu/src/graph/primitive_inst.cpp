@@ -119,8 +119,6 @@ void primitive_inst::update_shape() {
 
     auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params(get_input_layouts(), get_output_layout())));
 
-    // auto out_layout = _node.is_valid_output_layout() ? _node.get_output_layout() : layout(data_types::f32, format::any, tensor{});
-    // auto out_layout_str = _node.is_valid_output_layout() ? out_layout.to_string() : "invalid";
     auto out_layout = is_valid_output_layout() ? get_output_layout() : layout(data_types::f32, format::any, tensor{});
     auto out_layout_str = is_valid_output_layout() ? out_layout.to_string() : "invalid";
 
@@ -131,8 +129,6 @@ void primitive_inst::update_shape() {
     if (out_layout != new_layout)
         set_shape_change();
 
-    // TODO: Get rid of this const_cast
-    // const_cast<program_node&>(_node).set_output_layout(new_layout);
     set_output_layout(new_layout);
 }
 
@@ -140,8 +136,6 @@ void primitive_inst::realloc_if_needed() {
     GPU_DEBUG_GET_INSTANCE(debug_config);
 
     if (!_output
-        // || ((_output->get_layout().count() < _node.get_output_layout().count())
-        // && (max_output_layout_size < _node.get_output_layout().count()))) {
         || ((_output->get_layout().count() < get_output_layout().count())
         && (max_output_layout_size < get_output_layout().count()))) {
         GPU_DEBUG_IF(debug_config->verbose >= 4) {
@@ -149,7 +143,6 @@ void primitive_inst::realloc_if_needed() {
         }
         _output = allocate_output();
     } else {
-        // _output = _network.get_engine().reinterpret_buffer(*_output, _node.get_output_layout());
         _output = _network.get_engine().reinterpret_buffer(*_output, get_output_layout());
     }
     max_output_layout_size = std::max(_output->get_layout().count(), max_output_layout_size);
@@ -160,16 +153,13 @@ void primitive_inst::update_impl() {
     if (!_node.is_type<data>() && !(_node.is_type<mutable_data>() && _node.get_dependencies().empty())) {
         auto get_layout_key = [&]()->std::string {
             std::string layout_key_str = "";
-            // if (_node.is_valid_output_layout()) {
             if (is_valid_output_layout()) {
                 layout_key_str = id() + "_" + std::to_string(_node.get_unique_id());
-                // layout_key_str += "_" + _node.get_output_layout().to_string();
                 layout_key_str += "_" + get_output_layout().to_string();
 
                 for (auto in : _node.get_dependencies()) {
                     if (!in->is_constant()) {
                         const auto prim = _network.get_primitive(in->id());
-                        // layout_key_str += "_" + in->get_output_layout().to_string();
                         layout_key_str += "_" + prim->get_output_layout().to_string();
                     }
                 }
@@ -184,7 +174,6 @@ void primitive_inst::update_impl() {
             std::shared_ptr<cldnn::primitive_impl> origin_impl;
             PRINT_TIME(std::tie(origin_impl, is_hit) = cache->get(layout_key, [&]() {
                 cldnn::LRUCache<std::string, std::shared_ptr<cldnn::primitive_impl>>::CacheEntry new_entry;
-                // auto new_impl = std::move(_node.type()->choose_impl(_node));
                 auto new_impl = std::move(_node.type()->choose_impl(_node, _node.get_kernel_impl_params(get_input_layouts(), get_output_layout())));
                 PRINT_TIME(_network.get_program()->compile());
                 PRINT_TIME(new_impl->init_kernels());
@@ -198,7 +187,6 @@ void primitive_inst::update_impl() {
                 PRINT_TIME(_impl->init_kernels());
             }
         } else {
-            // PRINT_TIME(_impl = std::move(_node.type()->choose_impl(_node)));
             PRINT_TIME(_impl = std::move(_node.type()->choose_impl(_node, _node.get_kernel_impl_params(get_input_layouts(), get_output_layout()))));
             PRINT_TIME(_network.get_program()->compile());
             PRINT_TIME(_impl->init_kernels());
@@ -333,17 +321,6 @@ void primitive_inst::set_arguments() {
 
     _impl->set_arguments(*this);
 }
-
-// layout primitive_inst::get_output_layout(bool invalidate_users_if_changed) {
-//     if (_valid_output_layout)
-//         return _output_layout;
-
-//     // auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params()));
-//     auto new_layout = _node.type()->calc_output_layout(_node, *(_node.get_kernel_impl_params(get_input_layouts(), _output_layout)));
-//     set_output_layout(new_layout, invalidate_users_if_changed);
-//     return _output_layout;
-// }
-
 
 layout primitive_inst::get_output_layout() const {
     // if (!_valid_output_layout)

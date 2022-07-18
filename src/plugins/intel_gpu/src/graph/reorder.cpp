@@ -216,7 +216,6 @@ void reorder_inst::reuse_input() {
     build_deps();
 
     if (node.requires_reinterpret()) {
-        // _output = _network.get_engine().reinterpret_buffer(input_memory(), node.get_output_layout());
         _output = _network.get_engine().reinterpret_buffer(input_memory(), get_output_layout());
     } else {
         _output = input_memory_ptr();

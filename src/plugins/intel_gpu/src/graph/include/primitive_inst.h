@@ -131,8 +131,6 @@ public:
         set_output_padding(padding::max(padd, _output_layout.data_padding));
     }
 
-    // layout get_output_layout(bool invalidate_users_if_changed = true);
-
     layout get_output_layout() const;
 
     bool set_output_layout(layout& new_layout, bool invalidate_users_if_changed = true);
