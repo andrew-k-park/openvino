@@ -228,6 +228,9 @@ static constexpr char inference_only_message[] =
     " To enable full mode for static models pass \"false\" value to this argument:"
     " ex. \"-inference_only=false\".\n";
 
+static constexpr char nshape_per_stream_message[] =
+    "Optional. The size of shapes per stream.";
+
 /// @brief Define flag for showing help message <br>
 DEFINE_bool(h, false, help_message);
 
@@ -361,6 +364,8 @@ DEFINE_string(imean, "", input_image_mean_message);
 /// @brief Define flag for inference only mode <br>
 DEFINE_bool(inference_only, true, inference_only_message);
 
+DEFINE_int32(nshape_per_stream, 0, nshape_per_stream_message);
+
 /**
  * @brief This function show a help message
  */
@@ -398,6 +403,7 @@ static void show_usage() {
 #ifdef HAVE_DEVICE_MEM_SUPPORT
     std::cout << "    -use_device_mem           " << use_device_mem_message << std::endl;
 #endif
+    std::cout << "    -nshape_per_stream         " << nshape_per_stream_message << std::endl;
     std::cout << std::endl << "  Statistics dumping options:" << std::endl;
     std::cout << "    -report_type \"<type>\"     " << report_type_message << std::endl;
     std::cout << "    -report_folder            " << report_folder_message << std::endl;

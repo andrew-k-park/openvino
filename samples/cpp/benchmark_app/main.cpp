@@ -724,7 +724,10 @@ int main(int argc, char* argv[]) {
 
         // Iteration limit
         uint32_t niter = FLAGS_niter;
-        size_t shape_groups_num = app_inputs_info.size();
+        if (FLAGS_nshape_per_stream == 0) {
+            FLAGS_nshape_per_stream = app_inputs_info.size();
+        }
+        size_t shape_groups_num = FLAGS_nshape_per_stream;
         if ((niter > 0) && (FLAGS_api == "async")) {
             if (shape_groups_num > nireq) {
                 niter = ((niter + shape_groups_num - 1) / shape_groups_num) * shape_groups_num;
@@ -784,7 +787,7 @@ int main(int argc, char* argv[]) {
         // ----------------------------------------
         next_step();
 
-        InferRequestsQueue inferRequestsQueue(compiledModel, nireq, app_inputs_info.size(), FLAGS_pcseq);
+        InferRequestsQueue inferRequestsQueue(compiledModel, nireq, FLAGS_nshape_per_stream, FLAGS_pcseq);
 
         bool inputHasName = false;
         if (inputFiles.size() > 0) {
@@ -964,12 +967,15 @@ int main(int argc, char* argv[]) {
                (duration_nanoseconds != 0LL && (uint64_t)execTime < duration_nanoseconds) ||
                (FLAGS_api == "async" && iteration % nireq != 0)) {
             inferRequest = inferRequestsQueue.get_idle_request();
+            auto curId = inferRequestsQueue.get_cur_id();
+            auto nshapePerStream = static_cast<size_t>(FLAGS_nshape_per_stream);
+            auto idxInputs = (curId * nshapePerStream) + (curId == 0 ? (iteration % nshapePerStream) : ((iteration / curId) % nshapePerStream));
             if (!inferRequest) {
                 IE_THROW() << "No idle Infer Requests!";
             }
 
             if (!inferenceOnly) {
-                auto inputs = app_inputs_info[iteration % app_inputs_info.size()];
+                auto inputs = app_inputs_info[idxInputs];
 
                 if (FLAGS_pcseq) {
                     inferRequest->set_latency_group_id(iteration % app_inputs_info.size());
@@ -991,7 +997,7 @@ int main(int argc, char* argv[]) {
 
                 for (auto& item : inputs) {
                     auto inputName = item.first;
-                    const auto& data = inputsData.at(inputName)[iteration % inputsData.at(inputName).size()];
+                    const auto& data = inputsData.at(inputName)[idxInputs];
                     inferRequest->set_tensor(inputName, data);
                 }
 

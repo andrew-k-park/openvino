@@ -120,6 +120,7 @@ public:
                                                                         std::placeholders::_4)));
             _idleIds.push(id);
         }
+        _curId = _idleIds.front();
         _latency_groups.resize(lat_group_n);
         reset_times();
     }
@@ -177,7 +178,9 @@ public:
             }
             return _idleIds.size() > 0;
         });
-        auto request = requests.at(_idleIds.front());
+        auto curId = _idleIds.front();
+        auto request = requests.at(curId);
+        _curId = curId;
         _idleIds.pop();
         _startTime = std::min(Time::now(), _startTime);
         return request;
@@ -205,6 +208,10 @@ public:
         return _latency_groups;
     }
 
+    size_t get_cur_id() {
+        return _curId;
+    }
+
     std::vector<InferReqWrap::Ptr> requests;
 
 private:
@@ -217,4 +224,5 @@ private:
     std::vector<std::vector<double>> _latency_groups;
     bool enable_lat_groups;
     std::exception_ptr inferenceException = nullptr;
+    size_t _curId;
 };
