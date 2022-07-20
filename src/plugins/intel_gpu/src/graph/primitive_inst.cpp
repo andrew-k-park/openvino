@@ -261,17 +261,15 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
                      !_has_valid_input,
                      "Cannot execute primitive " + primitive_id + " with invalid/unset input");
 
-    static std::mutex m;
-    {
-        // Lock for program nodes
-        // To be removed once concurrency issue for program node is resolved
-        std::lock_guard<std::mutex> lock(m);
-        PRINT_TIME(update_shape());
-        if (shape_changed()) {
-            PRINT_TIME(update_impl());
+    PRINT_TIME(update_shape());
+    if (shape_changed()) {
+        PRINT_TIME(update_impl());
+        {
+            static std::mutex m;
+            std::lock_guard<std::mutex> lock(m);
             PRINT_TIME(update_weights());
-            PRINT_TIME(realloc_if_needed());
         }
+        PRINT_TIME(realloc_if_needed());
     }
 
     on_execute();
