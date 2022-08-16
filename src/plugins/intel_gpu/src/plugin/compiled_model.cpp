@@ -10,7 +10,6 @@
 #include "intel_gpu/plugin/async_infer_request.hpp"
 #include "intel_gpu/plugin/async_infer_request_legacy.hpp"
 #include "openvino/runtime/intel_gpu/properties.hpp"
-#include "intel_gpu/plugin/infer_request_legacy.hpp"
 
 #include <description_buffer.hpp>
 #include <threading/ie_executor_manager.hpp>
@@ -71,14 +70,12 @@ IInferRequestInternal::Ptr CompiledModel::CreateInferRequestImpl(InputsDataMap n
     OV_ITT_SCOPED_TASK(itt::domains::intel_gpu_plugin, "CompiledModel::CreateInferRequestImpl");
     auto ptr = std::make_shared<InferRequestLegacy>(networkInputs, networkOutputs,
                                                     std::static_pointer_cast<CompiledModel>(shared_from_this()));
-    if (m_config.throughput_streams > 1) {
+    if (m_config.throughput_streams > 1)
         ptr->EnableStreams();
-    }
     if (m_config.useProfiling)
         ptr->EnableProfiling();
-    if (m_graphs.front()->use_external_queue()) {
+    if (m_graphs.front()->use_external_queue())
         ptr->enable_external_queue();
-    }
     ptr->SetGraph(m_graphs.front());
 
     return ptr;
@@ -87,22 +84,32 @@ IInferRequestInternal::Ptr CompiledModel::CreateInferRequestImpl(InputsDataMap n
 IInferRequestInternal::Ptr CompiledModel::CreateInferRequestImpl(const std::vector<std::shared_ptr<const ov::Node>>& inputs,
                                                                  const std::vector<std::shared_ptr<const ov::Node>>& outputs) {
     OV_ITT_SCOPED_TASK(itt::domains::intel_gpu_plugin, "CompiledModel::CreateInferRequestImpl");
-    auto ptr = std::make_shared<InferRequest>(inputs, outputs,
-                                              std::static_pointer_cast<CompiledModel>(shared_from_this()));
-    if (m_config.throughput_streams > 1) {
-        ptr->EnableStreams();
-    }
-    if (m_config.useProfiling)
-        ptr->EnableProfiling();
+    if (m_graphs.front()->GetMaxDynamicBatchSize() > 1) {
+        auto ptr = std::make_shared<InferRequestLegacy>(inputs, outputs,
+                                                        std::static_pointer_cast<CompiledModel>(shared_from_this()));
+        if (m_config.throughput_streams > 1)
+            ptr->EnableStreams();
+        if (m_config.useProfiling)
+            ptr->EnableProfiling();
+        if (m_graphs.front()->use_external_queue())
+            ptr->enable_external_queue();
+        ptr->SetGraph(m_graphs.front());
 
-    if (m_graphs.front()->use_external_queue()) {
-        ptr->enable_external_queue();
-    }
-    ptr->SetGraph(m_graphs.front());
+        return ptr;
+    } else {
+        auto ptr = std::make_shared<InferRequest>(inputs, outputs,
+                                                  std::static_pointer_cast<CompiledModel>(shared_from_this()));
+        if (m_config.throughput_streams > 1)
+            ptr->EnableStreams();
+        if (m_config.useProfiling)
+            ptr->EnableProfiling();
+        if (m_graphs.front()->use_external_queue())
+            ptr->enable_external_queue();
+        ptr->SetGraph(m_graphs.front());
 
-    return ptr;
+        return ptr;
+    }
 }
-
 IInferRequestInternal::Ptr CompiledModel::CreateInferRequest() {
     OV_ITT_SCOPED_TASK(itt::domains::intel_gpu_plugin, "CompiledModel::CreateInferRequest");
     InferenceEngine::IInferRequestInternal::Ptr internalRequest;
@@ -120,20 +127,26 @@ IInferRequestInternal::Ptr CompiledModel::CreateInferRequest() {
         }
     }
 
+    bool is_legacy = false;
     if (this->_plugin) {
         const auto& core = _plugin->GetCore();
-        if (core && core->isNewAPI())
+        if (core && core->isNewAPI()) {
             internalRequest = CreateInferRequestImpl(_parameters, _results);
+            if (m_graphs.front()->GetMaxDynamicBatchSize() > 1)
+                is_legacy = true;
+        }
     }
     if (!internalRequest) {
         internalRequest = CreateInferRequestImpl(_networkInputs, _networkOutputs);
-        internalRequest->setPointerToExecutableNetworkInternal(shared_from_this());
+        is_legacy = true;
+    }
+    internalRequest->setPointerToExecutableNetworkInternal(shared_from_this());
+    if (is_legacy) {
         return std::make_shared<AsyncInferRequestLegacy>(std::static_pointer_cast<InferRequestLegacy>(internalRequest),
                                                          m_taskExecutor,
                                                          m_waitExecutor,
                                                          _callbackExecutor);
     }
-    internalRequest->setPointerToExecutableNetworkInternal(shared_from_this());
     return std::make_shared<AsyncInferRequest>(std::static_pointer_cast<InferRequest>(internalRequest),
                                                m_taskExecutor,
                                                m_waitExecutor,
