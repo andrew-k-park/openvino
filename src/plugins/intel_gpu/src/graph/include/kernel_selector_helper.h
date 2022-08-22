@@ -157,7 +157,7 @@ struct kernel_impl_params {
 
     layout get_non_padded_input_layout(size_t idx = 0) const {
         auto input_layout = get_input_layout(idx);
-        auto result = layout({input_layout.data_type, input_layout.format, input_layout.get_tensor()});
+        auto result = layout({input_layout.get_partial_shape(), input_layout.data_type, input_layout.format});
         return result;
     }
 

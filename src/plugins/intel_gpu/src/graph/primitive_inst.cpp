@@ -210,14 +210,11 @@ void primitive_inst::update_impl() {
     if (!_node.is_type<data>() && !(_node.is_type<mutable_data>() && _node.get_dependencies().empty())) {
         auto get_layout_key = [&]()->std::string {
             std::string layout_key_str = "";
-            if (_node.is_valid_output_layout()) {
-                layout_key_str = id() + "_" + std::to_string(_node.get_unique_id());
-                layout_key_str += "_" + _impl_params->output_layout.to_string();
-
-                for (auto in : _node.get_dependencies()) {
-                    if (!in->is_constant()) {
-                        layout_key_str += "_" + in->get_output_layout().to_string();
-                    }
+            layout_key_str = id() + "_" + std::to_string(_node.get_unique_id());
+            layout_key_str += "_" + _impl_params->output_layout.to_string();
+            for (auto in : _node.get_dependencies()) {
+                if (!in->is_constant()) {
+                    layout_key_str += "_" + in->get_output_layout().to_string();
                 }
             }
             return layout_key_str;
