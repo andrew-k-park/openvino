@@ -106,11 +106,11 @@ public:
 
         concat_params.inputs.resize(arg.inputs_count());
         for (size_t i = 0; i < arg.inputs_count(); ++i) {
-            const layout& input_layout = impl_param.input_layouts[i];
+            const layout& input_layout = impl_param.get_input_layout(i);
             concat_params.inputs[i] = convert_data_tensor(input_layout);
         }
 
-        concat_params.axis = convert_axis(axis, impl_param.output_layout.get_rank());
+        concat_params.axis = convert_axis(axis, impl_param.get_output_layout().get_rank());
         concat_optional_params.kernelPerInput = true;
 
         auto& kernel_selector = kernel_selector::concatenation_kernel_selector::Instance();

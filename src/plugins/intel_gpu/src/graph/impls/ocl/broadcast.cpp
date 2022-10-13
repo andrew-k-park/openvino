@@ -30,7 +30,7 @@ struct broadcast_impl : typed_primitive_impl_ocl<broadcast> {
         auto bc_optional_params =
             get_default_optional_params<kernel_selector::broadcast_optional_params>(arg.get_program());
 
-        const auto format = impl_param.output_layout.format;
+        const auto format = impl_param.get_output_layout().format;
         size_t max_axes_num = format.dimension();
 
         const auto& broadcast_axes = primitive->broadcast_axes;

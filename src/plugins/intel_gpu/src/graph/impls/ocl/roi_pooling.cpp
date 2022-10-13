@@ -62,9 +62,9 @@ protected:
 
 public:
     static primitive_impl* create(const roi_pooling_node& arg, const kernel_impl_params& impl_param) {
-        const auto& input_layout = impl_param.input_layouts[0];
-        const auto& output_layout = impl_param.output_layout;
-        const auto& rois_layout = impl_param.input_layouts[1];
+        const auto& input_layout = impl_param.get_input_layout();
+        const auto& output_layout = impl_param.get_output_layout();
+        const auto& rois_layout = impl_param.get_input_layout(1);
         const auto& primitive = arg.get_primitive();
 
         const auto padding_filling_value = output_layout.data_padding.filling_value();
@@ -86,7 +86,7 @@ public:
 
         roi_params.inputs.push_back(convert_data_tensor(rois_layout));
         if (primitive->mode == pooling_mode::deformable_bilinear && !primitive->no_trans)
-            roi_params.inputs.push_back(convert_data_tensor(impl_param.input_layouts[2]));
+            roi_params.inputs.push_back(convert_data_tensor(impl_param.get_input_layout(2)));
         roi_params.mode = cldnn_2_pool_type(primitive->mode);
         roi_params.position_sensitive = primitive->position_sensitive;
         roi_params.pooled_width = primitive->pooled_width;

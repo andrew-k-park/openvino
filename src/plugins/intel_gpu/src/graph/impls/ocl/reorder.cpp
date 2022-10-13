@@ -74,7 +74,7 @@ protected:
 public:
     static primitive_impl* create(const reorder_node& arg, const kernel_impl_params& impl_param) {
         const auto& prim = arg.get_primitive();
-        auto&& output_layout = impl_param.output_layout;
+        auto&& output_layout = impl_param.get_output_layout();
         auto reorder_params = get_default_params<kernel_selector::reorder_params>(impl_param);
         auto reorder_optional_params =
             get_default_optional_params<kernel_selector::reorder_optional_params>(arg.get_program());
@@ -82,7 +82,7 @@ public:
         for (size_t i = 1; i < arg.inputs_count(); i++) {
             reorder_params.inputs.push_back(convert_data_tensor(impl_param.input_layouts[i]));
         }
-        if (impl_param.output_layout.data_padding) {
+        if (output_layout.data_padding) {
             reorder_params.has_padded_output = true;
         }
 
