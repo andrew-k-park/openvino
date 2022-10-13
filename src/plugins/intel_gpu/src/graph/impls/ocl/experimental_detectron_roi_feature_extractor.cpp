@@ -41,7 +41,7 @@ protected:
 public:
     static primitive_impl* create(const experimental_detectron_roi_feature_extractor_node& arg, const kernel_impl_params& impl_param) {
         const auto& primitive = arg.get_primitive();
-        const auto output_layout = impl_param.output_layout;
+        const auto output_layout = impl_param.get_output_layout();
         const auto padding_filling_value = output_layout.data_padding.filling_value();
         CLDNN_ERROR_NOT_EQUAL(arg.id(),
                               "experimental_detectron_roi_feature_extractor padding filling value",

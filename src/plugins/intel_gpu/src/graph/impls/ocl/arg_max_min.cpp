@@ -85,9 +85,9 @@ public:
 
         if (arg.has_second_output()) {  // for backward compatibility
             if (arg.use_multiple_outputs())
-                argm_params.outputs.push_back(convert_data_tensor(impl_param.output_layout));
+                argm_params.outputs.push_back(convert_data_tensor(impl_param.get_output_layout()));
             else
-                argm_params.inputs.push_back(convert_data_tensor(impl_param.input_layouts[2]));
+                argm_params.inputs.push_back(convert_data_tensor(impl_param.get_input_layout(2)));
         }
 
         argm_params.values_first = values_first;
