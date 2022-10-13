@@ -33,7 +33,7 @@ struct one_hot_impl : typed_primitive_impl_ocl<one_hot> {
         oh_params.on_value = prim->on_value;
         oh_params.off_value = prim->off_value;
 
-        auto output_sizes = impl_param.output_layout.get_dims();
+        auto output_sizes = impl_param.get_output_layout().get_dims();
 
         oh_params.one_hot_limit = output_sizes[oh_params.one_hot_axis];
 
