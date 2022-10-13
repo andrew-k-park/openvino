@@ -56,10 +56,10 @@ protected:
 
 public:
     static primitive_impl* create(const roi_align_node& arg, const kernel_impl_params& impl_param) {
-        const auto& input_layout = impl_param.input_layouts[0];
-        const auto& output_layout = impl_param.output_layout;
-        const auto& rois_layout = impl_param.input_layouts[1];
-        const auto& batches_layout = impl_param.input_layouts[2];
+        const auto& input_layout = impl_param.get_input_layout();
+        const auto& output_layout = impl_param.get_output_layout();
+        const auto& rois_layout = impl_param.get_input_layout(1);
+        const auto& batches_layout = impl_param.get_input_layout(2);
         const auto& primitive = arg.get_primitive();
 
         const auto padding_filling_value = output_layout.data_padding.filling_value();

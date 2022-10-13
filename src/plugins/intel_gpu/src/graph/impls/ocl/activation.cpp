@@ -52,8 +52,8 @@ struct activation_impl : typed_primitive_impl_ocl<activation> {
         convert_new_activation_func(prim, activation_params.activations);
 
         if (arg.is_parameterized()) {
-            const auto& slope_layout = impl_param.input_layouts[1];
-            const auto& output_layout = impl_param.output_layout;
+            const auto& slope_layout = impl_param.get_input_layout(1);
+            const auto& output_layout = impl_param.get_output_layout();
 
             const auto params_num =
                 kernel_selector::GetActivationAdditionalParamsNumber(activation_params.activations[0].function);
