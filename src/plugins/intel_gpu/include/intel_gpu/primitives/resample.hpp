@@ -31,7 +31,7 @@ struct resample : public primitive_base<resample> {
     /// @param num_filter Input filter. Only used by bilinear sample_type.
     /// @param sample_type Resample method (nearest neighbor/bilinear/caffe bilinear).
     resample(const primitive_id& id,
-             const primitive_id& input,
+             const input_info& input,
              tensor output_size,
              uint32_t num_filter,
              InterpolateOp::InterpolateMode operation_type = InterpolateOp::InterpolateMode::NEAREST,
@@ -59,7 +59,7 @@ struct resample : public primitive_base<resample> {
 
     /// @brief resample with constant inputs
     resample(const primitive_id& id,
-             const primitive_id& input,
+             const input_info& input,
              const std::vector<int64_t>& sizes,
              const std::vector<float>& scales,
              const std::vector<int64_t>& axes,
@@ -92,8 +92,8 @@ struct resample : public primitive_base<resample> {
 
     /// @brief resample with non-constant sizes
     resample(const primitive_id& id,
-             const primitive_id& input,
-             const primitive_id& sizes_id,
+             const input_info& input,
+             const input_info& sizes_id,
              const std::vector<float>& scales,
              const std::vector<int64_t>& axes,
              const std::vector<size_t>& pads_begin = {},
@@ -125,9 +125,9 @@ struct resample : public primitive_base<resample> {
 
     /// @brief resample with non-constant scales
     resample(const primitive_id& id,
-             const primitive_id& input,
+             const input_info& input,
              const std::vector<int64_t>& sizes,
-             const primitive_id& scales_id,
+             const input_info& scales_id,
              const std::vector<int64_t>& axes,
              const std::vector<size_t>& pads_begin = {},
              const std::vector<size_t>& pads_end = {},
