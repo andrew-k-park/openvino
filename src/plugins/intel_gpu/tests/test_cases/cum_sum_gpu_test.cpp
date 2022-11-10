@@ -181,7 +181,7 @@ public:
 
         topology topology;
         topology.add(input_layout("Input0", input->get_layout()));
-        topology.add(cum_sum("cum_sum", "Input0", axis, exclusive, reverse));
+        topology.add(cum_sum("cum_sum", input_info("Input0"), axis, exclusive, reverse));
 
         network network(engine, topology);
 
@@ -271,7 +271,7 @@ TEST(cum_sum_gpu_f16, DISABLED_basic_1d) {
 
     topology topology;
     topology.add(input_layout("Input0", input->get_layout()));
-    topology.add(cum_sum("cum_sum", "Input0"));
+    topology.add(cum_sum("cum_sum", input_info("Input0")));
 
     network network(engine, topology);
 
