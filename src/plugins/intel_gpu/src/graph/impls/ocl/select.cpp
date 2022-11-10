@@ -28,7 +28,7 @@ public:
             get_default_optional_params<kernel_selector::select_optional_params>(arg.get_program());
 
         std::vector<layout> layouts = impl_param.input_layouts;
-        auto o_layout = impl_param.output_layout;
+        auto o_layout = impl_param.get_output_layout();
 
         auto broadcastable = [&](layout a, layout b) {
             auto dims_a = a.get_dims();
