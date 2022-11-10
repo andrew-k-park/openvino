@@ -220,7 +220,7 @@ TEST_P(binary_convolution_test, conv) {
     topology_bin.add(input_layout(input_name, input->get_layout()));
     topology_bin.add(data(output_name + weights_suffix, weights));
 
-    topology_bin.add(binary_convolution(output_name, input_name, {output_name + weights_suffix},
+    topology_bin.add(binary_convolution(output_name, input_info(input_name), {output_name + weights_suffix},
                                         stride, pad, dilation, os_size, 1, p.pad_value, p.dt));
 
     network network_bin(engine, topology_bin, options);
@@ -357,7 +357,7 @@ TEST(binary_convolution, basic_convolution_1x1_single_packed_channel) {
     topology topology(
             input_layout("input", input->get_layout()),
             data("weights", weights),
-            binary_convolution("binary_conv", "input", { "weights" },
+            binary_convolution("binary_conv", input_info("input"), { "weights" },
                                { 1,1 },
                                { 0,0 },
                                { 1,1 },
@@ -440,7 +440,7 @@ TEST(binary_convolution, basic_convolution_1x1_single_packed_channel_fp16) {
     topology topology(
             input_layout("input", input->get_layout()),
             data("weights", weights),
-            binary_convolution("binary_conv", "input", { "weights" },
+            binary_convolution("binary_conv", input_info("input"), { "weights" },
                                { 1,1 },
                                { 0,0 },
                                { 1,1 },
