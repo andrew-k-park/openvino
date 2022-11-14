@@ -93,8 +93,8 @@ void generic_eltwise_test(cldnn::format test_input_fmt, int input_b, int input_f
     topology topology;
     topology.add(input_layout("input1", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(reorder("reorder1", "input1", input1->get_layout().with_padding(padding{{ 0, 0, input_padding_x, input_padding_y }, 0 })));
-    topology.add(eltwise("eltwise", {"reorder1", "input2"}, mode, DEFAULT_BROADCAST_SPEC, padding{ { 0, 0, output_padding_x, output_padding_y }, 0 }));
+    topology.add(reorder("reorder1", input_info("input1"), input1->get_layout().with_padding(padding{{ 0, 0, input_padding_x, input_padding_y }, 0 })));
+    topology.add(eltwise("eltwise", { input_info("reorder1"), input_info("input2") }, mode, DEFAULT_BROADCAST_SPEC, padding{ { 0, 0, output_padding_x, output_padding_y }, 0 }));
     primitive_id out_id = "eltwise";
     if (relu)
     {
@@ -236,8 +236,8 @@ void generic_eltwise_bool_test(cldnn::format test_input_fmt, int input_b, int in
     topology topology;
     topology.add(input_layout("input1", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(reorder("reorder1", "input1", input1->get_layout().with_padding(padding{{ 0, 0, input_padding_x, input_padding_y }, 0 })));
-    topology.add(eltwise("eltwise", {"reorder1", "input2"}, mode, DEFAULT_BROADCAST_SPEC, padding{ { 0, 0, output_padding_x, output_padding_y }, 0 }));
+    topology.add(reorder("reorder1", input_info("input1"), input1->get_layout().with_padding(padding{{ 0, 0, input_padding_x, input_padding_y }, 0 })));
+    topology.add(eltwise("eltwise", { input_info("reorder1"), input_info("input2") }, mode, DEFAULT_BROADCAST_SPEC, padding{ { 0, 0, output_padding_x, output_padding_y }, 0 }));
 
     network network(engine, topology);
     network.set_input_data("input1", input1);
@@ -340,7 +340,7 @@ TEST(eltwise_gpu_f32, equal_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::eq));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::eq));
 
     network network(engine, topology);
 
@@ -410,7 +410,7 @@ TEST(eltwise_gpu_f32, not_equal_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::ne));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::ne));
 
     network network(engine, topology);
 
@@ -480,7 +480,7 @@ TEST(eltwise_gpu_f32, less_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::lt));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::lt));
 
     network network(engine, topology);
 
@@ -550,7 +550,7 @@ TEST(eltwise_gpu_f32, less_equal_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::le));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::le));
 
     network network(engine, topology);
 
@@ -620,7 +620,7 @@ TEST(eltwise_gpu_f32, greater_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::gt));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::gt));
 
     network network(engine, topology);
 
@@ -690,7 +690,7 @@ TEST(eltwise_gpu_f32, greater_equal_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::ge));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::ge));
 
     network network(engine, topology);
 
@@ -760,7 +760,7 @@ TEST(eltwise_gpu_f32, logicalAND_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::logic_and));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::logic_and));
 
     network network(engine, topology);
 
@@ -846,7 +846,7 @@ TEST(eltwise_gpu_f32, logicalAND_in3_float_out1_int) {
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
     topology.add(input_layout("input3", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2", "input3"}, eltwise_mode::logic_and));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2"), input_info("input3") }, eltwise_mode::logic_and));
 
     network network(engine, topology);
 
@@ -917,7 +917,7 @@ TEST(eltwise_gpu_f32, logicalOR_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::logic_or));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::logic_or));
 
     network network(engine, topology);
 
@@ -1003,7 +1003,7 @@ TEST(eltwise_gpu_f32, logicalOR_in3_float_out1_int) {
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
     topology.add(input_layout("input3", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2", "input3"}, eltwise_mode::logic_or));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2"), input_info("input3") }, eltwise_mode::logic_or));
 
     network network(engine, topology);
 
@@ -1074,7 +1074,7 @@ TEST(eltwise_gpu_f32, logicalXOR_in2_float_out1_int) {
     topology topology;
     topology.add(input_layout("input", input1->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::logic_xor));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::logic_xor));
 
     network network(engine, topology);
 
@@ -1131,7 +1131,7 @@ TEST(eltwise_gpu_f32, add_basic_in4x4x2x2) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::sum));
 
     set_values(input, {
         1.f,   0.f, 5.f, 1.5f,
@@ -1179,7 +1179,7 @@ TEST(eltwise_gpu_f32, add_in2x2x2x2_broadcast_channel) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::sum));
 
     set_values(input, {
         1.f,   0.f,
@@ -1242,7 +1242,7 @@ TEST(eltwise_gpu_f32, add_in2x2x2x2_broadcast_x) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::sum));
 
     set_values(input, {
             0.5f,  2.5f,
@@ -1311,7 +1311,7 @@ TEST(eltwise_gpu_f32, add_in2x2x2x2_broadcast_y) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::sum));
 
     set_values(input, {
             0.5f,  2.5f,
@@ -1374,7 +1374,7 @@ TEST(eltwise_gpu_f32, add_in2x2x2x2_broadcast_batch) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2")}, eltwise_mode::sum));
 
     set_values(input, {
             0.5f,  2.5f,
@@ -1439,7 +1439,7 @@ TEST(eltwise_gpu_f32, add_in2x2x2x2_broadcast_multiple_dims) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2")}, eltwise_mode::sum));
 
     set_values(input, {
             0.5f,  2.5f,
@@ -1498,7 +1498,7 @@ TEST(eltwise_gpu_f32, pow_in2x2x2x2_broadcast_all) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::pow));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::pow));
 
     set_values(input, {
             1.f,  2.f,
@@ -1557,7 +1557,7 @@ TEST(eltwise_gpu_f32, add_basic_in2x2x2x2_broadcast_2_inputs_same_dim) {
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
     topology.add(input_layout("input3", input3->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2", "input3"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2"), input_info("input3") }, eltwise_mode::sum));
 
     set_values(input, {
             0.5f,  2.5f,
@@ -1635,7 +1635,7 @@ TEST(eltwise_gpu_f32, add_basic_in2x2x2x2_broadcast_2_inputs_diff_dim) {
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
     topology.add(input_layout("input3", input3->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2", "input3"}, eltwise_mode::sum));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2"), input_info("input3") }, eltwise_mode::sum));
 
     set_values(input, {
             0.5f,  2.5f,
@@ -1731,7 +1731,7 @@ TEST(eltwise_gpu_f32, max_basic_in4x4x4x4) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::max));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::max));
 
     set_values(input, {
         1.f,   0.f,  5.f,  1.5f,
@@ -1802,7 +1802,7 @@ TEST(eltwise_gpu_f32, sub_basic_in4x4x4x4) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sub));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2")}, eltwise_mode::sub));
 
     set_values(input, {
         1.f,   0.f,  5.f,  1.5f,
@@ -1868,9 +1868,9 @@ TEST(eltwise_gpu_int, basic_in4x4x4x4) {
             topology topology;
             topology.add(input_layout("input", input->get_layout()));
             topology.add(input_layout("input2", input2->get_layout()));
-            topology.add(reorder("input_reorder", "input", { data_type, format::yxfb,{ 2, 2, 2, 2 } }));
-            topology.add(reorder("input2_reorder", "input2", { data_type, format::yxfb,{ 2, 2, 2, 2 } }));
-            topology.add(eltwise("eltwise", { "input_reorder", "input2_reorder" }, mode));
+            topology.add(reorder("input_reorder", input_info("input"), { data_type, format::yxfb,{ 2, 2, 2, 2 } }));
+            topology.add(reorder("input2_reorder", input_info("input2"), { data_type, format::yxfb,{ 2, 2, 2, 2 } }));
+            topology.add(eltwise("eltwise", { input_info("input_reorder"), input_info("input2_reorder") }, mode));
             topology.add(reorder("eltwise_reorder", "eltwise", { data_types::f32, format::yxfb,{ 2, 2, 2, 2 } }));
 
             std::vector<float> input_1_vec = {
@@ -1947,9 +1947,9 @@ TEST(eltwise_gpu_f32_int, basic_in4x4x4x4) {
             topology topology;
             topology.add(input_layout("input", input->get_layout()));
             topology.add(input_layout("input2", input2->get_layout()));
-            topology.add(reorder("input_reorder", "input", { data_type, format::yxfb,{ 2, 2, 2, 2 } }));
-            topology.add(eltwise("eltwise", { "input_reorder", "input2" }, mode));
-            topology.add(reorder("eltwise_reorder", "eltwise", { data_types::f32, format::yxfb,{ 2, 2, 2, 2 } }));
+            topology.add(reorder("input_reorder", input_info("input"), { data_type, format::yxfb,{ 2, 2, 2, 2 } }));
+            topology.add(eltwise("eltwise", { input_info("input_reorder"), input_info("input2") }, mode));
+            topology.add(reorder("eltwise_reorder", input_info("eltwise"), { data_types::f32, format::yxfb,{ 2, 2, 2, 2 } }));
 
             std::vector<float> input_1_vec = {
                 1.f,   0.f,  5.f,  1.f,
@@ -2032,7 +2032,7 @@ TEST(eltwise_gpu_f32, prod_basic_in4x4x4x4) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::prod));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::prod));
 
     set_values(input, {
         1.f,   0.f,  5.f,  1.f,
@@ -2104,9 +2104,9 @@ TEST(eltwise_gpu_f32, max_basic_in4x4x4x4_input_padding) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(reorder("reorder", "input", input->get_layout().with_padding(padding{ { 0, 0, 2, 1 }, 0 })));
-    topology.add(reorder("reorder2", "input2", input->get_layout().with_padding(padding{ { 0, 0, 2, 1 }, 0 })));
-    topology.add(eltwise("eltwise", {"reorder", "reorder2"}, eltwise_mode::max));
+    topology.add(reorder("reorder", input_info("input"), input->get_layout().with_padding(padding{ { 0, 0, 2, 1 }, 0 })));
+    topology.add(reorder("reorder2", input_info("input2"), input->get_layout().with_padding(padding{ { 0, 0, 2, 1 }, 0 })));
+    topology.add(eltwise("eltwise", { input_info("reorder"), input_info("reorder2") }, eltwise_mode::max));
 
     set_values(input, {
         1.f,   0.f,  5.f,  1.5f,
@@ -2178,7 +2178,7 @@ TEST(eltwise_gpu_f32, add_basic_in4x4x2x2_with_coefficients) {
     topology topology;
     topology.add(input_layout("input", input->get_layout()));
     topology.add(input_layout("input2", input2->get_layout()));
-    topology.add(eltwise("eltwise", {"input", "input2"}, eltwise_mode::sum, {0.5f, 0.5f}, data_types::f32));
+    topology.add(eltwise("eltwise", { input_info("input"), input_info("input2") }, eltwise_mode::sum, {0.5f, 0.5f}, data_types::f32));
 
     set_values(input, {
             1.f,   0.f, 5.f, 1.5f,
@@ -2234,11 +2234,11 @@ TEST(eltwise_gpu_f32, coefficients_count_check) {
     std::vector<float> coeffs2 = {0.5f, 0.5f};
     std::vector<float> coeffs3 = {0.5f, 0.5f, 0.5f};
 
-    EXPECT_THROW(topology.add(eltwise("eltwise1", {"input", "input2"}, eltwise_mode::sum, coeffs1, data_types::f32)), std::invalid_argument);
-    EXPECT_THROW(topology.add(eltwise("eltwise2", {"input", "input2"}, eltwise_mode::sum, coeffs3, data_types::f32)), std::invalid_argument);
+    EXPECT_THROW(topology.add(eltwise("eltwise1", { input_info("input"), input_info("input2") }, eltwise_mode::sum, coeffs1, data_types::f32)), std::invalid_argument);
+    EXPECT_THROW(topology.add(eltwise("eltwise2", { input_info("input"), input_info("input2") }, eltwise_mode::sum, coeffs3, data_types::f32)), std::invalid_argument);
 
-    EXPECT_THROW(topology.add(eltwise("eltwise3", {"input", "input2", "input3"}, eltwise_mode::sum, coeffs1, data_types::f32)), std::invalid_argument);
-    EXPECT_THROW(topology.add(eltwise("eltwise4", {"input", "input2", "input3"}, eltwise_mode::sum, coeffs2, data_types::f32)), std::invalid_argument);
+    EXPECT_THROW(topology.add(eltwise("eltwise3", { input_info("input"), input_info("input2"), input_info("input3") }, eltwise_mode::sum, coeffs1, data_types::f32)), std::invalid_argument);
+    EXPECT_THROW(topology.add(eltwise("eltwise4", { input_info("input"), input_info("input2"), "input3"}, eltwise_mode::sum, coeffs2, data_types::f32)), std::invalid_argument);
 
     EXPECT_NO_THROW(topology.add(eltwise("eltwise5", {"input", "input2"}, eltwise_mode::sum, coeffs0, data_types::f32)));
     EXPECT_NO_THROW(topology.add(eltwise("eltwise6", {"input", "input2"}, eltwise_mode::sum, coeffs2, data_types::f32)));
