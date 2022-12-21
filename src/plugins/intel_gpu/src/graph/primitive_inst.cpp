@@ -34,6 +34,8 @@
 
 namespace {
 
+// #define USE_SHAPE_AGNOSTIC_KERNEL
+
 bool is_optimized_output_user(const program_node* user) {
     if (user->can_be_optimized()) {
         if (user->is_output())
@@ -352,6 +354,7 @@ void primitive_inst::update_impl() {
             }
         }
         if (!has_cached_impl) {
+#ifdef USE_SHAPE_AGNOSTIC_KERNEL
             if (_dynamic_impl) {
                 auto& compilation_context = get_network().get_compilation_context();
                 compilation_context.push_task([this, updated_params, layout_key](kernels_cache& kc) {
@@ -379,6 +382,9 @@ void primitive_inst::update_impl() {
                 _impl->update_dispatch_data(updated_params);
                 update_shape_info(updated_params);
             } else {
+#else
+            {
+#endif
                 _impl = _node->type()->choose_impl(*_node, updated_params);
                 auto& kernels_cache = get_network().get_kernels_cache();
                 auto kernel_ids = kernels_cache.add_kernels_source(_impl->get_kernels_source());
@@ -619,6 +625,7 @@ primitive_inst::primitive_inst(network& network, program_node const& node, bool 
     }
     if (_impl) {
         _impl->set_node_params(node);
+#ifdef USE_SHAPE_AGNOSTIC_KERNEL
         if (_impl->is_dynamic()) {
             _dynamic_impl = _impl->clone();
             // Actual shape info layout is the following:
@@ -629,6 +636,7 @@ primitive_inst::primitive_inst(network& network, program_node const& node, bool 
             const int64_t shape_elements = buffers_count * tensor_dims_count;
             _shape_info_memory = _network.get_engine().allocate_memory(layout{{shape_elements}, data_types::i32, format::bfyx});
         }
+#endif
     }
 
     if (_outputs[0])
