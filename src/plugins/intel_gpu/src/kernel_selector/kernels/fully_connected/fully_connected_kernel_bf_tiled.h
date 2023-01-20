@@ -43,6 +43,7 @@ public:
         {}
 
         tune_params() = default;
+        tune_params(const tune_params& params) = default;
 
         unsigned tile_b;
         unsigned tile_ofm;
@@ -54,7 +55,8 @@ public:
     };
 
 protected:
-    DispatchData SetDefault(const fully_connected_params& params, int autoTuneIndex = -1) const override;
+    DispatchData SetDefault(const fully_connected_params& params, int autoTuneIndex = -1, bool recalculate = false) const override;
+    void UpdateDynamicParams(const Params& params, KernelData& kd) const override;
     std::vector<FusedOpType> GetSupportedFusedOps() const override {
         return { FusedOpType::ACTIVATION,
                  FusedOpType::ELTWISE,
@@ -63,8 +65,9 @@ protected:
     JitConstants GetJitConstants(const fully_connected_params& params, const DispatchData& dispatchData) const override;
     bool Validate(const Params& params, const optional_params& options) const override;
 
-    tune_params GetAutoTuneParams(const fully_connected_params& params, int idx = -1) const;
+    tune_params GetAutoTuneParams(const fully_connected_params& params, int idx = -1, bool recalculate = false) const;
 
     std::vector<tune_params> auto_tune_params;
+    mutable std::shared_ptr<tune_params> tune_params_dynamic = nullptr;
 };
 }  // namespace kernel_selector

@@ -29,6 +29,9 @@ const uint d1  = (uint) get_global_id(0);
 const uint d2  = (uint) get_global_id(1);
 const uint d34 = (uint) get_global_id(2);
 
+if (d1 == 0 && d2 == 0 && d34 == 0)
+    printf("Output size is %d\n", OUTPUT_SIZE_Y);
+
 #ifdef IS_DYNAMIC
     const uint d3 = d34 % OUTPUT_SIZE_Y;
     const uint d4 = d34 / OUTPUT_SIZE_Y;

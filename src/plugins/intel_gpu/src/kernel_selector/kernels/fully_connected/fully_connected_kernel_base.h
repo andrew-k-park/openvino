@@ -52,7 +52,8 @@ public:
 
 protected:
     virtual JitConstants GetJitConstants(const fully_connected_params& params, const DispatchData& dispatchData) const;
-    virtual DispatchData SetDefault(const fully_connected_params& params, int autoTuneIndex = -1) const;
+    virtual DispatchData SetDefault(const fully_connected_params& params, int autoTuneIndex = -1, bool recalculate = false) const;
+    virtual void UpdateDynamicParams(const Params& params, KernelData& kd) const;
     KernelsData GetCommonKernelsData(const Params &params,
                                      const optional_params &options,
                                      DataLayout dl,

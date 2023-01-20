@@ -836,6 +836,44 @@ kernel_selector::tuning_mode to_tuning_mode(cldnn::tuning_mode mode) {
     }
 }
 
+
+template <typename T>
+std::string toCodeString(T val) {
+    std::stringstream ss;
+    ss.imbue(std::locale("C"));
+    ss << val;
+    return ss.str();
+}
+
+template <typename VecT, typename ValT, typename Func>
+inline std::string toVectorInitString(const VecT& vec,
+                                      const std::string& vectorType,
+                                      size_t maxDim,
+                                      ValT padFillingVal,
+                                      Func fetchFunc) {
+    std::stringstream ss;
+    ss << "{ ";
+    for (size_t i = 0; i < vec.size(); i++)
+        ss << toCodeString(fetchFunc(vec[i])) << ",";
+    for (size_t i = vec.size(); i < maxDim; i++)
+        ss << padFillingVal << ",";
+    ss << " } ";
+    return ss.str();
+}
+
+template <typename VecT, typename ValT, typename Func>
+inline std::string toVectorString(const VecT& vec,
+                                  const std::string& vectorType,
+                                  size_t maxDim,
+                                  ValT padFillingVal,
+                                  Func fetchFunc) {
+    std::stringstream ss;
+    if (vectorType.length())
+        ss << "(" << vectorType << " [])";
+    ss << toVectorInitString(vec, vectorType, maxDim, padFillingVal, fetchFunc);
+    return ss.str();
+}
+
 kernel_selector::data_tensor convert_data_tensor(const layout& l, const tensor view_offset) {
     const auto& pad = l.data_padding;
     const auto& vals_original = l.get_partial_shape();

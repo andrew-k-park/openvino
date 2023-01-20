@@ -204,8 +204,12 @@ void kernels_cache::build_batch(const engine& build_engine, const batch_program&
         if (!current_dump_file_name.empty() && current_dump_file_name.back() != '/')
             current_dump_file_name += '/';
 
+        auto time = std::chrono::high_resolution_clock::now();
+        auto time_ns = time.time_since_epoch().count();
+
         current_dump_file_name += "clDNN_program_" + std::to_string(_prog_id) + "_bucket_" + std::to_string(batch.bucket_id)
-                               + "_part_" + std::to_string(batch.batch_id) + ".cl";
+                               + "_part_" + std::to_string(batch.batch_id) + "_time_" + to_string(time_ns) + ".c";
+        std::cout << "Current dump file name: " << current_dump_file_name << std::endl;
     }
 
     std::ofstream dump_file;

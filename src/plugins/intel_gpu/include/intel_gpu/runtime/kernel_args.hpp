@@ -21,6 +21,8 @@ struct work_group_sizes {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 struct scalar_desc {
     union ValueT {
+        double f64;
+        float f32;
         uint8_t u8;
         uint16_t u16;
         uint32_t u32;
@@ -29,8 +31,6 @@ struct scalar_desc {
         int16_t s16;
         int32_t s32;
         int64_t s64;
-        float f32;
-        double f64;
     };
 
     enum class Types {
@@ -45,6 +45,30 @@ struct scalar_desc {
         FLOAT32,
         FLOAT64,
     };
+
+    scalar_desc(Types type) : t(type), v{} {}
+    scalar_desc() = default;
+
+    static size_t get_type_size(Types t) {
+        switch (t) {
+            case Types::INT8:
+            case Types::UINT8:
+                return 1;
+            case Types::INT16:
+            case Types::UINT16:
+                return 2;
+            case Types::INT32:
+            case Types::UINT32:
+            case Types::FLOAT32:
+                return 4;
+            case Types::INT64:
+            case Types::UINT64:
+            case Types::FLOAT64:
+                return 8;
+            default:
+                return 0; // ERRor here
+        }
+    }
 
     Types t;
     ValueT v;
@@ -74,7 +98,8 @@ struct argument_desc {
         ACTIVATIONS_ZERO_POINTS,
         COMPENSATION,
         INPUT_OF_FUSED_PRIMITIVE,
-        SHAPE_INFO
+        SHAPE_INFO,
+        DYNAMIC_PARAMS
     };
 
     Types t;
@@ -89,6 +114,7 @@ using arguments_desc = std::vector<argument_desc>;
 struct kernel_arguments_desc {
     work_group_sizes workGroups;
     arguments_desc arguments;
+    scalars_desc dynamic_params;
     scalars_desc scalars;
     std::string layerID;
 };
@@ -109,6 +135,7 @@ struct kernel_arguments_data {
     memory::cptr scale_table;
     memory::cptr slope;
     memory::cptr shape_info;
+    std::vector<memory::cptr> dynamic_params;
 
     std::vector<memory::cptr> fused_op_inputs;
     const scalars_desc* scalars = nullptr;

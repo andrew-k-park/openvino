@@ -110,6 +110,12 @@ SelectKernelBase::DispatchData SelectKernelBase::SetDefault(const select_params&
     dispatchData.gws[0] = gws[0];
     dispatchData.gws[1] = gws[1];
     dispatchData.gws[2] = gws[2] * gws[3];
+
+
+    auto output_dims = toVectorString(params.outputs[0].GetDims(), "", KERNEL_SELECTOR_TENSOR_DIM_MAX, 1, [](const Tensor::Dim& d) { return d.v; });
+
+    std::cout << "GWS: " << dispatchData.gws[0] << "x" << dispatchData.gws[1] << "x" << dispatchData.gws[2] << std::endl;
+    std::cout << "Select " << output_dims << std::endl;
     dispatchData.lws = GetOptimalLocalWorkGroupSizes(dispatchData.gws, params.engineInfo);
 
     return dispatchData;
@@ -129,7 +135,7 @@ KernelsData SelectKernelBase::GetCommonKernelsData(const Params& params, const o
 
     DispatchData dispatchData = SetDefault(newParams);
 
-    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kd) {
+    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kd, void* ptr) {
         const auto& prim_params = static_cast<const select_params&>(params);
         auto dispatchData = SetDefault(prim_params);
         OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");

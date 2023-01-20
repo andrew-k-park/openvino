@@ -204,6 +204,8 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             ngraph::element::bf16
         };
 
+        config.inference_precision = ngraph::element::f32;
+        std::cout << "config.inference_precision: " << config.inference_precision << std::endl;
         // Add conversion from FP data types to infer precision if it's specified
         if (config.inference_precision != ov::element::undefined) {
             auto inference_precision = config.inference_precision;

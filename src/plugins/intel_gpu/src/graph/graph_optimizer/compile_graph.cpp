@@ -55,11 +55,14 @@ void compile_graph::run(program& p) {
         if (can_select_impl) {
             tasks.push_back([node, &p, &exception] {
                 try {
+                    auto time0 = std::chrono::high_resolution_clock::now();
                     node->selected_impl = node->type()->choose_impl(*node);
                     if (node->selected_impl) {
                         auto kernel_ids = p.get_kernels_cache().add_kernels_source(node->selected_impl->get_kernels_source());
                         node->selected_impl->set_kernel_ids(kernel_ids);
                     }
+                    auto time1 = std::chrono::high_resolution_clock::now();
+                    std::cout << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(time1 - time0).count() << " for node " << node->id() << std::endl;
                 } catch(...) {
                     exception = std::current_exception();
                 }

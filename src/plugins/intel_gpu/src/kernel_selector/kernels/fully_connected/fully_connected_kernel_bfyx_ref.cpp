@@ -40,7 +40,7 @@ ParamsKey FullyConnected_bfyx_Ref::GetSupportedKey() const {
 }
 
 FullyConnected_bfyx_Ref::DispatchData FullyConnected_bfyx_Ref::SetDefault(const fully_connected_params& params,
-                                                                          int) const {
+                                                                          int, bool recalculate) const {
     auto dispatchData = Parent::SetDefault(params);
 
     std::vector<size_t> global = { params.outputs[0].Feature().v, params.outputs[0].Batch().v, 1 };
@@ -50,6 +50,13 @@ FullyConnected_bfyx_Ref::DispatchData FullyConnected_bfyx_Ref::SetDefault(const 
 
     dispatchData.gws = global;
     dispatchData.lws = GetOptimalLocalWorkGroupSizes(dispatchData.gws, params.engineInfo);
+
+    std::cout << "Output shape: " << params.outputs[0].Batch().v << "x"
+              << params.outputs[0].Feature().v << "x"
+              << params.outputs[0].Y().v << "x"
+              << params.outputs[0].X().v << std::endl;
+    std::cout << "GWS: " << dispatchData.gws[0] << "x" << dispatchData.gws[1] << "x" << dispatchData.gws[2] << std::endl;
+    std::cout << "LWS: " << dispatchData.lws[0] << "x" << dispatchData.lws[1] << "x" << dispatchData.lws[2] << std::endl;
 
     return dispatchData;
 }

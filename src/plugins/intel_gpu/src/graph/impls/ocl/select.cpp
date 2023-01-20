@@ -13,6 +13,7 @@
 namespace cldnn {
 namespace ocl {
 
+
 struct select_impl : typed_primitive_impl_ocl<select> {
     using parent = typed_primitive_impl_ocl<select>;
     using parent::parent;
@@ -40,8 +41,8 @@ struct select_impl : typed_primitive_impl_ocl<select> {
             size_t min_size = std::min(dims_a.size(), dims_b.size());
 
             for (size_t i = 0; i < min_size; ++i) {
-                if (dims_a[i].is_static() &&
-                    dims_b[i].is_static() &&
+                if (dims_a[i].is_dynamic() ||
+                    dims_b[i].is_dynamic() ||
                    !(dims_a[i] == 1 || dims_b[i] == 1 || dims_a[i] == dims_b[i])) {
                     return false;
                 }
@@ -49,27 +50,39 @@ struct select_impl : typed_primitive_impl_ocl<select> {
             return true;
         };
 
+        std::cout << "Input shapes before\n";
+        for (auto& l : input_layouts)
+            std::cout << l.to_short_string() << std::endl;
+
         for (auto& l : input_layouts) {
             auto pshape = l.get_partial_shape();
             auto rank = pshape.size();
 
             if (rank < 4 && !broadcastable(o_layout, l)) {
+                std::cout << "Add\n";
                 pshape.insert(pshape.begin(), 4 - rank, 1);
                 layout new_layout = l;
                 new_layout.set_partial_shape(pshape);
                 l = new_layout;
             }
         }
+        std::cout << "Input shapes after\n";
+        for (auto& l : input_layouts)
+            std::cout << l.to_short_string() << std::endl;
+
 
         for (size_t i = 1; i < input_layouts.size(); ++i) {
             params.inputs.push_back(convert_data_tensor(input_layouts[i]));
         }
+
+        std::cout << "Out: " << o_layout.to_short_string() << std::endl;
+
         return {params, optional_params};
     }
 
     void update_dispatch_data(const kernel_impl_params& impl_param) override {
         auto kernel_params = get_kernel_params(impl_param);
-        (_kernel_data.update_dispatch_data_func)(kernel_params.first, _kernel_data);
+        (_kernel_data.update_dispatch_data_func)(kernel_params.first, _kernel_data, nullptr);
     }
 };
 
@@ -96,7 +109,9 @@ attach_select_impl::attach_select_impl() {
                                     static_formats);
 
     auto dyn_formats = {
-        format::bfyx
+        format::bfyx,
+        format::byxf,
+        format::yxfb,
     };
 
     implementation_map<select>::add(impl_types::ocl,

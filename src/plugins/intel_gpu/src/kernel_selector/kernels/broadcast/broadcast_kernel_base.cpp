@@ -66,7 +66,7 @@ KernelsData BroadcastKernelBase::GetCommonKernelsData(const Params& params,
     auto dispatchData = SetDefault(prim_params);
     KernelData k_data = KernelData::Default<broadcast_params>(params);
 
-    k_data.update_dispatch_data_func = [](const Params& params, KernelData& kd) {
+    k_data.update_dispatch_data_func = [](const Params& params, KernelData& kd, void* ptr) {
         const auto& prim_params = static_cast<const broadcast_params&>(params);
         auto dispatchData = SetDefault(prim_params);
         OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");

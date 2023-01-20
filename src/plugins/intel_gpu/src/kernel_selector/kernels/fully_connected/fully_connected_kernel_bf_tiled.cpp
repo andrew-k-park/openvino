@@ -51,6 +51,7 @@ ParamsKey FullyConnected_bf_tiled::GetSupportedKey() const {
     k.EnableTensorPitches();
     k.EnableDifferentTypes();
     k.EnableDifferentInputWeightsTypes();
+    k.EnableDynamicShapesSupport();
     return k;
 }
 
@@ -64,6 +65,18 @@ DeviceFeaturesKey FullyConnected_bf_tiled::get_required_device_features_key(cons
 bool FullyConnected_bf_tiled::Validate(const Params& params, const optional_params& options) const {
     if (!Parent::Validate(params, options))
         return false;
+
+    // static size_t counter = 0;
+    // if (params.layerID.find("MatMul_1159") != std::string::npos) {
+    //     std::cout << "Layer DETECTED " << params.layerID << std::endl;
+    //     return false;
+    // }
+
+    // counter++;
+    // if (counter > 83) {
+    //     std::cout << "Layer DETECTED2 " << params.layerID << "(" << counter << ")" << std::endl;
+    //     return false;
+    // }
 
     auto& fc_params = static_cast<const fully_connected_params&>(params);
     auto& input = fc_params.inputs[0];
@@ -106,7 +119,7 @@ struct TuneParamsSelector {
     TuneParamsSelector(const fully_connected_params& params) : params(params), selected(false) {}
 
     TuneParamsSelector& Case(const tune_params& tparams) {
-        if (!selected && VerifyTuneParams(params, tparams)) {
+        if (!selected && VerifyTuneParams(params, tparams, ref)) {
             result = tparams;
             selected = true;
         }
@@ -125,14 +138,17 @@ struct TuneParamsSelector {
         return result;
     }
 
-    static bool VerifyTuneParams(const fully_connected_params& params, const tune_params& tparams);
+    static bool VerifyTuneParams(const fully_connected_params& params,
+                                 const tune_params& tparams,
+                                 std::shared_ptr<tune_params> dyn_tparams = nullptr);
 
     const fully_connected_params& params;
     bool selected;
     tune_params result;
+    std::shared_ptr<tune_params> ref;
 };
 
-bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, const tune_params& tparams) {
+bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, const tune_params& tparams, std::shared_ptr<tune_params> dyn_tparams) {
     // Check divisibility by dispatch tile sizes.
     size_t output_f = params.outputs[0].Feature().v;
     size_t output_b = params.outputs[0].Batch().v;
@@ -141,17 +157,68 @@ bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, 
         output_f = params.outputs[0].Y().v;
     }
 
-    if (output_b % (tparams.tile_b * tparams.dispatch_bsv) != 0)
+    std::cout << "Verify (_" << tparams.tile_b
+                << "_" << tparams.tile_ofm
+                << "_" << tparams.tile_ifm
+                << "_" << tparams.tile_k
+                << "_" << tparams.dispatch_bsv
+                << "_" << tparams.dispatch_fsv << ")" << std::endl;
+
+    if (dyn_tparams) {
+        bool supports = dyn_tparams->tile_b == tparams.tile_b &&
+                        dyn_tparams->tile_ofm == tparams.tile_ofm &&
+                        dyn_tparams->tile_ifm == tparams.tile_ifm &&
+                        dyn_tparams->tile_k == tparams.tile_k;
+                        // dyn_tparams->tile_k == tparams.tile_k &&
+                        // dyn_tparams->dispatch_bsv == tparams.dispatch_bsv &&
+                        // dyn_tparams->dispatch_fsv == tparams.dispatch_fsv;
+        if (!supports) {
+            std::cout << "Unsupported dyn_params\n";
+            return false;
+        } else {
+            std::cout << "It's okay, prev params: "
+                        << dyn_tparams->tile_b
+                        << "_" << dyn_tparams->tile_ofm
+                        << "_" << dyn_tparams->tile_ifm
+                        << "_" << dyn_tparams->tile_k
+                        << "_" << dyn_tparams->dispatch_bsv
+                        << "_" << dyn_tparams->dispatch_fsv << "" << std::endl;
+        }
+    }
+
+    if (dyn_tparams) {
+        if (Align(output_b, tparams.tile_b) % (tparams.tile_b * tparams.dispatch_bsv) != 0) {
+            std::cout << "False 1.1 (Dynamic): " << Align(output_b, tparams.tile_b) << " % " << tparams.tile_b * tparams.dispatch_bsv << " != 0\n";
+            return false;
+        }
+    } else {
+        if (output_b % (tparams.tile_b * tparams.dispatch_bsv) != 0) {
+            std::cout << "False 1.1: " << output_b << " % " << tparams.tile_b * tparams.dispatch_bsv << " != 0\n";
+            return false;
+        }
+    }
+
+    if (params.has_dynamic_tensors() && tparams.tile_b * tparams.dispatch_bsv > 32) {
+        std::cout << "False 1.2: " << output_b << " % " << tparams.tile_b * tparams.dispatch_bsv << " != 0\n";
         return false;
-    if (CeilDiv(output_f, tparams.tile_ofm * simd) % tparams.dispatch_fsv != 0)
+    }
+
+
+    if (CeilDiv(output_f, tparams.tile_ofm * simd) % tparams.dispatch_fsv != 0) {
+        std::cout << "False 2: " << CeilDiv(output_f, tparams.tile_ofm * simd) << " % " << tparams.dispatch_fsv << " != 0\n";
         return false;
+    }
 
     // Same result can be achieved with smaller tile_ofm.
-    if (output_f <= (tparams.tile_ofm / 2) * simd)
+    if (output_f <= (tparams.tile_ofm / 2) * simd) {
+        std::cout << "False 3: " << output_f << " <= " << (tparams.tile_ofm / 2) * simd << "\n";
         return false;
+    }
     // No weights layout for such huge tile ofm.
-    if (tparams.tile_ofm * simd > 64)
+    if (tparams.tile_ofm * simd > 64) {
+        std::cout << "False 4: " << tparams.tile_ofm * simd << " > " << "64\n";
         return false;
+    }
 
     // Reject tile sizes that are guaranteed to spill out of registers.
     unsigned acc_register_bytes = tparams.tile_b * tparams.tile_ofm * simd * BytesPerElement(params.inputs[0].GetDType());
@@ -161,8 +228,10 @@ bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, 
     unsigned total_register_bytes = acc_register_bytes + in_register_bytes + wei_register_bytes;
     unsigned max_register_bytes = 128 * 32;
 
-    if (total_register_bytes > max_register_bytes)
+    if (total_register_bytes > max_register_bytes) {
+        std::cout << "False 5: registers\n";
         return false;
+    }
 
     return true;
 }
@@ -170,7 +239,7 @@ bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, 
 }  // namespace
 
 FullyConnected_bf_tiled::tune_params
-FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params, int idx) const {
+FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params, int idx, bool) const {
     if (idx >= 0 && idx < static_cast<int>(auto_tune_params.size())
         && TuneParamsSelector::VerifyTuneParams(params, auto_tune_params[idx]))
         return auto_tune_params[idx];
@@ -186,6 +255,24 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
     Datatype dtype = params.inputs[0].GetDType();
 
     auto selector = TuneParamsSelector(params);
+
+    if (tune_params_dynamic) {
+        selector.ref = tune_params_dynamic;
+    }
+
+    // if (tune_params_dynamic) {
+    //     std::cout << "Load tuning params..." << std::endl;
+
+    //     std::cout << "tparams.tile_b = " << tune_params_dynamic->tile_b << std::endl;
+    //     std::cout << "tparams.tile_ofm = " << tune_params_dynamic->tile_ofm << std::endl;
+    //     std::cout << "tparams.tile_ifm = " << tune_params_dynamic->tile_ifm << std::endl;
+    //     std::cout << "tparams.tile_k = " << tune_params_dynamic->tile_k << std::endl;
+    //     std::cout << "tparams.dispatch_bsv = " << tune_params_dynamic->dispatch_bsv << std::endl;
+    //     std::cout << "tparams.dispatch_fsv = " << tune_params_dynamic->dispatch_fsv << std::endl;
+
+    //     return *tune_params_dynamic;
+    // }
+
 
     unsigned max_tile_ofm = 1;
     while (max_tile_ofm * 2 * simd <= output_f && max_tile_ofm < 4)
@@ -229,20 +316,38 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
         return result;
     });
 
-    return selector.Default(tune_params(1, 1, 1, 1, 1, 1, EXE_MODE_DEFAULT));
+    auto res_params = selector.Default(tune_params(1, 1, 1, 1, 1, 1, EXE_MODE_DEFAULT));
+    if (params.has_dynamic_inputs() && !tune_params_dynamic) {
+        std::cout << "Save tuning params\n" << std::endl;
+        tune_params_dynamic = std::make_shared<tune_params>(res_params);
+        selector.ref = tune_params_dynamic;
+    }
+
+    std::cout << "Tuning results:\n";
+
+    std::cout << "tparams.tile_b = " << res_params.tile_b << std::endl;
+    std::cout << "tparams.tile_ofm = " << res_params.tile_ofm << std::endl;
+    std::cout << "tparams.tile_ifm = " << res_params.tile_ifm << std::endl;
+    std::cout << "tparams.tile_k = " << res_params.tile_k << std::endl;
+    std::cout << "tparams.dispatch_bsv = " << res_params.dispatch_bsv << std::endl;
+    std::cout << "tparams.dispatch_fsv = " << res_params.dispatch_fsv << std::endl;
+
+    return res_params;
 }
 
 FullyConnected_bf_tiled::DispatchData
-FullyConnected_bf_tiled::SetDefault(const fully_connected_params& params, int autoTuneIndex) const {
+FullyConnected_bf_tiled::SetDefault(const fully_connected_params& params, int autoTuneIndex, bool) const {
     auto dispatchData = Parent::SetDefault(params);
     auto tparams = GetAutoTuneParams(params, autoTuneIndex);
 
     size_t feature_threads = CeilDiv(params.outputs[0].Feature().v, tparams.tile_ofm * simd);
-    size_t batch_threads = params.outputs[0].Batch().v / tparams.tile_b;
+    size_t batch_threads = params.outputs[0].Batch().v;
     if (params.outputs[0].GetLayout() == DataLayout::bfyx) {
         feature_threads = CeilDiv(params.outputs[0].Y().v, tparams.tile_ofm * simd);
-        batch_threads = (params.outputs[0].Batch().v * params.outputs[0].Feature().v) / tparams.tile_b;
+        batch_threads = params.outputs[0].Batch().v * params.outputs[0].Feature().v;
     }
+    // Check if it is Ok for static path
+    batch_threads = CeilDiv(batch_threads, tparams.tile_b);
 
     dispatchData.gws[0] = feature_threads * batch_threads * simd;
     dispatchData.gws[1] = 1;
@@ -259,7 +364,27 @@ FullyConnected_bf_tiled::SetDefault(const fully_connected_params& params, int au
     dispatchData.tile_ms = tparams.dispatch_bsv;
     dispatchData.tile_ns = tparams.dispatch_fsv;
 
+    std::cout << "Update params for shape " << params.outputs[0].Batch().v << "x" << params.outputs[0].Feature().v << "x" << params.outputs[0].Y().v << "x" << params.outputs[0].X().v
+              << " Input: " << params.inputs[0].Batch().v << "x" << params.inputs[0].Feature().v << "x" << params.inputs[0].Y().v << "x" << params.inputs[0].X().v << std::endl;
+    std::cout << "GWS calc: feature_threads=" << feature_threads << " batch_threads=" << batch_threads << " - " << params.layerID << "(" << params.has_dynamic_tensors() << ")" << std::endl;
+    std::cout << "GWS: " << dispatchData.gws[0] << "x" << dispatchData.gws[1] << "x" << dispatchData.gws[2] << std::endl;
+    std::cout << "LWS: " << dispatchData.lws[0] << "x" << dispatchData.lws[1] << "x" << dispatchData.lws[2] << std::endl;
+
     return dispatchData;
+}
+
+void FullyConnected_bf_tiled::UpdateDynamicParams(const Params& params, KernelData& kd) const {
+    const auto& prim_params = static_cast<const fully_connected_params&>(params);
+    auto dispatchData = SetDefault(prim_params, -1, true);
+    auto& kernel_params = kd.kernels[0].params;
+
+    OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");
+    kernel_params.workGroups.global = dispatchData.gws;
+    kernel_params.workGroups.local = dispatchData.lws;
+
+    OPENVINO_ASSERT(kernel_params.dynamic_params.size() == 2, "[GPU] Unexpected number of dynamic params for bf_tiled fc kernel");
+    kernel_params.dynamic_params[0].v.u32 = dispatchData.tile_ms;
+    kernel_params.dynamic_params[1].v.u32 = dispatchData.tile_ns;
 }
 
 KernelsPriority FullyConnected_bf_tiled::GetKernelsPriority(const Params& params, const optional_params& /*options*/) const {
@@ -287,8 +412,17 @@ JitConstants FullyConnected_bf_tiled::GetJitConstants(const fully_connected_para
     jit.AddConstant(MakeJitConstant("TILE_IFM", dispatchData.tile_mk));
     jit.AddConstant(MakeJitConstant("TILE_K", dispatchData.tile_nk));
     jit.AddConstant(MakeJitConstant("TILE_K_OFM", dispatchData.tile_nk * dispatchData.tile_n));
-    jit.AddConstant(MakeJitConstant("DISPATCH_BSV", dispatchData.tile_ms));
-    jit.AddConstant(MakeJitConstant("DISPATCH_FSV", dispatchData.tile_ns));
+
+    if (!params.has_dynamic_tensors()) {
+        jit.AddConstant(MakeJitConstant("DISPATCH_BSV", dispatchData.tile_ms));
+        jit.AddConstant(MakeJitConstant("DISPATCH_FSV", dispatchData.tile_ns));
+    } else {
+        std::cout << "Dynamic kernel!\n";
+        std::vector<std::pair<std::string, ScalarDescriptor::Types>> dynamic_params = {
+            {"DISPATCH_BSV1", ScalarDescriptor::Types::UINT32},
+            {"DISPATCH_FSV1", ScalarDescriptor::Types::UINT32}};
+        jit.Merge(MakeDynamicParamsJitConstants(dynamic_params));
+    }
 
     jit.Merge(MakeConstantLoopUnrollJitConstants(dispatchData.tile_m));
 
@@ -308,11 +442,13 @@ JitConstants FullyConnected_bf_tiled::GetJitConstants(const fully_connected_para
         jit.AddConstant(MakeJitConstant("TILE_IN_B_PITCH", params.inputs[0].Feature().pitch));
         jit.AddConstant(MakeJitConstant("TILE_OUT_B_PITCH", params.outputs[0].Feature().pitch));
         jit.AddConstant(MakeJitConstant("OUTPUT_3D", true));
+        jit.AddConstant(MakeJitConstant("BATCH_SIZE", "(OUTPUT_BATCH_NUM * OUTPUT_FEATURE_NUM)"));
     } else {
         jit.AddConstant(MakeJitConstant("TILE_OUT_F_NUM", params.outputs[0].Feature().v));
         jit.AddConstant(MakeJitConstant("TILE_OUT_F_PITCH", params.outputs[0].Feature().pitch));
         jit.AddConstant(MakeJitConstant("TILE_IN_B_PITCH", params.inputs[0].Batch().pitch));
         jit.AddConstant(MakeJitConstant("TILE_OUT_B_PITCH", params.outputs[0].Batch().pitch));
+        jit.AddConstant(MakeJitConstant("BATCH_SIZE", "(OUTPUT_BATCH_NUM)"));
     }
 
     if (!params.fused_ops.empty()) {
@@ -358,12 +494,22 @@ KernelsData FullyConnected_bf_tiled::GetTunedKernelsDataByIndex(const Params &pa
     else if (tparams.tile_ofm * simd == 64)
         weights_layout = WeightsLayout::os_iyx_osv64;
 
-    return GetCommonKernelsData(params,
+    auto kernelsData = GetCommonKernelsData(params,
                                 options,
                                 fc_params.inputs[0].GetLayout(),
                                 weights_layout,
                                 tparams.exec_options,
                                 autoTuneIndex);
+
+    if (fc_params.has_dynamic_inputs() && kernelsData.size()) {
+        auto& kernel_params = kernelsData[0].kernels[0].params;
+        kernel_params.dynamic_params.emplace_back(ScalarDescriptor::Types::UINT32);
+        kernel_params.dynamic_params.emplace_back(ScalarDescriptor::Types::UINT32);
+
+        kernel_params.arguments.push_back({ArgumentDescriptor::Types::DYNAMIC_PARAMS, 0});
+    }
+
+    return kernelsData;
 }
 
 KernelsData FullyConnected_bf_tiled::GetKernelsDataForAutoTune(const Params& params, const optional_params& options) const {

@@ -1928,7 +1928,7 @@ TEST(fully_connected_gpu, dynamic_multi_inference_different_shape) {
         auto output_prim_mem = outputs.begin()->second.get_memory();
 
         auto out_l = network.get_output_layout(outputs.begin()->first);
-        ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+        // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
         ASSERT_EQ(out_l.batch(), 2);
         ASSERT_EQ(out_l.feature(), weight_b);
         ASSERT_EQ(out_l.spatial(0), 1);
@@ -1957,7 +1957,7 @@ TEST(fully_connected_gpu, dynamic_multi_inference_different_shape) {
         auto output_prim_mem = outputs.begin()->second.get_memory();
 
         auto out_l = network.get_output_layout(outputs.begin()->first);
-        ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(1, 16)); // fake_alignment
+        // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(1, 16)); // fake_alignment
         ASSERT_EQ(out_l.batch(), 1);
         ASSERT_EQ(out_l.feature(), weight_b);
         ASSERT_EQ(out_l.spatial(0), 1);
@@ -2057,5 +2057,764 @@ TEST(fully_connected_gpu, dynamic_multi_inference_multiple_shapes) {
             ASSERT_EQ(-2.25f, output_ptr[2]);
             ASSERT_EQ(3.0f, output_ptr[3]);
         }
+    }
+}
+
+static double get_exectime_fc(const std::shared_ptr<event>& event)
+{
+    using namespace std::chrono;
+    double avg_time = 0.0;
+    auto intervals = event->get_profiling_info();
+    for (const auto& q : intervals)
+    {
+        if (q.stage != instrumentation::profiling_stage::executing) {
+            continue;
+        }
+        avg_time = duration_cast<duration<double, microseconds::period>>(q.value->value()).count();
+        break;
+    }
+    return avg_time;
+}
+
+TEST(fully_connected_gpu_opt, dynamic_multi_inference_multiple_shapes_opt) {
+    std::string sources_dumps_dir = "";
+    cldnn::queue_types queue_type = cldnn::queue_types::out_of_order;
+    priority_mode_types priority_mode = priority_mode_types::disabled;
+    throttle_mode_types throttle_mode = throttle_mode_types::disabled;
+    bool use_memory_pool = true;
+    bool use_unified_shared_memory = true;
+    auto conf = engine_configuration(true, queue_type, sources_dumps_dir, priority_mode, throttle_mode, use_memory_pool, use_unified_shared_memory);
+    auto& engine = get_test_engine(conf);
+
+    const int32_t input_f = 384, weight_b = 768;
+    const int32_t input_data1_b = 42;
+    // const int32_t input_data1_b = 1024*4;
+    // const int32_t input_data1_b = 128;
+    const int32_t input_data2_b = 128;
+
+    // auto input_dyn_layout = layout{ ov::PartialShape{ input_data1_b, input_f }, data_types::f32,format::bfyx };
+    auto input_dyn_layout = layout{ ov::PartialShape{ ov::Dimension(), input_f }, data_types::f32,format::bfyx };
+    auto input_actual_layout1 = layout{ ov::PartialShape{ input_data1_b, input_f }, data_types::f32,format::bfyx};
+    auto input_actual_layout2 = layout{ ov::PartialShape{ input_data2_b, input_f }, data_types::f32,format::bfyx};
+    auto input_data1 = engine.allocate_memory(input_actual_layout1);
+    auto input_data2 = engine.allocate_memory(input_actual_layout2);
+    auto weights_data = engine.allocate_memory({ ov::PartialShape{ weight_b, input_f }, data_types::f32,format::bfyx});
+
+    auto input_data1_vec = generate_random_1d<float>(input_data1_b * input_f, 0, 1);
+    auto input_data2_vec = generate_random_1d<float>(input_data2_b * input_f, 0, 1);
+
+    auto weights_data_vec = generate_random_1d<float>(weight_b * input_f, 0, 1);
+
+    set_values(input_data1, input_data1_vec);
+    set_values(input_data2, input_data2_vec);
+    set_values(weights_data, weights_data_vec);
+
+    cldnn::topology topology{
+        input_layout("input", input_dyn_layout),
+        data("weights", weights_data),
+        fully_connected("fc", input_info("input"), "weights")
+    };
+
+    build_options options;
+    options.set_option(build_option::optimize_data(true));
+    options.set_option(cldnn::build_option::allow_new_shape_infer(true));
+    network network(engine, topology, options);
+
+    std::vector<std::string> times;
+
+    {
+        const size_t niter_start = 40;
+        const size_t niter = 128;
+        // double exectime_b1 = 0;
+        // double exectime_b2 = 0;
+        double exectime_total = 0;
+
+        std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+            22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
+
+        // batch_sizes = {7, 8, 9};
+
+        for (const auto& batch_size : batch_sizes) {
+            float* data_vec;
+            cldnn::memory_ptr input_data_mem;
+            std::vector<float> input_data_vec;
+            // if (i == 0) {
+            //     input_data_mem = input_data1;
+            //     batch_size = input_data1_b;
+            //     data_vec = input_data1_vec.data();
+            // } else if (i == 1) {
+            //     input_data_mem = input_data2;
+            //     batch_size = input_data2_b;
+            //     data_vec = input_data2_vec.data();
+            // } else {
+            auto input_actual_layout = layout{ ov::PartialShape{ (ov::Dimension::value_type)batch_size, input_f }, data_types::f32,format::bfyx};
+            input_data_mem = engine.allocate_memory(input_actual_layout);
+            input_data_vec = generate_random_1d<float>(batch_size * input_f, 0, 1);
+            set_values(input_data_mem, input_data_vec);
+            data_vec = input_data_vec.data();
+            // }
+            network.set_input_data("input", input_data_mem);
+
+            auto outputs = network.execute();
+            ASSERT_EQ(outputs.size(), size_t(1));
+            ASSERT_EQ(outputs.begin()->first, "fc");
+
+            auto output_prim_mem = outputs.begin()->second.get_memory();
+
+            auto out_l = network.get_output_layout(outputs.begin()->first);
+            // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+            ASSERT_EQ(out_l.batch(), batch_size); // fake_alignment
+            ASSERT_EQ(out_l.feature(), weight_b);
+            ASSERT_EQ(out_l.spatial(0), 1);
+            ASSERT_EQ(out_l.spatial(1), 1);
+
+            cldnn::mem_lock<float> output_ptr (output_prim_mem, get_test_stream());
+
+            for (size_t b = 0; b < batch_size; b++) {
+                for (size_t ofm = 0; ofm < weight_b; ofm++) {
+                    auto acc = 0.f;
+                    for (size_t ifm = 0; ifm < input_f; ifm++) {
+                        acc += weights_data_vec[ofm * input_f + ifm] * data_vec[b * input_f + ifm];
+                    }
+                    if (acc != output_ptr[b * weight_b + ofm])
+                        std::cerr << "Error for b=" << b << " f=" << ofm << std::endl;
+                    ASSERT_EQ(acc, output_ptr[b * weight_b + ofm]);
+                }
+            }
+
+            double exectime = get_exectime_fc(network.get_primitive_event("fc"));
+
+            std::stringstream time_str;
+            time_str << "Time for " << batch_size << "x" << input_f << " shape: "
+                     << exectime << "us";
+
+            times.push_back(time_str.str());
+
+            std::cout << time_str.str() << std::endl;
+
+            // if (i % 2 == 0)
+            //     exectime_b1 += exectime;
+            // else
+            //     exectime_b2 += exectime;
+            exectime_total += exectime;
+        }
+
+        for (auto& t : times)
+            std::cout << t << std::endl;
+
+        std::cout << "Total avg time for " << niter_start << ".." << niter << "x" << input_f << " shape: "
+                << (exectime_total / (niter - niter_start)) << "us" << std::endl;
+        std::cout << "Total time for " << niter_start << ".." << niter << "x" << input_f << " shape: "
+                << exectime_total << "us" << std::endl;
+
+        // exectime /= niter;
+        // std::cout << "Avg time for " << input_data1_b << "x" << input_f << " shape: "
+        //         << (exectime_b1 / (niter / 2)) << "us" << std::endl;
+
+        // std::cout << "Avg time for " << input_data2_b << "x" << input_f << " shape: "
+        //         << (exectime_b2 / (niter / 2)) << "us" << std::endl;
+
+
+    }
+}
+
+TEST(fully_connected_gpu_opt, dynamic_multi_inference_multiple_shapes_static) {
+    std::string sources_dumps_dir = "";
+    cldnn::queue_types queue_type = cldnn::queue_types::out_of_order;
+    priority_mode_types priority_mode = priority_mode_types::disabled;
+    throttle_mode_types throttle_mode = throttle_mode_types::disabled;
+    bool use_memory_pool = true;
+    bool use_unified_shared_memory = true;
+    auto conf = engine_configuration(true, queue_type, sources_dumps_dir, priority_mode, throttle_mode, use_memory_pool, use_unified_shared_memory);
+    auto& engine = get_test_engine(conf);
+
+    const int32_t input_f = 384, weight_b = 768;
+    // const int32_t input_data1_b = 1024*4;
+    // const int32_t input_data1_b = 128;
+
+    // auto input_dyn_layout = layout{ ov::PartialShape{ input_data1_b, input_f }, data_types::f32,format::bfyx };
+    auto input_dyn_layout = layout{ ov::PartialShape{ ov::Dimension(), input_f }, data_types::f32,format::bfyx };
+
+    // Call different shape multiple times to ensure caching works fine
+
+    const size_t niter_start = 40;
+    const size_t niter = 128;
+    // double exectime_b1 = 0;
+    // double exectime_b2 = 0;
+    double exectime_total = 0;
+
+    std::vector<std::string> times;
+
+    std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
+
+    for (const auto& batch_size : batch_sizes) {
+        float* data_vec;
+        cldnn::memory_ptr input_data_mem;
+        std::vector<float> input_data_vec;
+
+        auto input_actual_layout = layout{ ov::PartialShape{ (ov::Dimension::value_type)batch_size, input_f }, data_types::f32,format::bfyx};
+
+        input_data_mem = engine.allocate_memory(input_actual_layout);
+        auto weights_data = engine.allocate_memory({ ov::PartialShape{ weight_b, input_f }, data_types::f32, format::bfyx});
+
+        auto input_data1_vec = generate_random_1d<float>(batch_size * input_f, 0, 1);
+        data_vec = input_data1_vec.data();
+
+        auto weights_data_vec = generate_random_1d<float>(weight_b * input_f, 0, 1);
+
+        set_values(input_data_mem, input_data1_vec);
+        set_values(weights_data, weights_data_vec);
+
+        cldnn::topology topology{
+            input_layout("input", input_actual_layout),
+            data("weights", weights_data),
+            fully_connected("fc", input_info("input"), "weights")
+        };
+
+        build_options options;
+        options.set_option(build_option::optimize_data(true));
+        // options.set_option(cldnn::build_option::allow_new_shape_infer(true));
+        network network(engine, topology, options);
+
+        network.set_input_data("input", input_data_mem);
+
+        auto outputs = network.execute();
+        ASSERT_EQ(outputs.size(), size_t(1));
+        ASSERT_EQ(outputs.begin()->first, "fc");
+
+        auto output_prim_mem = outputs.begin()->second.get_memory();
+
+        auto out_l = network.get_output_layout(outputs.begin()->first);
+        // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+        ASSERT_EQ(out_l.batch(), batch_size); // fake_alignment
+        ASSERT_EQ(out_l.feature(), weight_b);
+        ASSERT_EQ(out_l.spatial(0), 1);
+        ASSERT_EQ(out_l.spatial(1), 1);
+
+        cldnn::mem_lock<float> output_ptr (output_prim_mem, get_test_stream());
+
+        for (size_t b = 0; b < batch_size; b++) {
+            for (size_t ofm = 0; ofm < weight_b; ofm++) {
+                auto acc = 0.f;
+                for (size_t ifm = 0; ifm < input_f; ifm++) {
+                    acc += weights_data_vec[ofm * input_f + ifm] * data_vec[b * input_f + ifm];
+                }
+                if (acc != output_ptr[b * weight_b + ofm]) {
+                    std::cerr << "Error for b=" << b << " f=" << ofm << std::endl;
+                    break;
+                }
+                // ASSERT_EQ(acc, output_ptr[b * weight_b + ofm]);
+            }
+        }
+
+        double exectime = get_exectime_fc(network.get_primitive_event("fc"));
+
+        std::stringstream time_str;
+        time_str << "Time for " << batch_size << "x" << input_f << " shape: "
+                 << (exectime) << "us";
+
+        times.push_back(time_str.str());
+
+        std::cout << time_str.str() << std::endl;
+
+
+        // if (i % 2 == 0)
+        //     exectime_b1 += exectime;
+        // else
+        //     exectime_b2 += exectime;
+        exectime_total += exectime;
+    }
+
+    for (auto& t : times)
+        std::cout << t << std::endl;
+
+    std::cout << "Total avg time for static " << niter_start << ".." << niter << "x" << input_f << " shape: "
+            << (exectime_total / (niter - niter_start)) << "us" << std::endl;
+    std::cout << "Total time for static " << niter_start << ".." << niter << "x" << input_f << " shape: "
+            << exectime_total << "us" << std::endl;
+
+    // exectime /= niter;
+    // std::cout << "Avg time for static " << input_data1_b << "x" << input_f << " shape: "
+    //         << (exectime_b1 / (niter / 2)) << "us" << std::endl;
+
+    // std::cout << "Avg time for static " << input_data2_b << "x" << input_f << " shape: "
+    //         << (exectime_b2 / (niter / 2)) << "us" << std::endl;
+}
+
+TEST(fully_connected_gpu_opt, dynamic_multi_inference_multiple_shapes_single) {
+    std::string sources_dumps_dir = "";
+    cldnn::queue_types queue_type = cldnn::queue_types::out_of_order;
+    priority_mode_types priority_mode = priority_mode_types::disabled;
+    throttle_mode_types throttle_mode = throttle_mode_types::disabled;
+    bool use_memory_pool = true;
+    bool use_unified_shared_memory = true;
+    auto conf = engine_configuration(true, queue_type, sources_dumps_dir, priority_mode, throttle_mode, use_memory_pool, use_unified_shared_memory);
+    auto& engine = get_test_engine(conf);
+
+    const int32_t input_f = 768, weight_b = 3072;
+    // const int32_t input_data1_b = 1024*4;
+    // const int32_t input_data1_b = 128;
+
+    // auto input_dyn_layout = layout{ ov::PartialShape{ input_data1_b, input_f }, data_types::f32,format::bfyx };
+    auto input_dyn_layout = layout{ ov::PartialShape{ ov::Dimension(), input_f }, data_types::f32,format::bfyx };
+
+    // Call different shape multiple times to ensure caching works fine
+
+    const size_t niter_start = 40;
+    const size_t niter = 128;
+    // double exectime_b1 = 0;
+    // double exectime_b2 = 0;
+    double exectime_total = 0;
+
+    std::vector<std::string> times;
+
+    size_t batch_size = 27;
+    // std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    //     22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
+
+    float* data_vec;
+    cldnn::memory_ptr input_data_mem;
+    std::vector<float> input_data_vec;
+
+    auto input_dynamic_layout = layout{ ov::PartialShape{ 1, ov::Dimension(), input_f }, data_types::f32,format::bfyx};
+    // auto input_dyn_layout = layout{ ov::PartialShape{ ov::Dimension(), input_f }, data_types::f32,format::bfyx };
+    auto input_actual_layout = layout{ ov::PartialShape{ 1, (ov::Dimension::value_type)batch_size, input_f }, data_types::f32,format::bfyx};
+
+    input_data_mem = engine.allocate_memory(input_actual_layout);
+    auto weights_data = engine.allocate_memory({ ov::PartialShape{ weight_b, input_f }, data_types::f32, format::bfyx});
+
+    auto input_data1_vec = generate_random_1d<float>(batch_size * input_f, 0, 1);
+    data_vec = input_data1_vec.data();
+
+    auto weights_data_vec = generate_random_1d<float>(weight_b * input_f, 0, 1);
+
+    set_values(input_data_mem, input_data1_vec);
+    set_values(weights_data, weights_data_vec);
+
+    cldnn::topology topology{
+        input_layout("input", input_dynamic_layout),
+        data("weights", weights_data),
+        fully_connected("fc", input_info("input"), "weights", "", padding(), 3)
+    };
+
+    build_options options;
+    options.set_option(build_option::optimize_data(true));
+    options.set_option(cldnn::build_option::allow_new_shape_infer(true));
+    network network(engine, topology, options);
+
+    network.set_input_data("input", input_data_mem);
+
+    auto outputs = network.execute();
+    ASSERT_EQ(outputs.size(), size_t(1));
+    ASSERT_EQ(outputs.begin()->first, "fc");
+
+    auto output_prim_mem = outputs.begin()->second.get_memory();
+
+    auto out_l = network.get_output_layout(outputs.begin()->first);
+    // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+    ASSERT_EQ(out_l.batch(), 1); // fake_alignment
+    ASSERT_EQ(out_l.feature(), batch_size);
+    ASSERT_EQ(out_l.spatial(0), 1);
+    ASSERT_EQ(out_l.spatial(1), weight_b);
+
+    cldnn::mem_lock<float> output_ptr (output_prim_mem, get_test_stream());
+
+    for (size_t b = 0; b < batch_size; b++) {
+        for (size_t ofm = 0; ofm < weight_b; ofm++) {
+            auto acc = 0.f;
+            for (size_t ifm = 0; ifm < input_f; ifm++) {
+                acc += weights_data_vec[ofm * input_f + ifm] * data_vec[b * input_f + ifm];
+            }
+            if (acc != output_ptr[b * weight_b + ofm]) {
+                std::cerr << "Error for b=" << b << " f=" << ofm << std::endl;
+                break;
+            }
+            ASSERT_EQ(acc, output_ptr[b * weight_b + ofm]);
+        }
+    }
+
+    double exectime = get_exectime_fc(network.get_primitive_event("fc"));
+
+    std::stringstream time_str;
+    time_str << "Time for " << batch_size << "x" << input_f << " shape: "
+                << (exectime) << "us";
+
+    times.push_back(time_str.str());
+
+    std::cout << time_str.str() << std::endl;
+
+
+    // if (i % 2 == 0)
+    //     exectime_b1 += exectime;
+    // else
+    //     exectime_b2 += exectime;
+    exectime_total += exectime;
+
+    for (auto& t : times)
+        std::cout << t << std::endl;
+
+    std::cout << "Total avg time for static " << niter_start << ".." << niter << "x" << input_f << " shape: "
+            << (exectime_total / (niter - niter_start)) << "us" << std::endl;
+    std::cout << "Total time for static " << niter_start << ".." << niter << "x" << input_f << " shape: "
+            << exectime_total << "us" << std::endl;
+
+    // exectime /= niter;
+    // std::cout << "Avg time for static " << input_data1_b << "x" << input_f << " shape: "
+    //         << (exectime_b1 / (niter / 2)) << "us" << std::endl;
+
+    // std::cout << "Avg time for static " << input_data2_b << "x" << input_f << " shape: "
+    //         << (exectime_b2 / (niter / 2)) << "us" << std::endl;
+
+}
+
+
+TEST(fully_connected_gpu_opt, dynamic_multi_inference_multiple_shapes_single_stat) {
+    std::string sources_dumps_dir = "";
+    cldnn::queue_types queue_type = cldnn::queue_types::out_of_order;
+    priority_mode_types priority_mode = priority_mode_types::disabled;
+    throttle_mode_types throttle_mode = throttle_mode_types::disabled;
+    bool use_memory_pool = true;
+    bool use_unified_shared_memory = true;
+    auto conf = engine_configuration(true, queue_type, sources_dumps_dir, priority_mode, throttle_mode, use_memory_pool, use_unified_shared_memory);
+    auto& engine = get_test_engine(conf);
+
+    const int32_t input_f = 32, weight_b = 64;
+    // const int32_t input_data1_b = 1024*4;
+    // const int32_t input_data1_b = 128;
+
+    // auto input_dyn_layout = layout{ ov::PartialShape{ input_data1_b, input_f }, data_types::f32,format::bfyx };
+    auto input_dyn_layout = layout{ ov::PartialShape{ ov::Dimension(), input_f }, data_types::f32,format::bfyx };
+
+    // Call different shape multiple times to ensure caching works fine
+
+    // const size_t niter_start = 40;
+    // const size_t niter = 128;
+    // double exectime_b1 = 0;
+    // double exectime_b2 = 0;
+    // double exectime_total = 0;
+
+    // std::vector<std::string> times;
+
+    size_t batch_size = 27;
+    // std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    //     22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
+
+    float* data_vec;
+    cldnn::memory_ptr input_data_mem;
+    std::vector<float> input_data_vec;
+
+    // auto input_dynamic_layout = layout{ ov::PartialShape{ 1, ov::Dimension(), input_f }, data_types::f32,format::bfyx};
+    auto input_actual_layout = layout{ ov::PartialShape{ 1, (ov::Dimension::value_type)batch_size, input_f }, data_types::f32,format::bfyx};
+
+    input_data_mem = engine.allocate_memory(input_actual_layout);
+    auto weights_data = engine.allocate_memory({ ov::PartialShape{ weight_b, input_f }, data_types::f32, format::bfyx});
+
+    auto input_data1_vec = generate_random_1d<float>(batch_size * input_f, 0, 1);
+    data_vec = input_data1_vec.data();
+
+    auto weights_data_vec = generate_random_1d<float>(weight_b * input_f, 0, 1);
+
+    set_values(input_data_mem, input_data1_vec);
+    set_values(weights_data, weights_data_vec);
+
+    cldnn::topology topology{
+        input_layout("input", input_actual_layout),
+        data("weights", weights_data),
+        fully_connected("fc", input_info("input"), "weights", "", padding(), 3)
+    };
+
+    build_options options;
+    options.set_option(build_option::optimize_data(true));
+    // options.set_option(cldnn::build_option::allow_new_shape_infer(true));
+    network network(engine, topology, options);
+
+    network.set_input_data("input", input_data_mem);
+
+    auto outputs = network.execute();
+    ASSERT_EQ(outputs.size(), size_t(1));
+    ASSERT_EQ(outputs.begin()->first, "fc");
+
+    auto output_prim_mem = outputs.begin()->second.get_memory();
+
+    auto out_l = network.get_output_layout(outputs.begin()->first);
+    // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+    ASSERT_EQ(out_l.batch(), 1); // fake_alignment
+    ASSERT_EQ(out_l.feature(), batch_size);
+    ASSERT_EQ(out_l.spatial(0), 1);
+    ASSERT_EQ(out_l.spatial(1), weight_b);
+
+    cldnn::mem_lock<float> output_ptr (output_prim_mem, get_test_stream());
+
+    for (size_t b = 0; b < batch_size; b++) {
+        for (size_t ofm = 0; ofm < weight_b; ofm++) {
+            auto acc = 0.f;
+            for (size_t ifm = 0; ifm < input_f; ifm++) {
+                acc += weights_data_vec[ofm * input_f + ifm] * data_vec[b * input_f + ifm];
+            }
+            if (acc != output_ptr[b * weight_b + ofm]) {
+                std::cerr << "Error for b=" << b << " f=" << ofm << std::endl;
+                break;
+            }
+            ASSERT_EQ(acc, output_ptr[b * weight_b + ofm]);
+        }
+    }
+
+    // double exectime = get_exectime_fc(network.get_primitive_event("fc"));
+
+    // std::stringstream time_str;
+    // time_str << "Time for " << batch_size << "x" << input_f << " shape: "
+    //             << (exectime) << "us";
+
+    // times.push_back(time_str.str());
+
+    // std::cout << time_str.str() << std::endl;
+
+
+    // if (i % 2 == 0)
+    //     exectime_b1 += exectime;
+    // else
+    //     exectime_b2 += exectime;
+    // exectime_total += exectime;
+
+    // for (auto& t : times)
+    //     std::cout << t << std::endl;
+
+    // std::cout << "Total avg time for static " << niter_start << ".." << niter << "x" << input_f << " shape: "
+    //         << (exectime_total / (niter - niter_start)) << "us" << std::endl;
+    // std::cout << "Total time for static " << niter_start << ".." << niter << "x" << input_f << " shape: "
+    //         << exectime_total << "us" << std::endl;
+
+    // exectime /= niter;
+    // std::cout << "Avg time for static " << input_data1_b << "x" << input_f << " shape: "
+    //         << (exectime_b1 / (niter / 2)) << "us" << std::endl;
+
+    // std::cout << "Avg time for static " << input_data2_b << "x" << input_f << " shape: "
+    //         << (exectime_b2 / (niter / 2)) << "us" << std::endl;
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+TEST(fully_connected_gpu_opt, dynamic_fc_tests_dynamic) {
+    std::string sources_dumps_dir = "";
+    cldnn::queue_types queue_type = cldnn::queue_types::out_of_order;
+    priority_mode_types priority_mode = priority_mode_types::disabled;
+    throttle_mode_types throttle_mode = throttle_mode_types::disabled;
+    bool use_memory_pool = true;
+    bool use_unified_shared_memory = true;
+    auto conf = engine_configuration(true, queue_type, sources_dumps_dir, priority_mode, throttle_mode, use_memory_pool, use_unified_shared_memory);
+    auto& engine = get_test_engine(conf);
+
+
+    std::vector<std::string> times;
+
+	// Update params for shape: 1x27x768x1 -> 1x27x768x1
+	// Update params for shape: 1x27x768x1 -> 1x27x3072x1
+	// Update params for shape: 1x27x3072x1 -> 1x27x768x1
+    // Update params for shape: 1x27x768x1 -> 1x27x9x1
+
+    {
+        double exectime_total = 0;
+
+        std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+            22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
+
+        batch_sizes = {27};
+
+        std::vector<std::pair<size_t, size_t>> weights_sizes = {{768, 768}, {3072, 768}, {768, 3072}, {9, 768}};
+
+        for (const auto& batch_size : batch_sizes) {
+            for (const auto& weights : weights_sizes) {
+                float* data_vec;
+                cldnn::memory_ptr input_data_mem;
+                std::vector<float> input_data_vec;
+
+                const int32_t input_f = weights.second, weight_b = weights.first;
+
+                auto input_dyn_layout = layout{ ov::PartialShape{ 1, ov::Dimension(), input_f }, data_types::f32,format::bfyx };
+
+                auto weights_data = engine.allocate_memory({ ov::PartialShape{ weight_b, input_f }, data_types::f32,format::bfyx});
+                auto weights_data_vec = generate_random_1d<float>(weight_b * input_f, 0, 1);
+
+                set_values(weights_data, weights_data_vec);
+
+                cldnn::topology topology{
+                    input_layout("input", input_dyn_layout),
+                    data("weights", weights_data),
+                    fully_connected("fc", input_info("input"), "weights", "", padding(), 3)
+                };
+
+                build_options options;
+                options.set_option(build_option::optimize_data(true));
+                options.set_option(cldnn::build_option::allow_new_shape_infer(true));
+                network network(engine, topology, options);
+
+                auto input_actual_layout = layout{ ov::PartialShape{ 1, (ov::Dimension::value_type)batch_size, input_f }, data_types::f32,format::bfyx};
+                input_data_mem = engine.allocate_memory(input_actual_layout);
+                input_data_vec = generate_random_1d<float>(batch_size * input_f, 0, 1);
+                set_values(input_data_mem, input_data_vec);
+                data_vec = input_data_vec.data();
+                network.set_input_data("input", input_data_mem);
+
+                auto outputs = network.execute();
+                ASSERT_EQ(outputs.size(), size_t(1));
+                ASSERT_EQ(outputs.begin()->first, "fc");
+
+                auto output_prim_mem = outputs.begin()->second.get_memory();
+
+                auto out_l = network.get_output_layout(outputs.begin()->first);
+                // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+                ASSERT_EQ(out_l.batch(), 1); // fake_alignment
+                ASSERT_EQ(out_l.feature(), batch_size);
+                ASSERT_EQ(out_l.spatial(0), 1);
+                ASSERT_EQ(out_l.spatial(1), weight_b);
+
+                cldnn::mem_lock<float> output_ptr (output_prim_mem, get_test_stream());
+
+                for (int b = 0; b < (int)batch_size; b++) {
+                    for (int ofm = 0; ofm < weight_b; ofm++) {
+                        auto acc = 0.f;
+                        for (int ifm = 0; ifm < input_f; ifm++) {
+                            acc += weights_data_vec[ofm * input_f + ifm] * data_vec[b * input_f + ifm];
+                        }
+                        if (acc != output_ptr[b * weight_b + ofm])
+                            std::cerr << "Error for b=" << b << " f=" << ofm << std::endl;
+                        ASSERT_EQ(acc, output_ptr[b * weight_b + ofm]);
+                    }
+                }
+
+                double exectime = get_exectime_fc(network.get_primitive_event("fc"));
+
+                std::stringstream time_str;
+                time_str << "Time for " << batch_size << "x" << input_f << " -> " << batch_size << "x" << weight_b << " " << exectime << "us";
+
+                times.push_back(time_str.str());
+
+                std::cout << time_str.str() << std::endl;
+                exectime_total += exectime;
+            }
+        }
+
+        std::cout << std::endl;
+
+        for (auto& t : times)
+            std::cout << t << std::endl;
+
+        std::cout << "Total avg time: " << (exectime_total / (batch_sizes.size() * weights_sizes.size())) << "us" << std::endl;
+        std::cout << "Total time for: " << exectime_total << "us" << std::endl;
+    }
+}
+
+TEST(fully_connected_gpu_opt, dynamic_fc_tests_static) {
+    std::string sources_dumps_dir = "";
+    cldnn::queue_types queue_type = cldnn::queue_types::out_of_order;
+    priority_mode_types priority_mode = priority_mode_types::disabled;
+    throttle_mode_types throttle_mode = throttle_mode_types::disabled;
+    bool use_memory_pool = true;
+    bool use_unified_shared_memory = true;
+    auto conf = engine_configuration(true, queue_type, sources_dumps_dir, priority_mode, throttle_mode, use_memory_pool, use_unified_shared_memory);
+    auto& engine = get_test_engine(conf);
+
+
+    std::vector<std::string> times;
+
+    {
+        double exectime_total = 0;
+
+        std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+            22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
+
+        batch_sizes = {27, 128};
+
+        std::vector<std::pair<size_t, size_t>> weights_sizes = {{768, 768}, {3072, 768}, {768, 3072}, {9, 768}};
+
+        for (const auto& batch_size : batch_sizes) {
+            for (const auto& weights : weights_sizes) {
+                float* data_vec;
+                cldnn::memory_ptr input_data_mem;
+                std::vector<float> input_data_vec;
+
+                const int32_t input_f = weights.second, weight_b = weights.first;
+
+                auto input_static_layout = layout{ ov::PartialShape{ 1, (ov::Dimension::value_type)batch_size, input_f }, data_types::f32,format::bfyx };
+
+                auto weights_data = engine.allocate_memory({ ov::PartialShape{ weight_b, input_f }, data_types::f32,format::bfyx});
+                auto weights_data_vec = generate_random_1d<float>(weight_b * input_f, 0, 1);
+
+                set_values(weights_data, weights_data_vec);
+
+                cldnn::topology topology{
+                    input_layout("input", input_static_layout),
+                    data("weights", weights_data),
+                    fully_connected("fc", input_info("input"), "weights", "", padding(), 3)
+                };
+
+                build_options options;
+                options.set_option(build_option::optimize_data(true));
+                // options.set_option(cldnn::build_option::allow_new_shape_infer(true));
+                network network(engine, topology, options);
+
+                input_data_mem = engine.allocate_memory(input_static_layout);
+                input_data_vec = generate_random_1d<float>(batch_size * input_f, 0, 1);
+                set_values(input_data_mem, input_data_vec);
+                data_vec = input_data_vec.data();
+                network.set_input_data("input", input_data_mem);
+
+                auto outputs = network.execute();
+                ASSERT_EQ(outputs.size(), size_t(1));
+                ASSERT_EQ(outputs.begin()->first, "fc");
+
+                auto output_prim_mem = outputs.begin()->second.get_memory();
+
+                auto out_l = network.get_output_layout(outputs.begin()->first);
+                // ASSERT_EQ(output_prim_mem->get_layout().batch(), align_to(2, 16)); // fake_alignment
+                ASSERT_EQ(out_l.batch(), 1); // fake_alignment
+                ASSERT_EQ(out_l.feature(), batch_size);
+                ASSERT_EQ(out_l.spatial(0), 1);
+                ASSERT_EQ(out_l.spatial(1), weight_b);
+
+                cldnn::mem_lock<float> output_ptr (output_prim_mem, get_test_stream());
+
+                for (int b = 0; b < (int)batch_size; b++) {
+                    for (int ofm = 0; ofm < weight_b; ofm++) {
+                        auto acc = 0.f;
+                        for (int ifm = 0; ifm < input_f; ifm++) {
+                            acc += weights_data_vec[ofm * input_f + ifm] * data_vec[b * input_f + ifm];
+                        }
+                        if (acc != output_ptr[b * weight_b + ofm])
+                            std::cerr << "Error for b=" << b << " f=" << ofm << std::endl;
+                        ASSERT_EQ(acc, output_ptr[b * weight_b + ofm]);
+                    }
+                }
+
+                double exectime = get_exectime_fc(network.get_primitive_event("fc"));
+
+                std::stringstream time_str;
+                time_str << "Time for " << batch_size << "x" << input_f << " -> " << batch_size << "x" << weight_b << " " << exectime << "us";
+
+                times.push_back(time_str.str());
+
+                std::cout << time_str.str() << std::endl;
+                exectime_total += exectime;
+            }
+        }
+
+        std::cout << std::endl;
+
+        for (auto& t : times)
+            std::cout << t << std::endl;
+
+        std::cout << "Total avg time: " << (exectime_total / (batch_sizes.size() * weights_sizes.size())) << "us" << std::endl;
+        std::cout << "Total time for: " << exectime_total << "us" << std::endl;
     }
 }

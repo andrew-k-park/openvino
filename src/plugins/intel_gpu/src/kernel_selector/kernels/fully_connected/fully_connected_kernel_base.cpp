@@ -41,7 +41,7 @@ JitConstants FullyConnectedKernelBase::GetJitConstants(const fully_connected_par
 }
 
 FullyConnectedKernelBase::DispatchData FullyConnectedKernelBase::SetDefault(const fully_connected_params& params,
-                                                                            int) const {
+                                                                            int, bool) const {
     DispatchData dispatchData;
 
     // Determine global work sizes.
@@ -55,6 +55,15 @@ FullyConnectedKernelBase::DispatchData FullyConnectedKernelBase::SetDefault(cons
     dispatchData.lws[1] = dispatchData.lws[2] = 1;
 
     return dispatchData;
+}
+
+void FullyConnectedKernelBase::UpdateDynamicParams(const Params& params, KernelData& kd) const {
+    std::cout << ">>>> CALL UPDATE DYNAMIC - BASE Class\n";
+    const auto& prim_params = static_cast<const fully_connected_params&>(params);
+    auto dispatchData = SetDefault(prim_params, -1, true);
+    OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");
+    kd.kernels[0].params.workGroups.global = dispatchData.gws;
+    kd.kernels[0].params.workGroups.local = dispatchData.lws;
 }
 
 KernelsData FullyConnectedKernelBase::GetCommonKernelsData(const Params &params,
@@ -83,12 +92,20 @@ KernelsData FullyConnectedKernelBase::GetCommonKernelsData(const Params &params,
     }
 
     KernelData kd = KernelData::Default<fully_connected_params>(params);
-    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kd) {
+    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kd, void* ptr) {
         const auto& prim_params = static_cast<const fully_connected_params&>(params);
-        auto dispatchData = SetDefault(prim_params);
-        OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");
-        kd.kernels[0].params.workGroups.global = dispatchData.gws;
-        kd.kernels[0].params.workGroups.local = dispatchData.lws;
+        std::cout << ">>>> CALL UPDATE DYNAMIC\n";
+        UpdateDynamicParams(prim_params, kd);
+        // auto dispatchData = SetDefault(prim_params, -1, true);
+        // OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");
+        // kd.kernels[0].params.workGroups.global = dispatchData.gws;
+        // kd.kernels[0].params.workGroups.local = dispatchData.lws;
+        if (ptr) {
+            std::cout << "CAN USE ADDitional memory\n";
+            size_t bsv = prim_params.inputs[0].Batch().v == 32 ? 4 : 16;
+            std::cout << "Set bsv = " << bsv << "\n";
+            static_cast<int*>(ptr)[0] = bsv;
+        }
     };
     fully_connected_params& newParams = *static_cast<fully_connected_params*>(kd.params.get());
 

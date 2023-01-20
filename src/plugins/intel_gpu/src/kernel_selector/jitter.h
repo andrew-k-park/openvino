@@ -157,6 +157,7 @@ std::shared_ptr<JitConstant> MakeJitConstant(const std::string& name, T value) {
 
 std::shared_ptr<JitConstant> MakeJitConstant(const std::string& name, const struct Tensor::DataTensor& value, size_t dyn_tensor_index = 0);
 std::shared_ptr<JitConstant> MakeJitConstant(const std::string& name, const struct Tensor::WeightsTensor& value);
+JitConstants MakeDynamicParamsJitConstants(const std::vector<std::pair<std::string, ScalarDescriptor::Types>>& dynamic_params);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // VectorDataJitConstant

@@ -978,6 +978,31 @@ std::shared_ptr<JitConstant> MakeJitConstant(const std::string& name, const Weig
     return std::static_pointer_cast<JitConstant>(std::make_shared<WeightTensorJitConstant>(name, value));
 }
 
+JitConstants MakeDynamicParamsJitConstants(const std::vector<std::pair<std::string, ScalarDescriptor::Types>>& dynamic_params) {
+    if (dynamic_params.empty()) {
+        return {};
+    }
+
+    JitConstants jitConstants = {};
+    const std::string input_name = "dynamic_params";
+    const std::string dynamic_input_dt = "__global char*";
+    const std::string dynamic_params_input_macro = "DYNAMIC_PARAMS_INPUT_DECL";
+    const std::string dynamic_params_input_decl = dynamic_input_dt + " " + input_name;
+    size_t offset = 0;
+    for (const auto& param : dynamic_params) {
+        const std::string addr = "(((" + dynamic_input_dt + ")(" + input_name + ")) + " + std::to_string(offset) + ")";
+        const std::string desired_dt = param.second == ScalarDescriptor::Types::INT32 ? "int" :
+                                       param.second == ScalarDescriptor::Types::FLOAT32 ? "float" :
+                                       param.second == ScalarDescriptor::Types::UINT8 ? "uchar" : "uint";
+        const std::string value = "(((__global " + desired_dt + "*)(" + addr + "))[0])";
+        jitConstants.AddConstant(MakeJitConstant(param.first, value));
+        offset += ScalarDescriptor::get_type_size(param.second);
+    }
+    jitConstants.AddConstant(MakeJitConstant(dynamic_params_input_macro, dynamic_params_input_decl));
+    jitConstants.AddConstant(MakeJitConstant("HAS_DYNAMIC_PARAMS", 1));
+    return jitConstants;
+}
+
 JitConstants MakeActivationJitConstants(ActivationFunction activation_function,
                                         Datatype out_dt,
                                         const std::string& suffix,

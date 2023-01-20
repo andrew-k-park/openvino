@@ -25,6 +25,7 @@ KERNEL(fc)(
 
     ACCUMULATOR_TYPE dotProd = ACCUMULATOR_VAL_ZERO;
 
+
     for (uint y = 0; y < INPUT0_SIZE_Y; ++y)
     {
         for (uint x = 0; x < INPUT0_SIZE_X; ++x)
@@ -40,6 +41,9 @@ KERNEL(fc)(
     const uint ofm = get_global_id(0);
     const uint b = get_global_id(1);
 
+    if (get_global_id(0) == 0 && get_global_id(1) == 0 && get_global_id(2) == 0) {
+        printf("Size: %d\n", INPUT0_BATCH_NUM);
+    }
     ACCUMULATOR_TYPE dotProd = ACCUMULATOR_VAL_ZERO;
 
     for (uint ifm = 0; ifm < INPUT0_FEATURE_NUM; ++ifm)

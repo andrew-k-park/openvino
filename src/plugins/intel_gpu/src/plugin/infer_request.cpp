@@ -229,6 +229,8 @@ void InferRequest::set_input(const std::string& name, const Blob::Ptr& data) {
     auto node = findInputByNodeName(name);
     bool isDynamic = node && node->get_output_partial_shape(0).is_dynamic();
 
+    std::cout << "Set input: " << name << " " << ov::PartialShape(data->getTensorDesc().getDims()) << std::endl;
+
     if (is_remote) {
         _deviceInputs[name] = data;
         _inputs[name] = data;

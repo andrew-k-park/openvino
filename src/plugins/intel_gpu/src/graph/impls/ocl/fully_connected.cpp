@@ -125,7 +125,24 @@ public:
 
     void update_dispatch_data(const kernel_impl_params& impl_param) override {
         auto kernel_params = get_kernel_params(impl_param);
-        (_kernel_data.update_dispatch_data_func)(kernel_params.first, _kernel_data);
+
+        std::cout << "Update dispatch data\n";
+        std::cout << "    " << impl_param.input_layouts[0].to_short_string() << std::endl;
+        std::cout << "    " << impl_param.input_layouts[1].to_short_string() << std::endl;
+        std::cout << "    " << impl_param.output_layouts[0].to_short_string() << std::endl;
+
+        (_kernel_data.update_dispatch_data_func)(kernel_params.first, _kernel_data, nullptr);
+    }
+
+    void update_dynamic_parameters(const kernel_impl_params& impl_params, void* ptr) override {
+        auto kernel_params = get_kernel_params(impl_params);
+
+        std::cout << "Update dynamic parameteres: " << (ptr != nullptr) << std::endl;
+        // std::cout << "    " << impl_param.input_layouts[0].to_short_string() << std::endl;
+        // std::cout << "    " << impl_param.input_layouts[1].to_short_string() << std::endl;
+        // std::cout << "    " << impl_param.output_layouts[0].to_short_string() << std::endl;
+
+        (_kernel_data.update_dispatch_data_func)(kernel_params.first, _kernel_data, ptr);
     }
 };
 

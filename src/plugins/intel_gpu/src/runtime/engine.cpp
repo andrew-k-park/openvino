@@ -118,7 +118,7 @@ allocation_type engine::get_preferred_memory_allocation_type(bool is_image_layou
     if (!use_unified_shared_memory() || is_image_layout)
         return get_default_allocation_type();
 
-    if (supports_allocation(allocation_type::usm_device))
+    if (get_device_info().dev_type == device_type::discrete_gpu && supports_allocation(allocation_type::usm_device))
         return allocation_type::usm_device;
 
     // Fallback to host allocations in case if device ones are not supported for some reason

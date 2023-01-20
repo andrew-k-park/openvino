@@ -233,7 +233,7 @@ KernelsData ReorderKernelBase::GetCommonKernelsData(const reorder_params& params
     auto cldnn_jit = GetJitConstants(newParams);
     auto jit = CreateJit(kernelName, cldnn_jit, entry_point);
 
-    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kd) {
+    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kd, void* ptr) {
         const auto& prim_params = static_cast<const reorder_params&>(params);
         auto dispatchData = SetDefault(prim_params);
         OPENVINO_ASSERT(kd.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");

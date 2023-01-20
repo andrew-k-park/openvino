@@ -41,7 +41,7 @@ KernelsData PermuteKernelBase::GetKernelsData(const Params& params, const option
     auto dispatchData = SetDefault(newParams);
     auto cldnn_jit = GetJitConstants(newParams, dispatchData);
 
-    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kernel_data) {
+    kd.update_dispatch_data_func = [this](const Params& params, KernelData& kernel_data, void* ptr) {
         const auto& prim_params = static_cast<const permute_params&>(params);
         auto dispatchData = SetDefault(prim_params);
         OPENVINO_ASSERT(kernel_data.kernels.size() == 1, "[GPU] Invalid kernels size for update dispatch data func");

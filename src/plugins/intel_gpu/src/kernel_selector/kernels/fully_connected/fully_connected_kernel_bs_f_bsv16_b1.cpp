@@ -52,7 +52,7 @@ JitConstants FullyConnected_bs_f_bsv16_b1::GetJitConstants(
 }
 
 FullyConnected_bs_f_bsv16_b1::DispatchData FullyConnected_bs_f_bsv16_b1::SetDefault(const fully_connected_params& arg,
-                                                                                    int) const {
+                                                                                    int, bool recalculate) const {
     DispatchData dispatchData = FullyConnectedKernelBase::SetDefault(arg);
 
     // Properties of chunk and unit.

@@ -303,21 +303,51 @@ void primitive_inst::update_impl() {
         for (size_t i = 0; i < _node->get_dependencies().size(); i++) {
             if (_node->get_dependency(i).get_output_layout().is_dynamic()) {
                 auto input_shape = extend_to_6d(params.get_input_layout(i).get_partial_shape());
-                for (size_t j = 0; j < input_shape.size(); j++)
+                for (size_t j = 0; j < input_shape.size(); j++) {
+                    std::cout << "Offset[" << offset << "] = " << input_shape[j] << " ";
                     lock[offset++] = static_cast<int32_t>(input_shape[j]);
+                }
             }
         }
+        std::cout << "\n";
 
         if (_node->get_output_layout().is_dynamic()) {
             auto output_shape = extend_to_6d(params.get_output_layout().get_partial_shape());
-            for (size_t j = 0; j < output_shape.size(); j++)
+            for (size_t j = 0; j < output_shape.size(); j++) {
+                std::cout << "Offset[" << offset << "] = " << output_shape[j] << " ";
                 lock[offset++] = static_cast<int32_t>(output_shape[j]);
+            }
         }
+        std::cout << "\n";
+
+        if (lock[0] == 32)
+            lock[1] = 4;
+        else if (lock[0] == 128)
+            lock[1] = 16;
+
         std::stringstream s;
         s << "shapes: ";
         for (size_t i = 0; i < offset; i++)
             s << lock[i] << " ";
         GPU_DEBUG_TRACE_DETAIL << id() << ": update dynamic impl " << prev_impl_str << " to new shape: " << s.str() << std::endl;
+    };
+
+    auto update_dynamic_params = [this, update_shape_info](const kernel_impl_params& params) {
+        update_shape_info(params);
+
+        std::cout << "_impl->get_dynamic_params() params count: " << _impl->get_dynamic_params().size() << std::endl;
+        std::cout << "_dyn_params_memory.size() " << _dyn_params_memory.size() << std::endl;
+        const auto& kernels_dynamic_params = _impl->get_dynamic_params();
+        if (kernels_dynamic_params.size()) {
+            for (const auto& dynamic_params : kernels_dynamic_params) {
+                size_t offset = 0;
+                mem_lock<char> lock(_dyn_params_memory[0], _network.get_stream());
+                for (const auto& param : dynamic_params) {
+                    std::memcpy(lock.data() + offset, &param.v, scalar_desc::get_type_size(param.t));
+                    offset += scalar_desc::get_type_size(param.t);
+                }
+            }
+        }
     };
 
     if (!_node->is_type<data>() && !(_node->is_type<mutable_data>() && _node->get_dependencies().empty())) {
@@ -327,41 +357,49 @@ void primitive_inst::update_impl() {
         auto& cache = get_network().get_implementations_cache();
         bool has_cached_impl = false;
         {
-            std::lock_guard<std::mutex> lock(get_network().get_impl_cache_mutex());
-            has_cached_impl = cache.has(layout_key);
-            if (has_cached_impl) {
-                _impl = cache.get(layout_key)->clone();
-                GPU_DEBUG_PROFILED_STAGE_CACHE_HIT(true);
-                GPU_DEBUG_TRACE_DETAIL << id() << ": get impl from cache " << _impl->get_kernel_name() << std::endl;
-            }
+            // std::lock_guard<std::mutex> lock(get_network().get_impl_cache_mutex());
+            // has_cached_impl = cache.has(layout_key);
+            // if (has_cached_impl) {
+            //     _impl = cache.get(layout_key)->clone();
+            //     GPU_DEBUG_PROFILED_STAGE_CACHE_HIT(true);
+            //     GPU_DEBUG_TRACE_DETAIL << id() << ": get impl from cache " << _impl->get_kernel_name() << std::endl;
+            // }
         }
         if (!has_cached_impl) {
             if (_dynamic_impl) {
-                auto& compilation_context = get_network().get_compilation_context();
-                compilation_context.push_task([this, updated_params, layout_key](kernels_cache& kc) {
-                    auto& cache = get_network().get_implementations_cache();
-                    {
-                        std::lock_guard<std::mutex> lock(get_network().get_impl_cache_mutex());
-                        // Check existense in the cache one more time as several iterations of model execution could happens and multiple compilation
-                        // tasks created for same shapes
-                        if (cache.has(layout_key))
-                            return;
-                    }
+                // auto& compilation_context = get_network().get_compilation_context();
+                // compilation_context.push_task([this, updated_params, layout_key](kernels_cache& kc) {
+                //     auto& cache = get_network().get_implementations_cache();
+                //     {
+                //         std::lock_guard<std::mutex> lock(get_network().get_impl_cache_mutex());
+                //         // Check existense in the cache one more time as several iterations of model execution could happens and multiple compilation
+                //         // tasks created for same shapes
+                //         if (cache.has(layout_key))
+                //             return;
+                //     }
 
-                    auto impl = _node->type()->choose_impl(*_node, updated_params);
-                    auto kernel_ids = kc.add_kernels_source(impl->get_kernels_source());
-                    impl->set_kernel_ids(kernel_ids);
-                    kc.compile();
-                    impl->init_kernels(kc);
-                    kc.reset();
+                //     std::string str = "_dynamic_impl exists but new kernel compile (";
+                //     for (auto& layout : updated_params.input_layouts) {
+                //         str += layout.to_short_string() + "; ";
+                //     }
+                //     str += updated_params.get_output_layout().to_short_string() + "\n";
 
-                    std::lock_guard<std::mutex> lock(get_network().get_impl_cache_mutex());
-                    cache.add(layout_key, impl->clone());
-                });
+                //     std::cout << str;
+
+                //     auto impl = _node->type()->choose_impl(*_node, updated_params);
+                //     auto kernel_ids = kc.add_kernels_source(impl->get_kernels_source());
+                //     impl->set_kernel_ids(kernel_ids);
+                //     kc.compile();
+                //     impl->init_kernels(kc);
+                //     kc.reset();
+
+                //     std::lock_guard<std::mutex> lock(get_network().get_impl_cache_mutex());
+                //     cache.add(layout_key, impl->clone());
+                // });
 
                 _impl = _dynamic_impl->clone();
                 _impl->update_dispatch_data(updated_params);
-                update_shape_info(updated_params);
+                update_dynamic_params(updated_params);
             } else {
                 _impl = _node->type()->choose_impl(*_node, updated_params);
                 auto& kernels_cache = get_network().get_kernels_cache();
@@ -428,6 +466,8 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
             realloc_if_needed();
         }
     }
+
+    // std::cout << "Here2\n";
 
     OPENVINO_ASSERT(_impl_params->get_output_layout().is_static(),
                     "[GPU] Can't execute ", primitive_id, " primitive as output layout is dynamic in runtime");
@@ -580,6 +620,7 @@ primitive_inst::primitive_inst(network& network, program_node const& node, bool 
     if (_impl) {
         _impl->set_node_params(node);
         if (_impl->is_dynamic()) {
+            std::cout << "Copy _impl to _dynamic_impl\n";
             _dynamic_impl = _impl->clone();
             // Actual shape info layout is the following:
             // input_0 -> input_1, ..., fused_dep_0, fused_dep1, ..., output_0, output_1, ...
@@ -588,6 +629,28 @@ primitive_inst::primitive_inst(network& network, program_node const& node, bool 
             const size_t tensor_dims_count = 6;
             const int64_t shape_elements = buffers_count * tensor_dims_count;
             _shape_info_memory = _network.get_engine().allocate_memory(layout{{shape_elements}, data_types::i32, format::bfyx});
+
+            const auto& kernels_dynamic_params = _impl->get_dynamic_params();
+            if (!kernels_dynamic_params.empty()){
+                std::vector<memory::ptr> dyn_params_memory;
+                auto& engine = _network.get_engine();
+
+                for (const auto& dynamic_params : kernels_dynamic_params) {
+                    size_t buf_size = 0;
+                    for (const auto& param : dynamic_params) {
+                        buf_size += scalar_desc::get_type_size(param.t);
+                    }
+
+                    GPU_DEBUG_LOG << "[" << _node->id() << ": dynamic buf]" << std::endl;
+                    auto alloc_type = engine.get_lockable_preferred_memory_allocation_type();
+                    cldnn::layout layout{ cldnn::data_types::u8, format::bfyx,
+                                          cldnn::tensor{1, 1, 1, static_cast<tensor::value_type>(buf_size)} };
+                    dyn_params_memory.push_back(engine.allocate_memory(layout, alloc_type));
+                }
+                _dyn_params_memory = dyn_params_memory;
+            }
+
+            std::cout << "Dyn params list " << kernels_dynamic_params.size() << std::endl;
         }
     }
 
@@ -640,6 +703,7 @@ void primitive_inst::allocate_internal_buffers(void) {
 
     // allocate intermediate memory for the updated layout of buffer
     std::vector<memory::cptr> intermediates_memory;
+    // std::vector<memory::ptr> dyn_params_memory;
     for (auto layout : ibuf_layouts) {
         GPU_DEBUG_LOG << "[" << _node->id() << ": internal buf]" << std::endl;
         auto alloc_type = allocation_type::unknown;
@@ -650,7 +714,13 @@ void primitive_inst::allocate_internal_buffers(void) {
         }
         intermediates_memory.push_back(engine.allocate_memory(layout, alloc_type));
     }
+    // for (auto layout : ibuf_dyn_layouts) {
+    //     GPU_DEBUG_LOG << "[" << _node->id() << ": dynamic buf]" << std::endl;
+    //     auto alloc_type = engine.get_lockable_preferred_memory_allocation_type();
+    //     dyn_params_memory.push_back(engine.allocate_memory(layout, alloc_type));
+    // }
     _intermediates_memory = intermediates_memory;
+    // _dyn_params_memory = dyn_params_memory;
 }
 
 event::ptr primitive_inst::update_weights() {
@@ -662,6 +732,7 @@ event::ptr primitive_inst::update_weights() {
     if (!weightable_node)
         return nullptr;
 
+    std::cout << "Weights reordering pass...\n";
     auto& weights_params = _impl->_weights_reorder_params;
     bool requires_reorder = weights_params.engine != kernel_selector::GenericKernelParams::Engine::NONE &&
                             (!_impl_params->reordered_weights || _impl_params->reordered_weights->get_layout() != from_weights_tensor(weights_params.dest));
@@ -701,21 +772,30 @@ event::ptr primitive_inst::update_weights() {
             }
         }
 
+        std::cout << "Here\n";
+
         auto& stream = get_network().get_stream();
 
         bool can_reuse = _impl_params->reordered_weights != nullptr && _impl_params->reordered_weights->size() <= expected_layout.bytes_count();
+        std::cout << "Here3\n";
         if (can_reuse) {
             GPU_DEBUG_TRACE_DETAIL << id() << ": reuse weights memory" << std::endl;
             _impl_params->reordered_weights = engine.reinterpret_buffer(*_impl_params->reordered_weights, expected_layout);
         } else {
             auto alloc_type = engine.get_preferred_memory_allocation_type();
-            _impl_params->reordered_weights = engine.allocate_memory(expected_layout, alloc_type);
+            std::cout << "Here4\n";
+            auto mem = engine.allocate_memory(expected_layout, alloc_type);
+            std::cout << "Here4.1\n";
+            _impl_params->reordered_weights = mem;
         }
+        std::cout << "Here5\n";
 
         kernel_arguments_data args;
         args.inputs.push_back(original_weights_memory);
         args.outputs.push_back(_impl_params->reordered_weights);
+        std::cout << "Set arguments kernel\n";
         stream.set_arguments(*kernel, weights_params.clKernel->params, args);
+        std::cout << "Enqueue kernel\n";
         auto ev = stream.enqueue_kernel(*kernel, weights_params.clKernel->params, args, {}, true);
 
         GPU_DEBUG_GET_INSTANCE(debug_config);
@@ -723,6 +803,7 @@ event::ptr primitive_inst::update_weights() {
             stream.wait_for_events({ev});
         }
 
+        std::cout << "Weights reordering pass finished\n";
         return ev;
     } else {
         // If kernel doesn't says that it doesn't require weights reorder, but weights were reordered previously, then
@@ -733,6 +814,7 @@ event::ptr primitive_inst::update_weights() {
     }
     GPU_DEBUG_PROFILED_STAGE_CACHE_HIT(true);
 
+    std::cout << "Weights reordering pass finished\n";
     return nullptr;
 }
 

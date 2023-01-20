@@ -26,7 +26,7 @@ ParamsKey FullyConnected_bf_io_GEMM::GetSupportedKey() const {
 }
 
 FullyConnected_bf_io_GEMM::DispatchData FullyConnected_bf_io_GEMM::SetDefault(const fully_connected_params& params,
-                                                                              int autoTuneIndex) const {
+                                                                              int autoTuneIndex, bool recalculate) const {
     auto dispatchData = Parent::SetDefault(params, autoTuneIndex);
 
     const uint32_t localWorkSizeX = 64;

@@ -197,6 +197,18 @@ protected:
         return layouts;
     }
 
+    std::vector<scalars_desc> get_dynamic_params() const override {
+        std::vector<scalars_desc> res;
+        for (const auto& kernel : _kernel_data.kernels) {
+            scalars_desc desc;
+            for (const auto& param : kernel.params.dynamic_params) {
+                desc.push_back(param);
+            }
+            res.push_back(std::move(desc));
+        }
+        return res;
+    }
+
     void set_arguments_impl(typed_primitive_inst<PType>& instance) override {
         if (instance.can_be_optimized() || is_cpu()) {
             return;
@@ -217,6 +229,10 @@ protected:
                 args.intermediates.push_back(m);
             }
 
+            for (const auto& m : instance.get_dyn_params_memories()) {
+                args.dynamic_params.push_back(m);
+            }
+
             args.scalars = &_kernel_data.kernels[k].params.scalars;
 
             stream.set_arguments(*_kernels[k], _kernel_data.kernels[k].params, args);
@@ -234,6 +250,10 @@ protected:
 
             for (const auto& m : instance.get_intermediates_memories()) {
                 args.intermediates.push_back(m);
+            }
+
+            for (const auto& m : instance.get_dyn_params_memories()) {
+                args.dynamic_params.push_back(m);
             }
 
             return args;
@@ -273,6 +293,10 @@ protected:
 
                 for (const auto& m : instance.get_intermediates_memories()) {
                     args.intermediates.push_back(m);
+                }
+
+                for (const auto& m : instance.get_dyn_params_memories()) {
+                    args.dynamic_params.push_back(m);
                 }
             }
 

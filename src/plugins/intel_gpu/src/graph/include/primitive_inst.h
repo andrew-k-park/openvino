@@ -50,6 +50,7 @@ struct primitive_impl {
     virtual std::string get_type() const = 0;
     virtual void set_arguments(primitive_inst& instance) = 0;
     virtual void set_arguments(kernel_arguments_data_idx& args_idx) = 0;
+    virtual std::vector<scalars_desc> get_dynamic_params() const { return {}; };
     virtual kernel_arguments_data get_arguments(const primitive_inst& instance) const = 0;
     virtual event::ptr execute(const std::vector<event::ptr>& events, primitive_inst& instance) = 0;
     std::string get_kernel_name() const { return _kernel_name; }
@@ -79,6 +80,11 @@ struct primitive_impl {
     virtual void update_dispatch_data(const kernel_impl_params& impl_params) {
         OPENVINO_ASSERT(_is_dynamic, "[GPU] update_dispatch_data is called for static shape implementation ", _kernel_name);
         OPENVINO_ASSERT(false, "[GPU] update_dispatch_data is not implemented for dynamic implemenation ", _kernel_name);
+    }
+
+    virtual void update_dynamic_parameters(const kernel_impl_params& impl_params, void* ptr) {
+        OPENVINO_ASSERT(_is_dynamic, "[GPU] update_dispatch_data is called for static shape implementation ", _kernel_name);
+        // OPENVINO_ASSERT(false, "[GPU] update_dispatch_data is not implemented for dynamic implemenation ", _kernel_name);
     }
 
 protected:
@@ -192,6 +198,7 @@ public:
                                        const kernel_impl_params& impl_params, uint32_t net_id, bool is_internal, size_t idx = 0);
 
     std::vector<memory::cptr> get_intermediates_memories() const { return _intermediates_memory; }
+    std::vector<memory::ptr> get_dyn_params_memories() const { return _dyn_params_memory; }
 
     virtual void save(cldnn::BinaryOutputBuffer& ob) const;
     virtual void load(cldnn::BinaryInputBuffer& ib);
@@ -251,6 +258,7 @@ protected:
     std::vector<memory::ptr> _outputs;
 
     std::vector<memory::cptr> _intermediates_memory;
+    std::vector<memory::ptr> _dyn_params_memory;
 
     // Buffer to store actual shapes of dynamic tensor which is automatically asigned as 1st argument to shape agnostic kernels
     memory::ptr _shape_info_memory = nullptr;

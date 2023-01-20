@@ -79,6 +79,7 @@
 
 REQD_SUB_GROUP_SIZE(SIMD)
 KERNEL(fc)(
+    OPTIONAL_SHAPE_INFO_ARG
     const __global INPUT0_TYPE* input,
     __global OUTPUT_TYPE* output,
     const __global FILTER_TYPE* weights
@@ -88,9 +89,23 @@ KERNEL(fc)(
 #if HAS_FUSED_OPS_DECLS
     , FUSED_OPS_DECLS
 #endif
+#ifdef HAS_DYNAMIC_PARAMS
+    , DYNAMIC_PARAMS_INPUT_DECL
+#endif
 ) {
     uint gid = (uint)get_group_id(0);
     uint sglid = (uint)get_sub_group_local_id();
+
+#ifdef HAS_DYNAMIC_PARAMS
+    const uint DISPATCH_FSV = DISPATCH_FSV1;
+    const uint DISPATCH_BSV = DISPATCH_BSV1;
+#endif
+
+    if (get_global_id(0) == 0) {
+        // printf("Empty\n");
+        printf("Kernel has: %d\n", DISPATCH_BSV);
+        printf("Kernel has2: %d\n", DISPATCH_FSV);
+    }
 
     // Dispatch as bs_fs_bsv_fsv, where bsv = DISPATCH_BSV and fsv = DISPATCH_FSV.
     // This allows more fine grained control over dispatch order than using work-groups and
@@ -132,15 +147,22 @@ KERNEL(fc)(
     uint iterations = MAIN_LOOP_ELEMENTS_COUNT / (TILE_IFM * SIMD);
     __attribute__((opencl_unroll_hint(1)))
     for (uint ni = 0; ni < iterations; ++ni) {
+        // IDEA:
+        // bool bi_iter = bi < TILE_B;
+        // if (bi_iter) LOAD_IN_0(bi)
         // Load input.
-        #define LOAD_IN_0(bi) do {                                  \
-                in_0[bi] = INPUT_BLOCK_READ(input, input_offset);   \
-                input_offset += TILE_IN_B_PITCH;                    \
+        #define LOAD_IN_0(bi) do {                                    \
+                if (/* bi + out_b < OUTPUT_BATCH_NUM */ true)                    \
+                    in_0[bi] = INPUT_BLOCK_READ(input, input_offset); \
+                input_offset += TILE_IN_B_PITCH;                      \
             } while (false)
 
         CONST_LOOP(TILE_B, LOAD_IN_0);
         #undef LOAD_IN_0
         input_offset += TILE_IFM * SIMD - TILE_IN_B_PITCH * TILE_B;
+
+        // unroll_for (int i = TILE_B - 1; out_b + i >= OUTPUT_BATCH_NUM; i-- )
+        //     in_0[i] = 0;
         // NOTE: Manually unrolling multiplication loop leads to lower register pressure and allows for bigger block sizes,
         //       but significantly degrades readability and generality of code.
         //       It doesn't also show noticable performance improvement on tested configurations.
@@ -148,15 +170,28 @@ KERNEL(fc)(
             wei = FILTER_BLOCK_READ(weights, weights_offset);
             weights_offset += TILE_K_OFM * SIMD;
 
+            // unroll_for (uint kii = 0; kii < TILE_K; ++kii) {
+            //     unroll_for (uint fi = 0; fi < TILE_OFM; ++fi) {
+            //         unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
+            //             const uint total_k = ki * TILE_K + kii;
+            //             INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
+            //             ((ACCUMULATOR_TYPE*)(&acc[bi]))[fi] += in_val * ((FILTER_TYPE*)(&wei))[kii * TILE_OFM + fi];
+            //         }
+            //     }
+            // }
+
             unroll_for (uint kii = 0; kii < TILE_K; ++kii) {
-                unroll_for (uint fi = 0; fi < TILE_OFM; ++fi) {
-                    unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
-                        const uint total_k = ki * TILE_K + kii;
-                        INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
+                unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
+                    // if (bi + out_b >= OUTPUT_BATCH_NUM)
+                    //     continue;
+                    const uint total_k = ki * TILE_K + kii;
+                    INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
+                    unroll_for (uint fi = 0; fi < TILE_OFM; ++fi) {
                         ((ACCUMULATOR_TYPE*)(&acc[bi]))[fi] += in_val * ((FILTER_TYPE*)(&wei))[kii * TILE_OFM + fi];
                     }
                 }
             }
+
         }
     }
     // =====================================================================================================================================
@@ -235,9 +270,12 @@ KERNEL(fc)(
     // Write results
     uint output_offset = out_f * TILE_OUT_F_PITCH + out_b * TILE_OUT_B_PITCH + OUTPUT_OFFSET;
 
+    // if (bi + out_b < BATCH_SIZE)
+
     if (USE_BLOCK_WRITE && (TILE_OUT_F_NUM % (TILE_OFM * SIMD) == 0 || out_f + (TILE_OFM * SIMD) <= TILE_OUT_F_NUM)) {
         #define WRITE_OUTPUT(bi) do {                                       \
-                OUTPUT_BLOCK_WRITE(output, output_offset, result[bi]);      \
+                if (bi + out_b < BATCH_SIZE)                          \
+                    OUTPUT_BLOCK_WRITE(output, output_offset, result[bi]);  \
                 output_offset += TILE_OUT_B_PITCH;                          \
             } while (false)
 

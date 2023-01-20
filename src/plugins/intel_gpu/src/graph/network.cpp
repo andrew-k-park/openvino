@@ -575,6 +575,8 @@ void network::set_input_data(const primitive_id& id, memory::ptr data) {
 
     auto input = std::static_pointer_cast<input_layout_inst>(primitive_inst);
 
+    std::cout << "Set input data (network): " << id << " " << data->get_layout().to_short_string() << std::endl;
+
     // Wait for previous execution completion
     reset_execution(true);
     input->set_data(data);
