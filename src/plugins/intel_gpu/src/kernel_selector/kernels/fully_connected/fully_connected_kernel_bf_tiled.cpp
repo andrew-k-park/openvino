@@ -165,7 +165,7 @@ bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, 
                 << "_" << tparams.dispatch_fsv << ")" << std::endl;
 
     if (dyn_tparams) {
-        bool supports = dyn_tparams->tile_b == tparams.tile_b &&
+        bool supports = /* dyn_tparams->tile_b == tparams.tile_b && */
                         dyn_tparams->tile_ofm == tparams.tile_ofm &&
                         dyn_tparams->tile_ifm == tparams.tile_ifm &&
                         dyn_tparams->tile_k == tparams.tile_k;
@@ -186,7 +186,7 @@ bool TuneParamsSelector::VerifyTuneParams(const fully_connected_params& params, 
         }
     }
 
-    if (dyn_tparams) {
+    if (dyn_tparams && output_b > 8) {
         if (Align(output_b, tparams.tile_b) % (tparams.tile_b * tparams.dispatch_bsv) != 0) {
             std::cout << "False 1.1 (Dynamic): " << Align(output_b, tparams.tile_b) << " % " << tparams.tile_b * tparams.dispatch_bsv << " != 0\n";
             return false;
@@ -301,6 +301,7 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
     }
 
     selector.Case([&](const fully_connected_params&) -> tune_params {
+        std::cout << "Auto params generation\n";
         tune_params result(8, std::min(max_tile_ofm, 2u), 1, 2, 1, 1, EXE_MODE_DEFAULT);
 
         while (batch % result.tile_b != 0)
@@ -315,6 +316,25 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
 
         return result;
     });
+
+    if (tune_params_dynamic) {
+        selector.Case([&](const fully_connected_params&) -> tune_params {
+            std::cout << "Auto params generation2\n";
+            tune_params result(8, std::min(max_tile_ofm, 2u), 1, 1, 1, 1, EXE_MODE_DEFAULT);
+
+            while (batch % result.tile_b != 0)
+                result.tile_b--;
+
+            result.dispatch_bsv = 16;
+            while (batch % (result.tile_b * result.dispatch_bsv) != 0)
+                result.dispatch_bsv--;
+
+            if (result.tile_b >= 8)
+                result.exec_options = EXE_MODE_AGE_BASED;
+
+            return result;
+        });
+    }
 
     auto res_params = selector.Default(tune_params(1, 1, 1, 1, 1, 1, EXE_MODE_DEFAULT));
     if (params.has_dynamic_inputs() && !tune_params_dynamic) {
@@ -382,9 +402,10 @@ void FullyConnected_bf_tiled::UpdateDynamicParams(const Params& params, KernelDa
     kernel_params.workGroups.global = dispatchData.gws;
     kernel_params.workGroups.local = dispatchData.lws;
 
-    OPENVINO_ASSERT(kernel_params.dynamic_params.size() == 2, "[GPU] Unexpected number of dynamic params for bf_tiled fc kernel");
-    kernel_params.dynamic_params[0].v.u32 = dispatchData.tile_ms;
-    kernel_params.dynamic_params[1].v.u32 = dispatchData.tile_ns;
+    OPENVINO_ASSERT(kernel_params.dynamic_params.size() == 3, "[GPU] Unexpected number of dynamic params for bf_tiled fc kernel");
+    kernel_params.dynamic_params[0].v.u32 = dispatchData.tile_m;
+    kernel_params.dynamic_params[1].v.u32 = dispatchData.tile_ms;
+    kernel_params.dynamic_params[2].v.u32 = dispatchData.tile_ns;
 }
 
 KernelsPriority FullyConnected_bf_tiled::GetKernelsPriority(const Params& params, const optional_params& /*options*/) const {
@@ -419,6 +440,7 @@ JitConstants FullyConnected_bf_tiled::GetJitConstants(const fully_connected_para
     } else {
         std::cout << "Dynamic kernel!\n";
         std::vector<std::pair<std::string, ScalarDescriptor::Types>> dynamic_params = {
+            {"TILE_B1", ScalarDescriptor::Types::UINT32},
             {"DISPATCH_BSV1", ScalarDescriptor::Types::UINT32},
             {"DISPATCH_FSV1", ScalarDescriptor::Types::UINT32}};
         jit.Merge(MakeDynamicParamsJitConstants(dynamic_params));
@@ -503,6 +525,7 @@ KernelsData FullyConnected_bf_tiled::GetTunedKernelsDataByIndex(const Params &pa
 
     if (fc_params.has_dynamic_inputs() && kernelsData.size()) {
         auto& kernel_params = kernelsData[0].kernels[0].params;
+        kernel_params.dynamic_params.emplace_back(ScalarDescriptor::Types::UINT32);
         kernel_params.dynamic_params.emplace_back(ScalarDescriptor::Types::UINT32);
         kernel_params.dynamic_params.emplace_back(ScalarDescriptor::Types::UINT32);
 

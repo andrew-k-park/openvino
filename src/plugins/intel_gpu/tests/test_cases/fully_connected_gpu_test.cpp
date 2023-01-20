@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+
 #include "test_utils.h"
 #include "network_test.h"
 #include <intel_gpu/runtime/utils.hpp>
@@ -2629,7 +2630,8 @@ TEST(fully_connected_gpu_opt, dynamic_fc_tests_dynamic) {
         std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
             22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
 
-        batch_sizes = {27};
+        batch_sizes = {1, 2, 3, 4/* , 6, 7, 8 */};
+        batch_sizes = {1, 2, 3, 4, 6, 7, 8};
 
         std::vector<std::pair<size_t, size_t>> weights_sizes = {{768, 768}, {3072, 768}, {768, 3072}, {9, 768}};
 
@@ -2734,7 +2736,7 @@ TEST(fully_connected_gpu_opt, dynamic_fc_tests_static) {
         std::vector<size_t> batch_sizes = { 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
             22, 23, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 47, 51, 53, 59, 64, 71};
 
-        batch_sizes = {27, 128};
+        // batch_sizes = {1, 128};
 
         std::vector<std::pair<size_t, size_t>> weights_sizes = {{768, 768}, {3072, 768}, {768, 3072}, {9, 768}};
 

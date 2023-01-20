@@ -118,7 +118,7 @@ KERNEL(fc)(
     uint batch_mega_block = gid / (DISPATCH_FSV * DISPATCH_BSV * CEIL_DIV(TILE_OUT_F_NUM, TILE_OFM * SIMD) / DISPATCH_FSV);
 
     uint out_f = (feature_mega_block * DISPATCH_FSV + feature_mini_block) * (TILE_OFM * SIMD);
-    uint out_b = ((batch_mega_block * DISPATCH_BSV + batch_mini_block) * TILE_B);
+    uint out_b = ((batch_mega_block * DISPATCH_BSV + batch_mini_block) * TILE_B1);
 
     ACCUMULATOR_VEC_TYPE acc[TILE_B] = { };
     INPUT_VEC_TYPE       in_0[TILE_B] = { };
@@ -131,7 +131,7 @@ KERNEL(fc)(
     // For fp16 we need to ensure that all block reads are aligned to 4 byte (2 words) boundary.
     // To do this solve first input feature separately.
     {
-        INPUT0_TYPE tmp_input = input[input_offset + get_sub_group_local_id() % TILE_B * TILE_IN_B_PITCH];
+        INPUT0_TYPE tmp_input = input[input_offset + get_sub_group_local_id() % TILE_B1 * TILE_IN_B_PITCH];
         MAKE_VECTOR_TYPE(FILTER_TYPE, TILE_OFM) tmp_wei = BLOCK_READN(FILTER_TYPE, TILE_OFM, weights, weights_offset);
 
         unroll_for(uint bi = 0; bi < TILE_B; ++bi) {
@@ -145,21 +145,78 @@ KERNEL(fc)(
     // =====================================================================================================================================
     // Main computation loop
     uint iterations = MAIN_LOOP_ELEMENTS_COUNT / (TILE_IFM * SIMD);
+
+    INPUT0_TYPE in_val;
+
     __attribute__((opencl_unroll_hint(1)))
     for (uint ni = 0; ni < iterations; ++ni) {
         // IDEA:
         // bool bi_iter = bi < TILE_B;
         // if (bi_iter) LOAD_IN_0(bi)
         // Load input.
-        #define LOAD_IN_0(bi) do {                                    \
-                if (/* bi + out_b < OUTPUT_BATCH_NUM */ true)                    \
-                    in_0[bi] = INPUT_BLOCK_READ(input, input_offset); \
-                input_offset += TILE_IN_B_PITCH;                      \
+
+
+#ifndef CONST_LOOP_8
+#define CONST_LOOP_8(macro)
+#endif
+
+#ifndef CONST_LOOP_7
+#define CONST_LOOP_7(macro)
+#endif
+
+#ifndef CONST_LOOP_7
+#define CONST_LOOP_7(macro)
+#endif
+
+#ifndef CONST_LOOP_6
+#define CONST_LOOP_6(macro)
+#endif
+
+#ifndef CONST_LOOP_5
+#define CONST_LOOP_5(macro)
+#endif
+
+#ifndef CONST_LOOP_4
+#define CONST_LOOP_4(macro)
+#endif
+
+#ifndef CONST_LOOP_3
+#define CONST_LOOP_3(macro)
+#endif
+
+#ifndef CONST_LOOP_2
+#define CONST_LOOP_2(macro)
+#endif
+
+#ifndef CONST_LOOP_1
+#define CONST_LOOP_1(macro)
+#endif
+
+        // if (/* bi + out_b < OUTPUT_BATCH_NUM */ /* bi >= TILE_B1 */ false)
+        #define LOAD_IN_0(bi) do {                                 \
+                in_0[bi] = INPUT_BLOCK_READ(input, input_offset);     \
+                input_offset += TILE_IN_B_PITCH; \
             } while (false)
 
+            // if (TILE_B1 == 8) { CONST_LOOP_8(LOAD_IN_0) }
+            // else if (TILE_B1 == 7) { CONST_LOOP_7(LOAD_IN_0) }
+            // else if (TILE_B1 == 6) { CONST_LOOP_6(LOAD_IN_0) }
+            // else if (TILE_B1 == 5) { CONST_LOOP_5(LOAD_IN_0) }
+            // else if (TILE_B1 == 4) { CONST_LOOP_4(LOAD_IN_0) }
+            // else if (TILE_B1 == 3) { CONST_LOOP_3(LOAD_IN_0) }
+            // else if (TILE_B1 == 2) { CONST_LOOP_2(LOAD_IN_0) }
+            // else  { CONST_LOOP_1(LOAD_IN_0) }
+
         CONST_LOOP(TILE_B, LOAD_IN_0);
+
         #undef LOAD_IN_0
-        input_offset += TILE_IFM * SIMD - TILE_IN_B_PITCH * TILE_B;
+
+        // input_offset -= (TILE_B - TILE_B1) * TILE_IN_B_PITCH;
+        // input_offset += TILE_IFM * SIMD - TILE_IN_B_PITCH * TILE_B1;
+
+        input_offset += - TILE_IN_B_PITCH * TILE_B;
+
+        input_offset += TILE_IFM * SIMD;
 
         // unroll_for (int i = TILE_B - 1; out_b + i >= OUTPUT_BATCH_NUM; i-- )
         //     in_0[i] = 0;
@@ -182,16 +239,13 @@ KERNEL(fc)(
 
             unroll_for (uint kii = 0; kii < TILE_K; ++kii) {
                 unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
-                    // if (bi + out_b >= OUTPUT_BATCH_NUM)
-                    //     continue;
                     const uint total_k = ki * TILE_K + kii;
-                    INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
+                    in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
                     unroll_for (uint fi = 0; fi < TILE_OFM; ++fi) {
                         ((ACCUMULATOR_TYPE*)(&acc[bi]))[fi] += in_val * ((FILTER_TYPE*)(&wei))[kii * TILE_OFM + fi];
                     }
                 }
             }
-
         }
     }
     // =====================================================================================================================================
@@ -201,26 +255,38 @@ KERNEL(fc)(
     #define LEFTOVER_IFM               (MAIN_LOOP_ELEMENTS_COUNT % (TILE_IFM * SIMD))
     {
         #define LOAD_IN_0(bi) do {                                  \
+                if (bi >- TILE_B1) \
+                    break; \
                 in_0[bi] = INPUT_BLOCK_READ(input, input_offset);   \
                 input_offset += TILE_IN_B_PITCH;                    \
             } while (false)
 
         CONST_LOOP(TILE_B, LOAD_IN_0);
         #undef LOAD_IN_0
-        input_offset += TILE_IFM * SIMD - TILE_IN_B_PITCH * TILE_B;
+        input_offset += TILE_IFM * SIMD - TILE_IN_B_PITCH * TILE_B1;
         unroll_for(uint ki = 0; ki < CEIL_DIV(LEFTOVER_IFM, TILE_K); ++ki) {
             wei = FILTER_BLOCK_READ(weights, weights_offset);
             weights_offset += TILE_K_OFM * SIMD;
 
             unroll_for (uint kii = 0; kii < TILE_K; ++kii) {
                 unroll_for (uint fi = 0; fi < TILE_OFM; ++fi) {
-                    unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
-                        const uint total_k = ki * TILE_K + kii;
-                        if (total_k < LEFTOVER_IFM) {
-                            INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
-                            ((ACCUMULATOR_TYPE*)(&acc[bi]))[fi] += in_val * ((FILTER_TYPE*)(&wei))[kii * TILE_OFM + fi];
-                        }
+                    #define MUL_OP2(bi) if (bi < TILE_B1) { \
+                            const uint total_k = ki * TILE_K + kii; \
+                            if (total_k < LEFTOVER_IFM) { \
+                            unroll_for (uint fi = 0; fi < TILE_OFM; ++fi) { \
+                                INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD); \
+                            } \
                     }
+                    CONST_LOOP(TILE_B, MUL_OP2);
+                    #undef MUL_OP2
+
+                    // unroll_for (uint bi = 0; bi < TILE_B1; ++bi) {
+                    //     const uint total_k = ki * TILE_K + kii;
+                    //     if (total_k < LEFTOVER_IFM) {
+                    //         INPUT0_TYPE in_val = _sub_group_shuffle(((INPUT0_TYPE*)(&in_0[bi]))[total_k / SIMD], total_k % SIMD);
+                    //         ((ACCUMULATOR_TYPE*)(&acc[bi]))[fi] += in_val * ((FILTER_TYPE*)(&wei))[kii * TILE_OFM + fi];
+                    //     }
+                    // }
                 }
             }
         }
@@ -229,8 +295,8 @@ KERNEL(fc)(
 #endif // MAIN_LOOP_ELEMENTS_COUNT % (TILE_IFM * SIMD) != 0
     // =====================================================================================================================================
     // Post-processing: bias, activation, fused-ops
-    ACTIVATION_VEC_TYPE activated[TILE_B] = { };
-    for (uint bi = 0; bi < TILE_B; ++bi) {
+    ACTIVATION_VEC_TYPE activated[TILE_B] = {0};
+    for (uint bi = 0; bi < TILE_B1; ++bi) {
         activated[bi] = TO_ACTIVATION_VEC_TYPE(acc[bi]);
     }
 
@@ -243,14 +309,14 @@ KERNEL(fc)(
             ((BIAS_TYPE*)(&bias))[fi] = biases[out_f + sglid + fi * SIMD];
         }
     #endif
-    unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
+    unroll_for (uint bi = 0; bi < TILE_B1; ++bi) {
         activated[bi] += TO_ACTIVATION_VEC_TYPE(bias);
     }
 #endif
 
     OUTPUT_VEC_TYPE result[TILE_B] = { };
 #if HAS_FUSED_OPS
-    unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
+    unroll_for (uint bi = 0; bi < TILE_B1; ++bi) {
     #if TILE_OFM > 1
         unroll_for(uint fi = 0; fi < TILE_OFM; ++fi) {
             FUSED_OPS_VEC;
@@ -262,7 +328,7 @@ KERNEL(fc)(
     #endif // TILE_OFM > 1
     }
 #else
-    unroll_for (uint bi = 0; bi < TILE_B; ++bi) {
+    unroll_for (uint bi = 0; bi < TILE_B1; ++bi) {
         result[bi] = TO_OUTPUT_VEC_TYPE(ACTIVATION_TYPED(activated[bi], ACTIVATION_PARAMS_TYPED));
     }
 #endif
@@ -270,11 +336,28 @@ KERNEL(fc)(
     // Write results
     uint output_offset = out_f * TILE_OUT_F_PITCH + out_b * TILE_OUT_B_PITCH + OUTPUT_OFFSET;
 
-    // if (bi + out_b < BATCH_SIZE)
+    if (TILE_B1 != TILE_B) {
+        // for (int bi = 0; bi < TILE_B1; bi++) {
+#define WRITE_OP(bi) if (bi < TILE_B1) {OUTPUT_BLOCK_WRITE(output, output_offset, result[bi]); output_offset += TILE_OUT_B_PITCH;}
+            // OUTPUT_BLOCK_WRITE(output, output_offset, result[bi]);
+            // output_offset += TILE_OUT_B_PITCH;
 
-    if (USE_BLOCK_WRITE && (TILE_OUT_F_NUM % (TILE_OFM * SIMD) == 0 || out_f + (TILE_OFM * SIMD) <= TILE_OUT_F_NUM)) {
+            // if (TILE_B1 == 8) { CONST_LOOP_8(WRITE_OP) }
+            // else if (TILE_B1 == 7) { CONST_LOOP_7(WRITE_OP) }
+            // else if (TILE_B1 == 6) { CONST_LOOP_6(WRITE_OP) }
+            // else if (TILE_B1 == 5) { CONST_LOOP_5(WRITE_OP) }
+            // else if (TILE_B1 == 4) { CONST_LOOP_4(WRITE_OP) }
+            // else if (TILE_B1 == 3) { CONST_LOOP_3(WRITE_OP) }
+            // else if (TILE_B1 == 2) { CONST_LOOP_2(WRITE_OP) }
+            // else  { CONST_LOOP_1(WRITE_OP) }
+
+            CONST_LOOP(TILE_B, WRITE_OP)
+#undef WRITE_OP
+        // }
+    } else if (USE_BLOCK_WRITE && (TILE_OUT_F_NUM % (TILE_OFM * SIMD) == 0 || out_f + (TILE_OFM * SIMD) <= TILE_OUT_F_NUM)) {
         #define WRITE_OUTPUT(bi) do {                                       \
-                if (bi + out_b < BATCH_SIZE)                          \
+                if (/* bi + out_b < BATCH_SIZE */ bi >= TILE_B1)                          \
+                    break; \
                     OUTPUT_BLOCK_WRITE(output, output_offset, result[bi]);  \
                 output_offset += TILE_OUT_B_PITCH;                          \
             } while (false)
@@ -305,7 +388,7 @@ KERNEL(fc)(
         //#undef WRITE_OUTPUT
         //#undef WRITE_OUTPUT_FEATURE
 
-        for (uint bi = 0; bi < TILE_B; ++bi) {
+        for (uint bi = 0; bi < TILE_B1; ++bi) {
             for (uint fi = 0; fi < TILE_OFM; ++fi) {
                 const bool should_write =
                     TILE_OUT_F_NUM % (TILE_OFM * SIMD) == 0 ||

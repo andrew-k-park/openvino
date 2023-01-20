@@ -772,23 +772,18 @@ event::ptr primitive_inst::update_weights() {
             }
         }
 
-        std::cout << "Here\n";
 
         auto& stream = get_network().get_stream();
 
         bool can_reuse = _impl_params->reordered_weights != nullptr && _impl_params->reordered_weights->size() <= expected_layout.bytes_count();
-        std::cout << "Here3\n";
         if (can_reuse) {
             GPU_DEBUG_TRACE_DETAIL << id() << ": reuse weights memory" << std::endl;
             _impl_params->reordered_weights = engine.reinterpret_buffer(*_impl_params->reordered_weights, expected_layout);
         } else {
             auto alloc_type = engine.get_preferred_memory_allocation_type();
-            std::cout << "Here4\n";
             auto mem = engine.allocate_memory(expected_layout, alloc_type);
-            std::cout << "Here4.1\n";
             _impl_params->reordered_weights = mem;
         }
-        std::cout << "Here5\n";
 
         kernel_arguments_data args;
         args.inputs.push_back(original_weights_memory);
