@@ -631,7 +631,7 @@ primitive_inst::primitive_inst(network& network, program_node const& node, bool 
             _shape_info_memory = _network.get_engine().allocate_memory(layout{{shape_elements}, data_types::i32, format::bfyx});
 
             const auto& kernels_dynamic_params = _impl->get_dynamic_params();
-            if (!kernels_dynamic_params.empty()){
+            if (!kernels_dynamic_params.empty()) {
                 std::vector<memory::ptr> dyn_params_memory;
                 auto& engine = _network.get_engine();
 

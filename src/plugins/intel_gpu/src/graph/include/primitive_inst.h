@@ -50,7 +50,7 @@ struct primitive_impl {
     virtual std::string get_type() const = 0;
     virtual void set_arguments(primitive_inst& instance) = 0;
     virtual void set_arguments(kernel_arguments_data_idx& args_idx) = 0;
-    virtual std::vector<scalars_desc> get_dynamic_params() const { return {}; };
+    virtual std::vector<scalars_desc> get_dynamic_params() const { return {}; }
     virtual kernel_arguments_data get_arguments(const primitive_inst& instance) const = 0;
     virtual event::ptr execute(const std::vector<event::ptr>& events, primitive_inst& instance) = 0;
     std::string get_kernel_name() const { return _kernel_name; }

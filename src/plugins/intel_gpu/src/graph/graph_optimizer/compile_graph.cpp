@@ -62,7 +62,8 @@ void compile_graph::run(program& p) {
                         node->selected_impl->set_kernel_ids(kernel_ids);
                     }
                     auto time1 = std::chrono::high_resolution_clock::now();
-                    std::cout << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(time1 - time0).count() << " for node " << node->id() << std::endl;
+                    std::cout << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(time1 - time0).count()
+                              << " for node " << node->id() << std::endl;
                 } catch(...) {
                     exception = std::current_exception();
                 }

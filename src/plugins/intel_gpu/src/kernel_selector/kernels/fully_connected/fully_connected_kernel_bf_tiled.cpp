@@ -384,9 +384,12 @@ FullyConnected_bf_tiled::SetDefault(const fully_connected_params& params, int au
     dispatchData.tile_ms = tparams.dispatch_bsv;
     dispatchData.tile_ns = tparams.dispatch_fsv;
 
-    std::cout << "Update params for shape " << params.outputs[0].Batch().v << "x" << params.outputs[0].Feature().v << "x" << params.outputs[0].Y().v << "x" << params.outputs[0].X().v
-              << " Input: " << params.inputs[0].Batch().v << "x" << params.inputs[0].Feature().v << "x" << params.inputs[0].Y().v << "x" << params.inputs[0].X().v << std::endl;
-    std::cout << "GWS calc: feature_threads=" << feature_threads << " batch_threads=" << batch_threads << " - " << params.layerID << "(" << params.has_dynamic_tensors() << ")" << std::endl;
+    std::cout << "Update params for shape " << params.outputs[0].Batch().v << "x" << params.outputs[0].Feature().v
+              << "x" << params.outputs[0].Y().v << "x" << params.outputs[0].X().v
+              << " Input: " << params.inputs[0].Batch().v << "x" << params.inputs[0].Feature().v
+              << "x" << params.inputs[0].Y().v << "x" << params.inputs[0].X().v << std::endl;
+    std::cout << "GWS calc: feature_threads=" << feature_threads << " batch_threads=" << batch_threads
+              << " - " << params.layerID << "(" << params.has_dynamic_tensors() << ")" << std::endl;
     std::cout << "GWS: " << dispatchData.gws[0] << "x" << dispatchData.gws[1] << "x" << dispatchData.gws[2] << std::endl;
     std::cout << "LWS: " << dispatchData.lws[0] << "x" << dispatchData.lws[1] << "x" << dispatchData.lws[2] << std::endl;
 
