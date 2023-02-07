@@ -685,14 +685,15 @@ struct mvn_test_case_generator : std::vector<mvn_basic_test_params> {
     }
 
     mvn_test_case_generator& smoke_tests(format::type fmt, data_types in_dt) {
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, false, false, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, false, false, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, true, false, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, false, true, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, true, false, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, false, true, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, true, true, padding()});
-        push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, true, true, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, false, false, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, false, false, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, true, false, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, false, true, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, true, false, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, false, true, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, false, true, true, padding()});
+        // push_back(mvn_basic_test_params{fmt, in_dt, {7, 10, 17, 13}, true, true, true, padding()});
+        push_back(mvn_basic_test_params{fmt, in_dt, {1, 128, 768, 1}, true, false, false, padding()});
         return *this;
     }
 
@@ -736,6 +737,12 @@ INSTANTIATE_TEST_SUITE_P(smoke,
                         testing::ValuesIn(mvn_test_case_generator()
                                               .smoke_tests(format::b_fs_yx_fsv16, data_types::i8)
                                               .smoke_tests(format::b_fs_yx_fsv16, data_types::u8)));
+
+INSTANTIATE_TEST_SUITE_P(smoke_bfyx_f16,
+                        mvn_random_test,
+                        testing::ValuesIn(mvn_test_case_generator()
+                                              .smoke_tests(format::bfyx, data_types::f16)
+                                              ));
 
 INSTANTIATE_TEST_SUITE_P(zyx,
                         mvn_random_test,

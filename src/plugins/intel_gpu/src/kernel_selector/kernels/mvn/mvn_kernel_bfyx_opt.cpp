@@ -69,6 +69,9 @@ MVNKernelBfyxOpt::Parent::DispatchData MVNKernelBfyxOpt::SetDefault(const mvn_pa
     dispatchData.gws[0] = dispatchData.lws[0];
     dispatchData.leftovers = dispatchData.dataSetSize % dispatchData.lws[0];
 
+    std::cout << "gws " << dispatchData.gws[0] << ":" << dispatchData.gws[1] << ":" << dispatchData.gws[2] << "  "
+              << "lws " << dispatchData.lws[0] << ":" << dispatchData.lws[1] << ":" << dispatchData.lws[2] << std::endl;
+
     return dispatchData;
 }
 
