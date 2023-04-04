@@ -243,8 +243,13 @@ bool ReorderKernel_bfyx_to_blocked_format::Validate(const Params& p, const optio
     }
 
     const reorder_params& params = static_cast<const reorder_params&>(p);
+    const size_t tile_size = GetTileSize(params);
     const auto& input = params.inputs[0];
     const auto& output = params.outputs[0];
+
+    if (input.Feature().v % tile_size == 0 && !params.activations.empty()) {
+        return false;
+    }
 
     if (input.GetDims().size() != output.GetDims().size()) {
         return false;
