@@ -650,7 +650,6 @@ loop_inst::typed_primitive_inst(network & network, loop_node const & node)
                                                 node.get_body_program(),
                                                 false,
                                                 network.is_primary_stream())) {
-
     if (!node.is_dynamic()) {
         const primitive_id& num_iterations_id = node.get_num_iterations_id();
         OPENVINO_ASSERT(node.get_program().get_node(num_iterations_id).is_type<mutable_data>(),
