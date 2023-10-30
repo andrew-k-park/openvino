@@ -1447,6 +1447,10 @@ impl_types layout_optimizer::get_preferred_impl_type(program_node& node, format 
     auto forced_impl = get_forced_impl_type_by_config(node);
     if (forced_impl != impl_types::any)
         return forced_impl;
+    // [CVS-123091] aclnet and aclnet-int8 almost zero accuracy
+    if ((node.id().find("Multiply_3728") != std::string::npos) || (node.id().find("Multiply_4397") != std::string::npos)) {
+        return impl_types::ocl;
+    }
 
     if (node.is_in_shape_of_subgraph() && !node.is_type<reshape>())
         return impl_types::cpu;
