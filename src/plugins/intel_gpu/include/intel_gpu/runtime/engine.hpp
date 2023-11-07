@@ -115,6 +115,8 @@ public:
     /// @note It contains information about current memory usage
     std::map<std::string, uint64_t> get_memory_statistics() const;
 
+    void check_memory_statistics() const;
+
     /// Adds @p bytes count to currently used memory size of the specified allocation @p type
     void add_memory_used(uint64_t bytes, allocation_type type);
 

@@ -410,6 +410,9 @@ gpu_usm::gpu_usm(ocl_engine* engine, const layout& layout, allocation_type type)
     , memory(engine, layout, type, false)
     , _buffer(engine->get_usm_helper())
     , _host_buffer(engine->get_usm_helper()) {
+    std::cout << "======================= gpu_usm::gpu_usm | _buffer._usmHelper=" << _buffer._usmHelper<< std::endl;
+    // engine->check_memory_statistics();
+    _buffer._usmHelper.check_memory_statistics();
     switch (get_allocation_type()) {
     case allocation_type::usm_host:
         _buffer.allocateHost(_bytes_count);

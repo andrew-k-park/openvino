@@ -51,7 +51,8 @@ ocl_engine::ocl_engine(const device::ptr dev, runtime_types runtime_type)
     OPENVINO_ASSERT(casted, "[GPU] Invalid device type passed to ocl engine");
     casted->get_device().getInfo(CL_DEVICE_EXTENSIONS, &_extensions);
 
-    _usm_helper.reset(new cl::UsmHelper(get_cl_context(), get_cl_device(), use_unified_shared_memory()));
+    _usm_helper.reset(new cl::UsmHelper(*this, get_cl_context(), get_cl_device(), use_unified_shared_memory()));
+    // std::cout << "ocl_engine::ocl_engine | get_usm_helper()=" << &get_usm_helper() << std::endl;
     _service_stream.reset(new ocl_stream(*this, ExecutionConfig()));
 }
 

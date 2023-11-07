@@ -32,7 +32,7 @@ RemoteContextImpl::RemoteContextImpl(const std::string& device_name, std::vector
     const auto runtime_type = cldnn::runtime_types::ocl;
 
     m_engine = cldnn::engine::create(engine_type, runtime_type, devices.front());
-
+    // std::cout << "RemoteContextImpl::RemoteContextImpl | m_engine=" << m_engine << std::endl;
     GPU_DEBUG_LOG << "Initialize RemoteContext for " << m_device_name << " (" << m_engine->get_device_info().dev_name << ")" << std::endl;
     init_properties();
 }

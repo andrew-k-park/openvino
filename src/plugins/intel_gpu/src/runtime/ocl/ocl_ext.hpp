@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "ocl_engine.hpp"
+
 #include <array>
 
 #ifdef OV_GPU_USE_OPENCL_HPP
@@ -733,7 +735,7 @@ public:
 
 class UsmHelper {
 public:
-    explicit UsmHelper(const cl::Context& ctx, const cl::Device device, bool use_usm) : _ctx(ctx), _device(device) {
+    explicit UsmHelper(const cldnn::ocl::ocl_engine& engine, const cl::Context& ctx, const cl::Device device, bool use_usm) : _engine(engine), _ctx(ctx), _device(device) {
         if (use_usm) {
             _host_mem_alloc_fn             = try_load_entrypoint<clHostMemAllocINTEL_fn>(_ctx.get(), "clHostMemAllocINTEL");
             _shared_mem_alloc_fn           = try_load_entrypoint<clSharedMemAllocINTEL_fn>(_ctx.get(), "clSharedMemAllocINTEL");
@@ -864,6 +866,7 @@ public:
     }
 
 private:
+    const cldnn::ocl::ocl_engine& _engine;
     cl::Context _ctx;
     cl::Device _device;
     clHostMemAllocINTEL_fn _host_mem_alloc_fn = nullptr;

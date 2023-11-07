@@ -82,12 +82,16 @@ bool engine::use_unified_shared_memory() const {
 }
 
 uint64_t engine::get_max_memory_size() const {
+#if 0
     static uint64_t max_device_mem = get_host_memory_size();
     const auto& dev_type = get_device_info().dev_type;
     if (dev_type == device_type::discrete_gpu) {
         max_device_mem += get_device_info().max_global_mem_size;
     }
     return max_device_mem;
+#else
+    return 15*1024*1024*1024ULL; // 15GB
+#endif
 }
 
 uint64_t engine::get_host_memory_size() const {
@@ -234,6 +238,10 @@ std::map<std::string, uint64_t> engine::get_memory_statistics() const {
         statistics[oss.str()] = m.second.load();
     }
     return statistics;
+}
+
+void engine::check_memory_statistics() const {
+    std::cout << "engine::check_memory_statistics | _memory_usage_map = " << &_memory_usage_map << std::endl;
 }
 
 void engine::add_memory_used(uint64_t bytes, allocation_type type) {

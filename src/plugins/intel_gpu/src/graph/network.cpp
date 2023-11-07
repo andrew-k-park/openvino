@@ -1466,6 +1466,11 @@ void network::execute_impl(const std::vector<event::ptr>& events) {
     GPU_DEBUG_IF(debug_config->dump_runtime_memory_pool > 0) {
         get_memory_pool().dump(get_id());
     }
+    auto used_dmem = get_engine().get_used_device_memory(allocation_type::usm_device);
+    auto used_hmem = get_engine().get_used_device_memory(allocation_type::usm_host);
+    auto used_mem = used_dmem + used_hmem;
+    GPU_DEBUG_COUT << "get_engine()=" << &get_engine() << "========== total mem size(" << used_mem << ") in engine's statistics | usm dmem="
+                   << used_dmem << ", usm hmem=" << used_hmem << std::endl;
 }
 
 std::vector<primitive_id> network::get_input_ids() const {
