@@ -19,6 +19,9 @@ class typed_primitive_inst<read_value> : public typed_primitive_inst_base<read_v
 public:
     template<typename ShapeType>
     static std::vector<layout> calc_output_layouts(read_value_node const& /*node*/, const kernel_impl_params& impl_param) {
+        // Temporary W/A for the first inference w/ empty input tensor
+        if (impl_param.input_layouts.empty())
+            return { impl_param.typed_desc<read_value>()->output_layout };
         return forward_input0_shape<ShapeType>(impl_param);
     }
 

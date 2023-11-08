@@ -17,18 +17,28 @@ namespace {
 template<typename T_PRIMITIVE>
 void CreateVariableAccessPrimitive(ProgramBuilder &p, const std::shared_ptr<ov::op::Op> &op,
                                    const std::string &variable_id) {
-    validate_inputs_count(op, {1});
+    validate_inputs_count(op, {0, 1});
+    auto inputs = p.GetInputInfo(op);
+    std::string layerName = layer_type_name_ID(op);
 
-    const auto output_pshape = op->get_output_partial_shape(0);
+    auto output_pshape = op->get_output_partial_shape(0);
+    // Temporary W/A for the first inference w/ empty input tensor
+    if (inputs.empty() && output_pshape.is_dynamic()) {
+        std::vector<size_t> dims(output_pshape.size());
+        std::transform(output_pshape.begin(), output_pshape.end(), dims.begin(), [](const ov::Dimension& d) {
+            return d.is_dynamic() ? 0 : d.get_length();
+        });
+        ov::Shape shape(dims.begin(), dims.end());
+        output_pshape = ov::PartialShape(shape);
+    }
     const auto output_dtype = cldnn::element_type_to_data_type(op->get_output_element_type(0));
     const auto output_format = cldnn::format::get_default_format(output_pshape.size());
 
     const auto variable_layout = cldnn::layout{ output_pshape, output_dtype, output_format };
 
-    auto inputs = p.GetInputInfo(op);
     if (!p.use_new_shape_infer())
         p.AddVariableStateInfo(variable_id, variable_layout);
-    const auto prim = T_PRIMITIVE{layer_type_name_ID(op),
+    const auto prim = T_PRIMITIVE{layerName,
                                   inputs,
                                   variable_id,
                                   variable_layout};
