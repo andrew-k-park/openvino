@@ -43,9 +43,14 @@ void VariableState::set() {
     m_is_set = true;
 }
 
+void VariableState::set_memory(cldnn::memory::ptr new_mem) {
+    m_memory = new_mem;
+    actual_size = std::max(actual_size, new_mem->size());
+}
+
 void VariableState::set_layout(const cldnn::layout& new_layout) {
     m_layout = new_layout;
-    update_device_buffer();
+    // update_device_buffer();
 }
 
 void VariableState::set_state(const ov::SoPtr<ov::ITensor>& state) {

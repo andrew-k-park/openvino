@@ -34,6 +34,7 @@ public:
     const cldnn::layout& get_layout() const;
     bool is_set() const;
     void set();
+    void set_memory(cldnn::memory::ptr new_mem);
     void set_layout(const cldnn::layout& new_layout);
 
 private:

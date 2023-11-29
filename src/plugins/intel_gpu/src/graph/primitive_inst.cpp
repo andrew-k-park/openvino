@@ -115,7 +115,7 @@ bool has_cpu_user_not_shape_of(const program_node* user) {
         return false;
     }
     if (auto impl = user->get_selected_impl())
-        return impl->is_cpu() && !user->is_type<shape_of>();
+        return impl->is_cpu() && !user->is_type<shape_of>() && !user->is_type<assign>();
     return false;
 }
 
@@ -445,11 +445,19 @@ event::ptr primitive_inst::realloc_if_needed() {
     if (_node->is_type<input_layout>())
         return ev;
 
-    if (auto stateful_prim = dynamic_cast<memory_state::variable*>(this)) {
-        std::string variable_id = stateful_prim->variable_id();
-        auto variable = get_network().get_variable(variable_id);
-        variable.set_layout(actual_layout);
-    }
+    // if (auto stateful_prim = dynamic_cast<memory_state::variable*>(this)) {
+    //     std::string variable_id = stateful_prim->variable_id();
+    //     auto variable = get_network().get_variable(variable_id);
+    //     variable.set_layout(actual_layout);
+    // }
+    if (_node->is_type<assign>()) {
+        const auto& variable_id = _node->as<assign>().get_primitive()->variable_id;
+        get_network().get_variable(variable_id).set_memory(dep_memory_ptr(0));
+        get_network().get_variable(variable_id).set();
+        return ev;
+     }
+    if (_node->is_type<read_value>())
+        return ev;
 
     bool can_reuse_buffer = _outputs[0] && actual_layout.count() <= max_output_layout_size;
 

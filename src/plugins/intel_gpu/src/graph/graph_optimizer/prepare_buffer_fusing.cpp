@@ -635,7 +635,8 @@ void prepare_buffer_fusing::run(program& p) {
             // If read_value here returns virable memory w/o copy, then based on Add-s and Assign execution order we may have different results
             // TODO: Allow optimizations for the case above too. Looks like it can be achieved by more careful
             // topological sort (i.e. if we ensure that all read_value users are completed before assign is run)
-            node.can_be_optimized(node.get_users().size() == 1);
+            // node.can_be_optimized(node.get_users().size() == 1);
+            node.can_be_optimized(true);
         });
     }
 }
