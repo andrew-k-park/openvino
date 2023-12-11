@@ -1085,6 +1085,7 @@ void network::build_insts_deps() {
 }
 
 void network::build_exec_order() {
+    // std::cout << "network::build_exec_order====================" << std::endl;
     GPU_DEBUG_DEFINE_MEM_LOGGER("build_exec_order");
     if (!_is_dynamic) {
         for (auto& node : _program->get_processing_order()) {
@@ -1100,19 +1101,36 @@ void network::build_exec_order() {
             return (!node->is_type<data>() && !(node->is_type<mutable_data>() && node->get_dependencies().empty()) &&
                     node->get_users().size() == 1 && is_runtime_optimized_concat(node->get_users().front()));
         };
+        // auto is_runtime_assign = [&](const program_node* node) {
+        //     return (node->is_dynamic() && node->is_type<assign>() && node->get_users().size() == 0);
+        // };
+        // auto is_allowed_pred_for_runtime_assign = [&](const program_node* node) {
+        //     return (!node->is_type<data>() && !(node->is_type<mutable_data>() && node->get_dependencies().empty()) &&
+        //             is_runtime_assign(node->get_users().front()));
+        // };
         for (auto& node : _program->get_processing_order()) {
             if (!node->is_type<data>() && !(node->is_type<mutable_data>() && node->get_dependencies().empty())) {
                 if (is_allowed_pred_for_runtime_optimized_concat(node)) {
+                    // std::cout << "====> node=" << node->id()  << " is skipped to add_to_exec_order"<< std::endl;
                     continue;
                 } else if (is_runtime_optimized_concat(node)) {
                     // For in-place concat applied at runtime, we need to do update_shape for all other predecessors of the concat user.
                     // i.e., We need to make sure that all the preds of them are already updated too.
                     for (auto dep : node->get_dependencies()) {
                         if (!dep.first->is_type<data>()) {
+                            // std::cout << "====> dep node=" << dep.first->id() << " run to add_to_exec_order first"<< std::endl;
                             add_to_exec_order(dep.first->id());
                         }
                     }
                 }
+                // if (is_allowed_pred_for_runtime_assign(node)) {
+                //     continue;
+                // } else if (is_runtime_assign(node)) {
+                //     for (auto dep : node->get_dependencies()) {
+                //         add_to_exec_order(dep.first->id());
+                //     }
+                // }
+                // std::cout << "====> cur node=" << node->id() << " run to add_to_exec_order"<< std::endl;
                 add_to_exec_order(node->id());
             }
         }
@@ -1120,6 +1138,7 @@ void network::build_exec_order() {
 }
 void network::add_to_exec_order(const primitive_id& id) {
     auto inst = get_primitive(id);
+    // std::cout << "network::add_to_exec_order id=" << id << std::endl;
     _exec_order.push_back(inst);
 }
 

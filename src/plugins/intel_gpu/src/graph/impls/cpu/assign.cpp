@@ -43,8 +43,12 @@ struct assign_impl : public typed_primitive_impl<assign> {
     }
 
     event::ptr execute_impl(const std::vector<event::ptr>& events, assign_inst& instance) override {
-        for (auto e : events) {
-            e->wait();
+        // std::cout << "execute_impl | id:" << instance.get_node().id()
+        //           << " instance.can_be_optimized()=" << instance.can_be_optimized() << std::endl;
+        if (!instance.can_be_optimized()) {
+            for (auto e : events) {
+                e->wait();
+            }
         }
 
         auto& variable = instance.get_network().get_variable(variable_id);

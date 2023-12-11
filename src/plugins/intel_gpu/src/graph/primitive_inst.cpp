@@ -755,6 +755,18 @@ void primitive_inst::do_runtime_skip_reorder() {
                 GPU_DEBUG_TRACE_DETAIL << "[do runtime skip reorder] user " << u->id() << " cannot be optimized" << std::endl;
             }
         }
+        if (u->get_node().is_type<assign>()) {
+            u->update_shape();
+            u->update_shape_done_by_other = true;
+            if (u->_impl_params->get_input_layout() == u->_impl_params->get_output_layout()) {
+                u->set_can_be_optimized(true);
+                // Opt out reorder which has _needs_completion_event = true causes syncronization failed in dGPU.
+                if (_needs_completion_event == false && u->_needs_completion_event == true) {
+                    _needs_completion_event = true;
+                }
+                // std::cout << "[do runtime skip reorder] set user " << u->id() << " as can_be_optimized" << std::endl;
+            }
+        }
     }
 }
 
@@ -909,6 +921,20 @@ event::ptr primitive_inst::execute(const std::vector<event::ptr>& events) {
                     << "can_be_optimized=" << can_be_optimized() << ")" << std::endl;
 
     const bool out_of_order_queue = get_network().get_stream().get_queue_type() == QueueTypes::out_of_order;
+    // if (_node->is_type<assign>() || _node->is_type<read_value>() || _node->is_type<concatenation>()) {
+    //     std::cout << "=== id:" << _node->id() << " dependencies.size()=" << dependencies.size()
+    //               << ", out_of_order_queue=" << out_of_order_queue
+    //               << ", _needs_completion_event=" << _needs_completion_event
+    //               << ", _exec_deps.size()=" << _exec_deps.size() 
+    //               << ", can_be_optimized()=" << can_be_optimized()
+    //               << ", is_output()=" << is_output()
+    //               << ", _impl->is_cpu()=" << _impl->is_cpu()
+    //               << std::endl;
+    //     for (auto& input : _exec_deps) {
+    //         auto id = input->id();
+    //          std::cout << "== id:" << id << "from _exec_deps" << std::endl;
+    //      }
+    // }
     if (_exec_deps.empty() && dependencies.empty()) {
         dependencies = events;
     } else {
