@@ -11,12 +11,18 @@
 #include "data_inst.h"
 #include "eltwise_inst.h"
 #include "mutable_data_inst.h"
+#include "fully_connected_inst.h"
 #include <vector>
 #include <memory>
 
 using namespace cldnn;
 
 void prepare_primitive_fusing_through::run(program& p) {
+    fuse_through_commons(p);
+    // fuse_through_test(p);
+}
+
+void prepare_primitive_fusing_through::fuse_through_commons(program& p) {
     auto try_fuse_through = [&](program_node& node) -> std::vector<program_node*> {
         // This function tries to fuse peer_node to first non reorder or reshape previous primitive.
         // It returns chain of primitives (reshapes and reorders) including potential fused_node (e.g. Conv, FC, etc)
@@ -186,5 +192,86 @@ void prepare_primitive_fusing_through::run(program& p) {
                 itermediate_node->recalc_output_layout(false);
             }
         }
+    }
+}
+
+void prepare_primitive_fusing_through::fuse_through_test(program& p) {
+    auto try_fuse_through = [&](program_node& node) -> std::vector<program_node*> {
+        auto can_raise_up_through = [](program_node* node) {
+            if (!node->is_type<fully_connected>())
+                return false;
+            if (node->is_type<fully_connected>() && !node->get_dependencies().front().first->is_type<reshape>())
+                return false;
+            if (node->is_type<fully_connected>() &&
+                node->get_input_pshape(1).size() == 2 &&
+                node->get_input_pshape(1)[0] != node->get_input_pshape(1)[1])
+                return false;
+            return true;
+        };
+        std::vector<program_node*> pass_through;
+        program_node* fuse_through = &node;
+        pass_through.push_back(fuse_through);
+
+        bool can_raise_up = can_raise_up_through(fuse_through);
+        while (can_raise_up) {
+            fuse_through = &fuse_through->get_dependency(0);
+            can_raise_up = can_raise_up_through(fuse_through);
+            pass_through.push_back(fuse_through);
+        }
+        return pass_through;
+    };
+    auto node_itr = p.get_processing_order().begin();
+    while (node_itr != p.get_processing_order().end()) {
+        auto node = (*node_itr++);
+        cldnn::program_node* input_node;
+
+        if (node->is_output() || node->is_constant())
+            continue;
+
+        if (node->is_type<reshape>()) {
+            if (node->get_output_pshape().size() != 3)
+                continue;
+            input_node = &node->get_dependency(0);
+        } else {
+            continue;
+        }
+
+        auto fuse_through_order = try_fuse_through(*input_node);
+        bool use_fuse_through = fuse_through_order.size() > 1;
+
+        if (!use_fuse_through)
+            continue;
+
+        if (static_cast<bool>(node->get_output_layout().data_padding))
+            continue;
+
+        auto new_prev = fuse_through_order[fuse_through_order.size() - 1];
+        auto new_next = fuse_through_order[fuse_through_order.size() - 2];
+        // std::cout << "new_prev->id()=" << new_prev->id() << std::endl;
+        // std::cout << "new_next->id()=" << new_next->id() << std::endl;
+
+        std::vector<cldnn::program_node*> dependencies;
+        for (auto& dep : node->get_dependencies()) {
+            if (dep.first == input_node)
+                continue;
+            dependencies.push_back(dep.first);
+        }
+
+        for (auto dep : dependencies)
+            p.remove_connection(*dep, *node);
+
+        p.move_node(*node, *new_prev, *new_next);
+
+        for (auto dep : dependencies)
+            p.add_connection(*dep, *node);
+
+        node->recalc_output_layout(false);
+        new_next->recalc_output_layout(false);
+
+        // auto node_itr = std::next(fuse_through_order.rbegin());
+        // while (node_itr != fuse_through_order.rend()) {
+        //     auto itermediate_node = *node_itr++;
+        //     itermediate_node->recalc_output_layout(false);
+        // }
     }
 }

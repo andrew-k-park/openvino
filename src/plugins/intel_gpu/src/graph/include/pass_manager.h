@@ -181,7 +181,11 @@ private:
 class prepare_primitive_fusing_through : public base_pass {
 public:
     prepare_primitive_fusing_through() : base_pass("prepare_primitive_fusing_through") {}
+
+private:
     void run(program& p) override;
+    void fuse_through_commons(program &p);
+    void fuse_through_test(program &p);
 };
 
 class prepare_primitive_fusing : public base_pass {
