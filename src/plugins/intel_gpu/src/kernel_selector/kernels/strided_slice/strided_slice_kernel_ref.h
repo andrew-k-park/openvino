@@ -27,6 +27,7 @@ struct strided_slice_params : public base_params {
     size_t begin_dims = 0;
     size_t end_dims = 0;
     size_t stride_dims = 0;
+    bool all_constant_inputs = false;
 
     uint32_t GetIndexBegin() const {
         uint32_t input_idx = 0;

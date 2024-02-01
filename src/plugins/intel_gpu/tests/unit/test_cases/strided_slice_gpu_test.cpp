@@ -24,25 +24,19 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ ov::PartialShape{ 2, 2, 2, 2 }, data_types::f32, format::bfyx });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 -0.2f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
                 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.8f
         });
 
-        set_values<int64_t>(begin, {0, 0, 0, 0});
-        set_values<int64_t>(end, {2, 2, 2, 2});
-        set_values<int64_t>(strides, {1, 1, 1, 1});
+        std::vector<int64_t> begin_data = { 0, 0, 0, 0 };
+        std::vector<int64_t> end_data = {2, 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
         topology.add(activation("out", input_info("strided_slice"), activation_func::clamp, {0.f, 15.0f}));
         topology.add(reorder("out_reorder", input_info("out"), format::bfyx, data_types::f32));
 
@@ -93,7 +87,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -140,7 +134,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -196,7 +190,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 2, 2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2, 2, 2}));
 
         auto config = get_test_default_config(engine);
         config.set_property(ov::intel_gpu::force_implementations(ov::intel_gpu::ImplForcingMap{ {"strided_slice", {format::bfwzyx, "", impl_types::ocl}} }));
@@ -256,7 +250,7 @@ public:
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
         topology.add(reorder("input_reorder", input_info("input"), padded_layout));
-        topology.add(strided_slice("strided_slice", input_info("input_reorder"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input_reorder")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -301,7 +295,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -348,7 +342,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {1, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 1, 1, 1}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -400,7 +394,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, {2, 2, 2, 3}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, 7, {2, 2, 2, 3}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -464,7 +458,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {0, 1, 1, 0}, {}, {}, {}, {}, {1, 2, 4, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {0, 1, 1, 0}, {}, {}, {}, {}, 7, {1, 2, 4, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -516,7 +510,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, { 1 }, {}, {}, {2, 2, 4, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, { 1 }, {}, {}, 7, {2, 2, 4, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -559,7 +553,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, { 1, 0, 1 }, {}, {}, {2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, { 1, 0, 1 }, {}, {}, 7, {2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -600,7 +594,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {1, 0}, {}, {}, {}, {}, {2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {1, 0}, {}, {}, {}, {}, 7, {2, 2, 1, 1}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -645,7 +639,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {1, 2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -686,7 +680,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 1, 1, 1}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -732,7 +726,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {1, 2, 2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -774,7 +768,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 1, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 1, 1, 1, 1}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -823,7 +817,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -872,7 +866,7 @@ public:
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
         topology.add(reorder("input_reorder", input_info("input"), padded_layout));
-        topology.add(strided_slice("strided_slice", input_info("input_reorder"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input_reorder")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -912,7 +906,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {2, 1, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 1, 1, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -944,21 +938,15 @@ public:
         auto& engine = get_test_engine();
         auto input_lay = layout{ ov::PartialShape::dynamic(3), data_types::f32, format::bfyx };
         auto input = engine.allocate_memory({ ov::PartialShape{ 2, 2, 2 }, data_types::f32, format::bfyx });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
 
         set_values(input, {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f});
-        set_values<int64_t>(begin, {0, 0, 0});
-        set_values<int64_t>(end, {2, 2, 2});
-        set_values<int64_t>(strides, {1, 2, 2});
+        std::vector<int64_t> begin_data = { 0, 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 2, 2 };
 
         topology topology;
         topology.add(input_layout("input", input_lay));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {}));
 
         ExecutionConfig config = get_test_default_config(engine);
         config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
@@ -997,21 +985,15 @@ public:
         auto& engine = get_test_engine();
         auto input_lay = layout{ ov::PartialShape::dynamic(3), data_types::f32, format::bfyx };
         auto input = engine.allocate_memory({ ov::PartialShape{ 2, 2, 2 }, data_types::f32, format::bfyx });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 1 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 1 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 1 }, data_types::i64, format::bfyx });
 
-        set_values(input, {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f});
-        set_values<int64_t>(begin, {1});
-        set_values<int64_t>(end, {2});
-        set_values<int64_t>(strides, {1});
+        set_values(input, {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f});;
+        std::vector<int64_t> begin_data = { 1 };
+        std::vector<int64_t> end_data = { 2 };
+        std::vector<int64_t> strides_data = { 1 };
 
         topology topology;
         topology.add(input_layout("input", input_lay));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {}));
 
         ExecutionConfig config = get_test_default_config(engine);
         config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
@@ -1053,20 +1035,16 @@ public:
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ ov::PartialShape{ 2, 2, 2 }, data_types::f32, format::bfyx });
         auto begin = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 3 }, data_types::i64, format::bfyx });
 
         set_values(input, {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f});
         set_values<int64_t>(begin, {0, 0, 0});
-        set_values<int64_t>(end, {2, 2, 2});
-        set_values<int64_t>(strides, {1, 2, 2});
+        std::vector<int64_t> end_data = { 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 2, 2};
 
         topology topology;
         topology.add(data("input", input));
         topology.add(input_layout("input2", begin->get_layout()));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {}));
+        topology.add(strided_slice("strided_slice", {input_info("input"), input_info("input2")}, {}, end_data, strides_data, {}, {}, {}, {}, {}, 6, {}));
 
         ExecutionConfig config = get_test_default_config(engine);
         config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
@@ -1116,11 +1094,8 @@ public:
             input_layout("end", l_end),
             data("stride", stride),
             strided_slice("strided_slice",
-                input_info("input"),
-                input_info("begin"),
-                input_info("end"),
-                input_info("stride"),
-                {}, {}, {1, 0, 0}, {}, {}, {})
+                          {input_info("input"), input_info("begin"), input_info("end"), input_info("stride")},
+                          {}, {}, {}, {}, {}, {1, 0, 0}, {}, {}, 0, {})
         );
 
         ExecutionConfig config = get_test_default_config(engine);
@@ -1150,11 +1125,8 @@ public:
             input_layout("end", l_end),
             data("stride", stride),
             strided_slice("strided_slice",
-                input_info("input"),
-                input_info("begin"),
-                input_info("end"),
-                input_info("stride"),
-                {}, {}, {}, {1, 0, 0}, {}, {})
+                          {input_info("input"), input_info("begin"), input_info("end"), input_info("stride")},
+                          {}, {}, {}, {}, {}, {}, {1, 0, 0}, {}, 0, {})
         );
 
         ExecutionConfig config = get_test_default_config(engine);
@@ -1180,30 +1152,18 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 2, 2 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
                 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -1241,30 +1201,18 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 2, 2 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
                 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f
         });
-        set_values<int64_t>(begin, {
-                1, 1, 1, 1
-        });
-        set_values<int64_t>(end, {
-                2, 2, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { 1, 1, 1, 1 };
+        std::vector<int64_t> end_data = { 2, 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1300,30 +1248,18 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 2, 2 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
                 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f
                 });
-        set_values<int64_t>(begin, {
-                1, 1, 1, 1
-                });
-        set_values<int64_t>(end, {
-                2, 2, 2, 2
-                });
-        set_values<int64_t>(strides, {
-                1, 1, 1, 1
-                });
+        std::vector<int64_t> begin_data = { 1, 1, 1, 1 };
+        std::vector<int64_t> end_data = { 2, 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {1, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 1, 1, 1}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -1360,9 +1296,6 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 3, 4 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f,
@@ -1372,22 +1305,13 @@ public:
                 36.f, 37.f, 38.f, 39.f, 40.f, 41.f, 42.f, 43.f, 44.f,
                 45.f, 46.f, 47.f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 4, 3
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 2, 1
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 4, 3 };
+        std::vector<int64_t> strides_data = { 1, 1, 2, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, {2, 2, 2, 3}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {1, 1, 1, 1}, {1, 1, 1, 1}, {}, {}, {}, 7, {2, 2, 2, 3}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -1467,7 +1391,9 @@ public:
         topology.add(input_layout("input2", begin->get_layout()));
         topology.add(input_layout("input3", end->get_layout()));
         topology.add(input_layout("input4", strides->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {0, 1, 1, 0}, {}, {}, {}, {}, {1, 2, 4, 2}));
+        topology.add(strided_slice("strided_slice",
+                                   {input_info("input"), input_info("input2"), input_info("input3"), input_info("input4")},
+                                   {}, {}, {}, {0, 1, 1, 0}, {}, {}, {}, {}, 0, {1, 2, 4, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1511,30 +1437,18 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 1, 4 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f,
                 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f
         });
-        set_values<int64_t>(begin, {
-                1, 0, 1, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 4, 4
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, 2
-        });
+        std::vector<int64_t> begin_data = { 1, 0, 1, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 4, 4 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 2 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, { 1 }, {}, {}, {2, 2, 4, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, { 1 }, {}, {}, 7, {2, 2, 4, 1}));
 
         auto config = get_test_default_config(engine);
         if (impl_type != impl_types::any)
@@ -1571,29 +1485,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 1, 1 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f
         });
-        set_values<int64_t>(begin, {
-                1, 0, 1, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 4, 4
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, 2
-        });
+        std::vector<int64_t> begin_data = { 1, 0, 1, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 4, 4 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 2 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, { 1, 0, 1 }, {}, {}, {2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, { 1, 0, 1 }, {}, {}, 7, {2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1624,30 +1526,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 1, 1 } });
-        auto begin = engine.allocate_memory({ data_types::i64, format::bfyx, { 2, 1, 1, 1 } });
-        auto end = engine.allocate_memory({ data_types::i64, format::bfyx, { 2, 1, 1, 1 } });
-        auto strides = engine.allocate_memory({ data_types::i64, format::bfyx, { 2, 1, 1, 1 } });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f
         });
-
-        set_values<int64_t>(begin, {
-                0, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {1, 0}, {}, {}, {}, {}, {2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {1, 0}, {}, {}, {}, {}, 7, {2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1678,29 +1567,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfzyx, { 2, 2, 1, 1, 2 } });
-        auto begin = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto end = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto strides = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0
-        });
-        set_values<int64_t>(end, {
-                1, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0 };
+        std::vector<int64_t> end_data = { 1, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {1, 2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1731,29 +1608,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfzyx, { 2, 2, 1, 1, 2 } });
-        auto begin = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto end = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto strides = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 2, 2
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 2, 2 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {2, 1, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 1, 1, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1787,30 +1652,18 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 2, 2 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
                 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                -1, -1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 2, 2 };
+        std::vector<int64_t> strides_data = { -1, -1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1849,19 +1702,13 @@ public:
                 0.0f, 1.0f, 2.0f, 3.0f,
                 4.0f, 5.0f, 6.0f, 7.0f
         });
-        std::vector<int64_t> begin = {
-                0, 0, 0, 0
-        };
-        std::vector<int64_t> end = {
-                1, 2, 2, 2
-        };
-        std::vector<int64_t> strides = {
-                1, -1, 1, 1
-        };
+        std::vector<int64_t> begin_data = { 0, 0, 0, 0 };
+        std::vector<int64_t> end_data = { 1, 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, -1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin, end, strides, {}, {}, {}, {}, {}, {1, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1900,19 +1747,13 @@ public:
                 0.0f, 1.0f, 2.0f, 3.0f,
                 4.0f, 5.0f, 6.0f, 7.0f
         });
-        std::vector<int64_t> begin = {
-                0, -1
-        };
-        std::vector<int64_t> end= {
-                100, -100
-        };
-        std::vector<int64_t> strides= {
-                1, -1
-        };
+        std::vector<int64_t> begin_data = { 0, -1 };
+        std::vector<int64_t> end_data = { 100, -100 };
+        std::vector<int64_t> strides_data = { 1, -1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin, end, strides, {}, {}, {}, {}, {}, {1, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1951,19 +1792,13 @@ public:
                 0.0f, 1.0f, 2.0f, 3.0f,
                 4.0f, 5.0f, 6.0f, 7.0f
         });
-        std::vector<int64_t> begin = {
-                0, 100
-        };
-        std::vector<int64_t> end= {
-                100, -100
-        };
-        std::vector<int64_t> strides= {
-                1, -1
-        };
+        std::vector<int64_t> begin_data = { 0, 100 };
+        std::vector<int64_t> end_data = { 100, -100 };
+        std::vector<int64_t> strides_data = { 1, -1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin, end, strides, {}, {}, {}, {}, {}, {1, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -1994,29 +1829,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfzyx, { 2, 2, 1, 1, 2 } });
-        auto begin = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto end = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto strides = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0
-        });
-        set_values<int64_t>(end, {
-                2, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 2, 2
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0 };
+        std::vector<int64_t> end_data = { 2, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 2, 2 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {2, 1, 1, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 1, 1, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2046,32 +1869,19 @@ public:
         // Output (BFZYX): 1x1x1x3
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 3, 1, 3} });
-        auto begin = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto end = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1 } });
-        auto strides = engine.allocate_memory({ data_types::i64, format::bfyx, { 3, 1, 1, 1} });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f,
                 3.0f, 4.0f, 5.0f,
                 6.0f, 7.0f, 8.0f,
         });
-
-        set_values<int64_t>(begin, {
-                0, -1, 0
-        });
-        set_values<int64_t>(end, {
-                1, -2, 3
-        });
-        set_values<int64_t>(strides, {
-                1, -1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, -1, 0 };
+        std::vector<int64_t> end_data = { 1, -2, 3 };
+        std::vector<int64_t> strides_data = { 1, -1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {},  {1, 1, 1, 3}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 1, 1, 3}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2101,30 +1911,17 @@ public:
         // Output (BFZYX): 1x1x1x3
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 3, 1} });
-        auto begin = engine.allocate_memory({ data_types::i64, format::bfyx, { 4, 1, 1, 1 } });
-        auto end = engine.allocate_memory({ data_types::i64, format::bfyx, { 4, 1, 1, 1 } });
-        auto strides = engine.allocate_memory({ data_types::i64, format::bfyx, { 4, 1, 1, 1} });
 
         set_values(input, {
                 6.0f, 7.0f, 8.0f,
         });
-
-        set_values<int64_t>(begin, {
-                0, -1, 0, 0
-        });
-        set_values<int64_t>(end, {
-                1, -2, 1, 3
-        });
-        set_values<int64_t>(strides, {
-                1, -1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, -1, 0, 0 };
+        std::vector<int64_t> end_data = { 1, -2, 1, 3 };
+        std::vector<int64_t> strides_data = { 1, -1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {},  {1, 1, 1, 3}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 1, 1, 3}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2158,31 +1955,19 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 2, 2, 2, 2 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f,
                 8.0f, 9.0f, 10.0f, 11.0f,
                 12.0f, 13.0f, 14.0f, 15.0f
         });
-        set_values<int64_t>(begin, {
-                -1, -1, 0, 0
-        });
-        set_values<int64_t>(end, {
-                -3, -3, 2, 2
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { -1, -1, 0, 0 };
+        std::vector<int64_t> end_data = { -3, -3, 2, 2 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {2, 2, 2, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {2, 2, 2, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2216,29 +2001,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 10, 1 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0, 3
-        });
-        set_values<int64_t>(end, {
-                1, 1, 1, 6
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, -2
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0, 3 };
+        std::vector<int64_t> end_data = { 1, 1, 1, 6 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, -2 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {1, 1, 1, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 1, 1, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2271,29 +2044,17 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 10, 1 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 4 }, data_types::i64, format::bfyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f
         });
-        set_values<int64_t>(begin, {
-                0, 0, 0, -5
-        });
-        set_values<int64_t>(end, {
-                1, 1, 1, -8
-        });
-        set_values<int64_t>(strides, {
-                1, 1, 1, -2
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0, -5 };
+        std::vector<int64_t> end_data = { 1, 1, 1, -8 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, -2 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, {}, {}, {}, {1, 1, 1, 2}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 1, 1, 2}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2350,7 +2111,9 @@ public:
         topology.add(input_layout("input2", begin->get_layout()));
         topology.add(input_layout("input3", end->get_layout()));
         topology.add(input_layout("input4", strides->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, { 1 }, {}, {}, {2, 2, 4, 1}));
+        topology.add(strided_slice("strided_slice",
+                                   {input_info("input"), input_info("input2"), input_info("input3"), input_info("input4")},
+                                   {}, {}, {}, {}, {}, { 1 }, {}, {}, 0, {2, 2, 4, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2408,7 +2171,9 @@ public:
         topology.add(input_layout("input2", begin->get_layout()));
         topology.add(input_layout("input3", end->get_layout()));
         topology.add(input_layout("input4", strides->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {}, {}, { 1, 0, 1 }, {}, {}, {2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice",
+                                   {input_info("input"), input_info("input2"), input_info("input3"), input_info("input4")},
+                                   {}, {}, {}, {}, {}, { 1, 0, 1 }, {}, {}, 0, {2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2455,7 +2220,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {1, 2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2496,7 +2261,7 @@ public:
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(strided_slice("strided_slice", input_info("input"), begin_data, end_data, strides_data, {}, {}, {}, {}, {}, {1, 2, 2, 2, 1, 1}));
+        topology.add(strided_slice("strided_slice", {input_info("input")}, begin_data, end_data, strides_data, {}, {}, {}, {}, {}, 7, {1, 2, 2, 2, 1, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 
@@ -2529,29 +2294,20 @@ public:
 
         auto& engine = get_test_engine();
         auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 8, 1, 1 } });
-        auto begin = engine.allocate_memory({ ov::PartialShape{ 5 }, data_types::i32, format::bfzyx });
-        auto end = engine.allocate_memory({ ov::PartialShape{ 5 }, data_types::i32, format::bfzyx });
-        auto strides = engine.allocate_memory({ ov::PartialShape{ 5 }, data_types::i32, format::bfzyx });
 
         set_values(input, {
                 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f
         });
-        set_values(begin, {
-                0, 0, 0, 0, 0
-        });
-        set_values(end, {
-                0, 0, 0, 0, 0
-        });
-        set_values(strides, {
-                1, 1, 1, 1, 1
-        });
+        std::vector<int64_t> begin_data = { 0, 0, 0, 0, 0 };
+        std::vector<int64_t> end_data = { 0, 0, 0, 0, 0 };
+        std::vector<int64_t> strides_data = { 1, 1, 1, 1, 1 };
 
         topology topology;
         topology.add(input_layout("input", input->get_layout()));
-        topology.add(data("input2", begin));
-        topology.add(data("input3", end));
-        topology.add(data("input4", strides));
-        topology.add(strided_slice("strided_slice", input_info("input"), input_info("input2"), input_info("input3"), input_info("input4"), {1, 0, 0, 1, 0}, {1, 0, 0, 1, 0}, {0, 1, 1, 0, 1}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {1, 1, 1, 8, 1}));
+        topology.add(strided_slice("strided_slice",
+                                   {input_info("input")},
+                                   begin_data, end_data, strides_data,
+                                   {1, 0, 0, 1, 0}, {1, 0, 0, 1, 0}, {0, 1, 1, 0, 1}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, 7, {1, 1, 1, 8, 1}));
 
         cldnn::network::ptr network = get_network(engine, topology, get_test_default_config(engine), get_test_stream_ptr(), is_caching_test);
 

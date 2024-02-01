@@ -36,14 +36,22 @@ std::vector<layout> strided_slice_inst::calc_output_layouts(strided_slice_node c
     auto input0_layout = impl_param.get_input_layout(0);
     auto input0_shape = input0_layout.get<ShapeType>();
 
-    auto& constant_mem = impl_param.memory_deps;
+    auto& memory_deps = impl_param.memory_deps;
     auto begin_data = desc->begin;
     auto end_data = desc->end;
     auto strides_data = desc->strides;
 
-    if ((begin_data.empty() && !constant_mem.count(1))
-        || (end_data.empty() && !constant_mem.count(2))
-        || (strides_data.empty() && !constant_mem.count(3))) {
+    const bool is_begin_const = desc->const_inputs_mask & strided_slice::const_input::begin_const;
+    const bool is_end_const = desc->const_inputs_mask & strided_slice::const_input::end_const;
+    const bool is_strides_const = desc->const_inputs_mask & strided_slice::const_input::strides_const;
+
+    const size_t begin_input_idx = is_begin_const ? 0 : 1;
+    const size_t end_input_idx = is_end_const ? begin_input_idx : begin_input_idx + 1;
+    const size_t strides_input_idx = is_strides_const ? end_input_idx : end_input_idx + 1;
+
+    if ((!is_begin_const && !memory_deps.count(begin_input_idx))
+        || (!is_end_const && !memory_deps.count(end_input_idx))
+        || (!is_strides_const && !memory_deps.count(strides_input_idx))) {
         auto num_of_axis_mask_bit = [] (std::vector<int64_t> mask) -> size_t {
             size_t count = 0;
             for (size_t i = 0; i < mask.size(); i++)
@@ -100,9 +108,14 @@ std::vector<layout> strided_slice_inst::calc_output_layouts(strided_slice_node c
     }
 
     ov::op::v1::StridedSlice op;
-    ShapeType begin_shape = begin_data.empty() ? impl_param.get_input_layout(1).get<ShapeType>() : ov::Shape{ begin_data.size() };
-    ShapeType end_shape = end_data.empty() ? impl_param.get_input_layout(2).get<ShapeType>() : ov::Shape{ end_data.size() };
-    ShapeType strides_shape = strides_data.empty() ? impl_param.get_input_layout(3).get<ShapeType>() : ov::Shape{ strides_data.size() };
+
+    ShapeType begin_shape = is_begin_const ? ov::Shape{ begin_data.size() } : impl_param.get_input_layout(begin_input_idx).get<ShapeType>();
+    ShapeType end_shape = is_end_const? ov::Shape{ end_data.size() } : impl_param.get_input_layout(end_input_idx).get<ShapeType>();
+    ShapeType strides_shape = is_strides_const ? ov::Shape{ strides_data.size() } : impl_param.get_input_layout(strides_input_idx).get<ShapeType>();
+
+    // ShapeType begin_shape = begin_data.empty() ? impl_param.get_input_layout(1).get<ShapeType>() : ov::Shape{ begin_data.size() };
+    // ShapeType end_shape = end_data.empty() ? impl_param.get_input_layout(2).get<ShapeType>() : ov::Shape{ end_data.size() };
+    // ShapeType strides_shape = strides_data.empty() ? impl_param.get_input_layout(3).get<ShapeType>() : ov::Shape{ strides_data.size() };
 
     std::vector<ShapeType> output_shapes;
     std::vector<ShapeType> input_shapes = {
@@ -119,37 +132,56 @@ std::vector<layout> strided_slice_inst::calc_output_layouts(strided_slice_node c
     op.set_shrink_axis_mask(desc->shrink_axis_mask);
     op.set_ellipsis_mask_mask(desc->ellipsis_mask);
 
-    std::unordered_map<size_t, ov::Tensor> const_data;
-    const auto ta = ov::make_tensor_accessor(const_data);
-    if (!begin_data.empty() && !end_data.empty() && !strides_data.empty()) {
-        auto begin_tensor = make_tensor({ begin_shape, data_types::i64, format::bfyx }, static_cast<void*>(begin_data.data()));
-        auto end_tensor = make_tensor({ end_shape, data_types::i64, format::bfyx }, static_cast<void*>(end_data.data()));
-        auto strides_tensor = make_tensor({ strides_shape, data_types::i64, format::bfyx }, static_cast<void*>(strides_data.data()));
-
-        const_data.emplace(1, begin_tensor);
-        const_data.emplace(2, end_tensor);
-        const_data.emplace(3, strides_tensor);
-
-        output_shapes = ov::op::v1::shape_infer(&op, input_shapes, ta);
+    // std::unordered_map<size_t, ov::Tensor> const_data;
+    // const auto ta = ov::make_tensor_accessor(const_data);
+    TensorsContainer const_data(&impl_param.get_stream());
+    if (is_begin_const) {
+        const_data.emplace(1, make_tensor({ begin_shape, data_types::i64, format::bfyx }, static_cast<void*>(begin_data.data())));
     } else {
-        auto begin_mem = constant_mem.at(1);
-        auto end_mem = constant_mem.at(2);
-        auto strides_mem = constant_mem.at(3);
-
-        cldnn::mem_lock<uint8_t, mem_lock_type::read> lock1(begin_mem, impl_param.get_stream());
-        cldnn::mem_lock<uint8_t, mem_lock_type::read> lock2(end_mem, impl_param.get_stream());
-        cldnn::mem_lock<uint8_t, mem_lock_type::read> lock3(strides_mem, impl_param.get_stream());
-
-        auto begin_tensor = make_tensor(begin_mem->get_layout(), lock1.data());
-        auto end_tensor = make_tensor(end_mem->get_layout(), lock2.data());
-        auto strides_tensor = make_tensor(strides_mem->get_layout(), lock3.data());
-
-        const_data.emplace(1, begin_tensor);
-        const_data.emplace(2, end_tensor);
-        const_data.emplace(3, strides_tensor);
-
-        output_shapes = ov::op::v1::shape_infer(&op, input_shapes, ta);
+        const_data.emplace(1, memory_deps.at(begin_input_idx));
     }
+    if (is_end_const) {
+        const_data.emplace(2, make_tensor({ end_shape, data_types::i64, format::bfyx }, static_cast<void*>(end_data.data())));
+    } else {
+        const_data.emplace(2, memory_deps.at(end_input_idx));
+    }
+    if (is_strides_const) {
+        const_data.emplace(3, make_tensor({ strides_shape, data_types::i64, format::bfyx }, static_cast<void*>(strides_data.data())));
+    } else {
+        const_data.emplace(3, memory_deps.at(strides_input_idx));
+    }
+    auto ta = cldnn::make_tensor_accessor(const_data);
+    output_shapes = ov::op::v1::shape_infer(&op, input_shapes, ta);
+
+    // if (!begin_data.empty() && !end_data.empty() && !strides_data.empty()) {
+    //     auto begin_tensor = make_tensor({ begin_shape, data_types::i64, format::bfyx }, static_cast<void*>(begin_data.data()));
+    //     auto end_tensor = make_tensor({ end_shape, data_types::i64, format::bfyx }, static_cast<void*>(end_data.data()));
+    //     auto strides_tensor = make_tensor({ strides_shape, data_types::i64, format::bfyx }, static_cast<void*>(strides_data.data()));
+
+    //     const_data.emplace(1, begin_tensor);
+    //     const_data.emplace(2, end_tensor);
+    //     const_data.emplace(3, strides_tensor);
+
+    //     output_shapes = ov::op::v1::shape_infer(&op, input_shapes, ta);
+    // } else {
+    //     auto begin_mem = memory_deps.at(1);
+    //     auto end_mem = memory_deps.at(2);
+    //     auto strides_mem = memory_deps.at(3);
+
+    //     cldnn::mem_lock<uint8_t, mem_lock_type::read> lock1(begin_mem, impl_param.get_stream());
+    //     cldnn::mem_lock<uint8_t, mem_lock_type::read> lock2(end_mem, impl_param.get_stream());
+    //     cldnn::mem_lock<uint8_t, mem_lock_type::read> lock3(strides_mem, impl_param.get_stream());
+
+    //     auto begin_tensor = make_tensor(begin_mem->get_layout(), lock1.data());
+    //     auto end_tensor = make_tensor(end_mem->get_layout(), lock2.data());
+    //     auto strides_tensor = make_tensor(strides_mem->get_layout(), lock3.data());
+
+    //     const_data.emplace(1, begin_tensor);
+    //     const_data.emplace(2, end_tensor);
+    //     const_data.emplace(3, strides_tensor);
+
+    //     output_shapes = ov::op::v1::shape_infer(&op, input_shapes, ta);
+    // }
 
     auto output_format = format::get_default_format(output_shapes[0].size());
 

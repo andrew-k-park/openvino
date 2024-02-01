@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include "include/batch_headers/fetch_data.cl"
+#include "include/fetch_utils.cl"
 
 #ifdef STRIDE_TYPE
 inline void FUNC(get_slice_step)(OPTIONAL_SHAPE_INFO_ARG
@@ -92,6 +92,22 @@ inline void FUNC(get_slice_end)(OPTIONAL_SHAPE_INFO_ARG
     *end_y = (END_Y == 0) ? y : TO_END_TYPE(out_y_num);
     *end_x = (END_X == 0) ? x : TO_END_TYPE(out_x_num);
 }
+#else
+inline void FUNC(get_slice_end)(OPTIONAL_SHAPE_INFO_ARG
+                                int* end_batch, int* end_feature,
+                                int* end_w, int* end_z, int* end_y, int* end_x)
+{
+    *end_batch = (END_BATCH == 0) ? SLICE_END_BATCH : INPUT0_BATCH_NUM;
+    *end_feature = (END_FEATURE == 0) ? SLICE_END_FEATURE : INPUT0_FEATURE_NUM;
+#ifdef OUTPUT_LAYOUT_BFWZYX
+    *end_w = (END_W == 0) ? SLICE_END_W: INPUT0_SIZE_W;
+    *end_z = (END_Z == 0) ? SLICE_END_Z: INPUT0_SIZE_Z;
+#elif OUTPUT_LAYOUT_BFZYX
+    *end_z = (END_Z == 0) ? SLICE_END_Z: INPUT0_SIZE_Z;
+#endif
+    *end_y = (END_Y == 0) ? SLICE_END_Y : INPUT0_SIZE_Y;
+    *end_x = (END_X == 0) ? SLICE_END_X : INPUT0_SIZE_X;
+}
 #endif // END_TYPE
 
 #ifdef BEGIN_TYPE
@@ -138,9 +154,22 @@ inline void FUNC(get_slice_begin)(OPTIONAL_SHAPE_INFO_ARG
     *begin_y = (BEGIN_Y == 0) ? y : 0;
     *begin_x = (BEGIN_X == 0) ? x : 0;
 }
+#else
+inline void FUNC(get_slice_begin)(int* begin_batch, int* begin_feature,
+                                  int* begin_w, int* begin_z, int* begin_y, int* begin_x)
+{
+    *begin_batch = (BEGIN_BATCH == 0) ? SLICE_BEGIN_BATCH : 0;
+    *begin_feature = (BEGIN_FEATURE == 0) ? SLICE_BEGIN_FEATURE : 0;
+#ifdef OUTPUT_LAYOUT_BFWZYX
+    *begin_w = (BEGIN_W == 0) ? SLICE_BEGIN_W: 0;
+    *begin_z = (BEGIN_Z == 0) ? SLICE_BEGIN_Z: 0;
+#elif OUTPUT_LAYOUT_BFZYX
+    *begin_z = (BEGIN_Z == 0) ? SLICE_BEGIN_Z: 0;
+#endif
+    *begin_y = (BEGIN_Y == 0) ? SLICE_BEGIN_Y : 0;
+    *begin_x = (BEGIN_X == 0) ? SLICE_BEGIN_X : 0;
+}
 #endif // BEGIN_TYPE
-
-
 
 #ifdef SHRINK_MODE
 inline void FUNC(calculate_index)(int* step, int* begin_num, int* end_num, const uint out_num, const int shrink)
@@ -220,24 +249,19 @@ KERNEL(strided_slice_ref)(OPTIONAL_SHAPE_INFO_ARG
 #ifdef BEGIN_TYPE
     FUNC_CALL(get_slice_begin)(OPTIONAL_SHAPE_INFO_TENSOR begin, &begin_batch, &begin_feature, &begin_w, &begin_z, &begin_y, &begin_x);
 #else // BEGIN_TYPE
-    begin_batch = SLICE_BEGIN_BATCH;
-    begin_feature = SLICE_BEGIN_FEATURE;
-    begin_w = SLICE_BEGIN_W;
-    begin_z = SLICE_BEGIN_Z;
-    begin_y = SLICE_BEGIN_Y;
-    begin_x = SLICE_BEGIN_X;
+    FUNC_CALL(get_slice_begin)(&begin_batch, &begin_feature, &begin_w, &begin_z, &begin_y, &begin_x);
 #endif // BEGIN_TYPE
 
 #ifdef END_TYPE
     FUNC_CALL(get_slice_end)(OPTIONAL_SHAPE_INFO_TENSOR end, &end_batch, &end_feature, &end_w, &end_z, &end_y, &end_x);
 #else // END_TYPE
-    end_batch = SLICE_END_BATCH;
-    end_feature = SLICE_END_FEATURE;
-    end_w = SLICE_END_W;
-    end_z = SLICE_END_Z;
-    end_y = SLICE_END_Y;
-    end_x = SLICE_END_X;
+    FUNC_CALL(get_slice_end)(OPTIONAL_SHAPE_INFO_TENSOR &end_batch, &end_feature, &end_w, &end_z, &end_y, &end_x);
 #endif // END_TYPE
+
+    // printf("step: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u), begin: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u), end: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u)\n",
+    //         step_batch, step_feature, step_w, step_z, step_y, step_x,
+    //         begin_batch, begin_feature, begin_w, begin_z, begin_y, begin_x,
+    //         end_batch, end_feature, end_w, begin_z, end_y, end_x);
 
 #ifdef SHRINK_MODE
     FUNC_CALL(calculate_index)(&step_batch, &begin_batch, &end_batch, INPUT0_BATCH_NUM, SHRINK_BATCH);
@@ -273,19 +297,23 @@ KERNEL(strided_slice_ref)(OPTIONAL_SHAPE_INFO_ARG
 #endif // OUTPUT_LAYOUT_BFYX
 #endif // SHRINK_MODE
 
-    const int slice_begin_batch = begin_batch;
-    const int slice_begin_feature = begin_feature;
-    const int slice_begin_w = begin_w;
-    const int slice_begin_z = begin_z;
-    const int slice_begin_y = begin_y;
-    const int slice_begin_x = begin_x;
+    const uint slice_begin_batch = (uint)begin_batch;
+    const uint slice_begin_feature = (uint)begin_feature;
+    const uint slice_begin_w = (uint)begin_w;
+    const uint slice_begin_z = (uint)begin_z;
+    const uint slice_begin_y = (uint)begin_y;
+    const uint slice_begin_x = (uint)begin_x;
 
-    const int slice_steps_batch = step_batch;
-    const int slice_steps_feature = step_feature;
-    const int slice_steps_w = step_w;
-    const int slice_steps_z = step_z;
-    const int slice_steps_y = step_y;
-    const int slice_steps_x = step_x;
+    const uint slice_steps_batch = (uint)step_batch;
+    const uint slice_steps_feature = (uint)step_feature;
+    const uint slice_steps_w = (uint)step_w;
+    const uint slice_steps_z = (uint)step_z;
+    const uint slice_steps_y = (uint)step_y;
+    const uint slice_steps_x = (uint)step_x;
+
+    printf("slice begin: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u), slice step: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u)\n",
+            slice_begin_batch, slice_begin_feature, slice_begin_w, slice_begin_z, slice_begin_y, slice_begin_x,
+            slice_steps_batch, slice_steps_feature, slice_steps_w, slice_steps_z, slice_steps_y, slice_steps_x);
 
 #if NEW_AXIS_MODE
     // If NEW_AXIS_MODE that just copy input to output
@@ -337,6 +365,8 @@ KERNEL(strided_slice_ref)(OPTIONAL_SHAPE_INFO_ARG
     const uint x = yx % OUTPUT_SIZE_X;
 #endif
 
+    printf("batch(%u) feature(%u) w(%u) z(%u) y(%u) x(%u)\n", batch, feature, w, z, y, x);
+
 #if SHRINK_MODE
     const uint in_indices[] = {INPUT_INDICES_ORDER};
     const uint input_index = INPUT0_OFFSET +
@@ -356,24 +386,48 @@ KERNEL(strided_slice_ref)(OPTIONAL_SHAPE_INFO_ARG
         (slice_begin_x + in_indices[3] * slice_steps_x) * INPUT0_X_PITCH;
     #endif
 #else // SHRINK_MODE
-    const uint input_index = INPUT0_OFFSET +
-            (slice_begin_batch + batch * slice_steps_batch) * INPUT0_BATCH_PITCH +
-            (slice_begin_feature + feature * slice_steps_feature) * INPUT0_FEATURE_PITCH +
-    #if INPUT0_LAYOUT_BFWZYX        
-            (slice_begin_w + w * slice_steps_w) * INPUT0_W_PITCH +
-            (slice_begin_z + z * slice_steps_z) * INPUT0_Z_PITCH +
-            (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH +
-            (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
+    const uint in_b = (slice_begin_batch + batch * slice_steps_batch) * INPUT0_BATCH_PITCH;
+    const uint in_f = (slice_begin_feature + feature * slice_steps_feature) * INPUT0_FEATURE_PITCH;
+    // const uint input_index = INPUT0_OFFSET +
+    //         (slice_begin_batch + batch * slice_steps_batch) * INPUT0_BATCH_PITCH +
+    //         (slice_begin_feature + feature * slice_steps_feature) * INPUT0_FEATURE_PITCH +
+    #if INPUT0_LAYOUT_BFWZYX
+            // (slice_begin_w + w * slice_steps_w) * INPUT0_W_PITCH +
+            // (slice_begin_z + z * slice_steps_z) * INPUT0_Z_PITCH +
+            // (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH +
+            // (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
+    const uint in_w = (slice_begin_w + w * slice_steps_w) * INPUT0_W_PITCH;
+    const uint in_z = (slice_begin_z + z * slice_steps_z) * INPUT0_Z_PITCH;
+    const uint in_y = (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH;
+    const uint in_x = (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
     #elif INPUT0_LAYOUT_BFZYX
-            (slice_begin_z + z * slice_steps_z) * INPUT0_Z_PITCH +
-            (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH +
-            (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
+            // (slice_begin_z + z * slice_steps_z) * INPUT0_Z_PITCH +
+            // (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH +
+            // (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
+    const uint in_w = 0;
+    const uint in_z = (slice_begin_z + z * slice_steps_z) * INPUT0_Z_PITCH;
+    const uint in_y = (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH;
+    const uint in_x = (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
     #else
-            (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH +
-            (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
+            // (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH +
+            // (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
+    const uint in_w = 0;
+    const uint in_z = 0;
+    const uint in_y = (slice_begin_y + y * slice_steps_y) * INPUT0_Y_PITCH;
+    const uint in_x = (slice_begin_x + x * slice_steps_x) * INPUT0_X_PITCH;
     #endif
+    const uint test_b = slice_begin_batch + batch * slice_steps_batch;
+    const uint test_f = slice_begin_feature + feature * slice_steps_feature;
+    const uint test_w = 0;
+    const uint test_z = slice_begin_z + z * slice_steps_z;
+    const uint test_y = slice_begin_y + y * slice_steps_y;
+    const uint test_x = slice_begin_x + x * slice_steps_x;
+    printf("INPUT0_OFFSET(%u) test_b(%u) test_f(%u) test_w(%u) test_z(%u) test_y(%u) test_x(%u)\n", INPUT0_OFFSET,
+           test_b, test_f, test_w, test_z, test_y, test_x);
+    const uint input_index_test = FUNC_CALL(get_input_index)(OPTIONAL_SHAPE_INFO_TENSOR test_b, test_f, 0, test_z, 0, 0);
+    const uint input_index = INPUT0_OFFSET + in_b + in_f + in_w + in_z + in_y + in_x;
 #endif // SHRINK_MODE
-
+    printf("input_index(%u)  input_index_test(%u)!!!!!!!!!!! \n", input_index, input_index_test);
     const uint output_index = OUTPUT_OFFSET +
             batch * OUTPUT_BATCH_PITCH +
             feature * OUTPUT_FEATURE_PITCH +
@@ -381,6 +435,12 @@ KERNEL(strided_slice_ref)(OPTIONAL_SHAPE_INFO_ARG
             z * OUTPUT_Z_PITCH +
             y * OUTPUT_Y_PITCH +
             x * OUTPUT_X_PITCH;
+
+    printf("INPUT0_OFFSET(%u), slice_begin: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u), slice_steps: b(%u) f(%u) w(%u) z(%u) y(%u) x(%u)\n",
+            INPUT0_OFFSET,
+            slice_begin_batch, slice_begin_feature, slice_begin_w, slice_begin_z, slice_begin_y, slice_begin_x,
+            slice_steps_batch, slice_steps_feature, slice_steps_w, slice_steps_z, slice_steps_y, slice_steps_x);
+    printf("input_index(%u) output_index(%u)\n", input_index, output_index);
 
 #if HAS_FUSED_OPS
     INPUT0_TYPE input_data = input[input_index];

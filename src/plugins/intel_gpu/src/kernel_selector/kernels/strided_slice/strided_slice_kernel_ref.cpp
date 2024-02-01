@@ -136,31 +136,43 @@ inline std::string GetInputIndexStr(uint32_t idx) {
 JitConstants StridedSliceKernelRef::GetJitConstants(const strided_slice_params& params) const {
     JitConstants jit = MakeBaseParamsJitConstants(params);
 
-    if (params.begin_type == base_params::ArgType::Input || params.has_dynamic_tensors()) {
-        jit.AddConstant(MakeJitConstant("BEGIN_TYPE", GetInputTypeStr(params.GetIndexBegin())));
-        jit.AddConstant(MakeJitConstant("TO_BEGIN_TYPE", GetToInputTypeStr(params.GetIndexBegin())));
-        jit.AddConstant(MakeJitConstant("BEGIN_GET_INDEX", GetInputIndexStr(params.GetIndexBegin())));
+    // if (params.begin_type == base_params::ArgType::Input || params.has_dynamic_tensors()) {
+    size_t striding_params_offset = 0;
+    if (params.begin_type == base_params::ArgType::Input) {
+        const uint32_t begin_idx = params.GetIndexBegin();
+        jit.AddConstant(MakeJitConstant("BEGIN_TYPE", GetInputTypeStr(begin_idx)));
+        jit.AddConstant(MakeJitConstant("TO_BEGIN_TYPE", GetToInputTypeStr(begin_idx)));
+        jit.AddConstant(MakeJitConstant("BEGIN_GET_INDEX", GetInputIndexStr(begin_idx)));
         jit.AddConstant(MakeJitConstant("BEGIN_DIMS", params.begin_dims));
-        makeJitConstForParam(jit, "BEGIN", params.begin_mask);
     } else {
-        makeJitConstForParam(jit, "SLICE_BEGIN", params.striding_params[0]);
+        makeJitConstForParam(jit, "SLICE_BEGIN", params.striding_params[striding_params_offset]);
+        striding_params_offset++;
     }
-    if (params.end_type == base_params::ArgType::Input || params.has_dynamic_tensors()) {
-        jit.AddConstant(MakeJitConstant("END_TYPE", GetInputTypeStr(params.GetIndexEnd())));
-        jit.AddConstant(MakeJitConstant("TO_END_TYPE", GetToInputTypeStr(params.GetIndexEnd())));
-        jit.AddConstant(MakeJitConstant("END_GET_INDEX", GetInputIndexStr(params.GetIndexEnd())));
+    makeJitConstForParam(jit, "BEGIN", params.begin_mask);
+    // if (params.end_type == base_params::ArgType::Input || params.has_dynamic_tensors()) {
+    if (params.end_type == base_params::ArgType::Input) {
+        const uint32_t end_idx = params.GetIndexEnd();
+        jit.AddConstant(MakeJitConstant("END_TYPE", GetInputTypeStr(end_idx)));
+        jit.AddConstant(MakeJitConstant("TO_END_TYPE", GetToInputTypeStr(end_idx)));
+        jit.AddConstant(MakeJitConstant("END_GET_INDEX", GetInputIndexStr(end_idx)));
         jit.AddConstant(MakeJitConstant("END_DIMS", params.end_dims));
-        makeJitConstForParam(jit, "END", params.end_mask);
     } else {
-        makeJitConstForParam(jit, "SLICE_END", params.striding_params[1]);
+        makeJitConstForParam(jit, "SLICE_END", params.striding_params[striding_params_offset]);
+        striding_params_offset++;
     }
-    if (params.stride_type == base_params::ArgType::Input || params.has_dynamic_tensors()) {
-        jit.AddConstant(MakeJitConstant("STRIDE_TYPE", GetInputTypeStr(params.GetIndexStride())));
-        jit.AddConstant(MakeJitConstant("STRIDE_GET_INDEX", GetInputIndexStr(params.GetIndexStride())));
+    makeJitConstForParam(jit, "END", params.end_mask);
+    // if (params.stride_type == base_params::ArgType::Input || params.has_dynamic_tensors()) {
+    if (params.stride_type == base_params::ArgType::Input) {
+        const uint32_t strides_idx = params.GetIndexStride();
+        jit.AddConstant(MakeJitConstant("STRIDE_TYPE", GetInputTypeStr(strides_idx)));
+        jit.AddConstant(MakeJitConstant("STRIDE_GET_INDEX", GetInputIndexStr(strides_idx)));
         jit.AddConstant(MakeJitConstant("STRIDE_DIMS", params.stride_dims));
     } else {
-        makeJitConstForParam(jit, "SLICE_STEPS", params.striding_params[2]);
+        makeJitConstForParam(jit, "SLICE_STEPS", params.striding_params[striding_params_offset]);
+        striding_params_offset++;
     }
+    // if (params.all_constant_inputs)
+    //     jit.AddConstant(MakeJitConstant("ALL_CONSTANT_INPUTS", params.all_constant_inputs));
     jit.AddConstant(MakeJitConstant(
         "NEW_AXIS_MODE",
         std::find(params.new_axis_mask.begin(), params.new_axis_mask.end(), 1) != params.new_axis_mask.end()));

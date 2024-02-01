@@ -23,12 +23,34 @@ static void CreateStridedSliceOp(ProgramBuilder& p, const std::shared_ptr<ov::op
     auto output_pshape = op->get_output_partial_shape(0);
     auto input_pshape = op->get_input_partial_shape(0);
 
+    uint32_t const_inputs_mask = 0x0;
+    std::vector<cldnn::input_info> reordered_inputs { inputs[0] };
+
+    std::vector<int64_t> begin;
+    std::vector<int64_t> end;
+    std::vector<int64_t> strides;
+
     auto begin_constant = std::dynamic_pointer_cast<ov::op::v0::Constant>(op->input_value(1).get_node_shared_ptr());
-    std::vector<int64_t> begin = begin_constant ? begin_constant->cast_vector<int64_t>() : std::vector<int64_t>{};
+    if (begin_constant) {
+        begin = begin_constant->cast_vector<int64_t>();
+        const_inputs_mask |= cldnn::strided_slice::const_input::begin_const;
+    } else {
+        reordered_inputs.push_back(inputs[1]);
+    }
     auto end_constant = std::dynamic_pointer_cast<ov::op::v0::Constant>(op->input_value(2).get_node_shared_ptr());
-    std::vector<int64_t> end = end_constant ? end_constant->cast_vector<int64_t>() : std::vector<int64_t>{};
+    if (end_constant) {
+        end = end_constant->cast_vector<int64_t>();
+        const_inputs_mask |= cldnn::strided_slice::const_input::end_const;
+    } else {
+        reordered_inputs.push_back(inputs[2]);
+    }
     auto stride_constant = std::dynamic_pointer_cast<ov::op::v0::Constant>(op->input_value(3).get_node_shared_ptr());
-    std::vector<int64_t> strides = stride_constant ? stride_constant->cast_vector<int64_t>() : std::vector<int64_t>{};
+    if (stride_constant) {
+        strides = stride_constant->cast_vector<int64_t>();
+        const_inputs_mask |= cldnn::strided_slice::const_input::strides_const;
+    } else {
+        reordered_inputs.push_back(inputs[3]);
+    }
 
     do {
         if (!begin_constant || !end_constant || !stride_constant || input_pshape.is_dynamic()) {
@@ -242,33 +264,46 @@ static void CreateStridedSliceOp(ProgramBuilder& p, const std::shared_ptr<ov::op
     // To be removed once we enable internal shape infer for all operations
     auto output_shape = output_pshape.is_static() ? output_pshape.to_shape() : ov::Shape{};
 
-    std::shared_ptr<cldnn::strided_slice> stridedSlicePrim = nullptr;
-    if (begin_constant && end_constant && stride_constant && !input_pshape.is_dynamic() && !output_pshape.is_dynamic()) {
-        stridedSlicePrim = std::make_shared<cldnn::strided_slice>(layerName,
-                                                                  inputs[0],
-                                                                  begin,
-                                                                  end,
-                                                                  strides,
-                                                                  op->get_begin_mask(),
-                                                                  op->get_end_mask(),
-                                                                  op->get_new_axis_mask(),
-                                                                  op->get_shrink_axis_mask(),
-                                                                  op->get_ellipsis_mask(),
-                                                                  output_shape);
-    } else {
-        stridedSlicePrim = std::make_shared<cldnn::strided_slice>(layerName,
-                                                                  inputs[0],
-                                                                  inputs[1],
-                                                                  inputs[2],
-                                                                  inputs[3],
-                                                                  op->get_begin_mask(),
-                                                                  op->get_end_mask(),
-                                                                  op->get_new_axis_mask(),
-                                                                  op->get_shrink_axis_mask(),
-                                                                  op->get_ellipsis_mask(),
-                                                                  output_shape);
-    }
-    p.add_primitive(*op, stridedSlicePrim);
+    auto prim = cldnn::strided_slice(layerName,
+                                     reordered_inputs,
+                                     begin,
+                                     end,
+                                     strides,
+                                     op->get_begin_mask(),
+                                     op->get_end_mask(),
+                                     op->get_new_axis_mask(),
+                                     op->get_shrink_axis_mask(),
+                                     op->get_ellipsis_mask(),
+                                     const_inputs_mask,
+                                     output_shape);
+    p.add_primitive(*op, prim);
+    // std::shared_ptr<cldnn::strided_slice> stridedSlicePrim = nullptr;
+    // if (begin_constant && end_constant && stride_constant && !input_pshape.is_dynamic() && !output_pshape.is_dynamic()) {
+    //     stridedSlicePrim = std::make_shared<cldnn::strided_slice>(layerName,
+    //                                                               inputs[0],
+    //                                                               begin,
+    //                                                               end,
+    //                                                               strides,
+    //                                                               op->get_begin_mask(),
+    //                                                               op->get_end_mask(),
+    //                                                               op->get_new_axis_mask(),
+    //                                                               op->get_shrink_axis_mask(),
+    //                                                               op->get_ellipsis_mask(),
+    //                                                               output_shape);
+    // } else {
+    //     stridedSlicePrim = std::make_shared<cldnn::strided_slice>(layerName,
+    //                                                               inputs[0],
+    //                                                               inputs[1],
+    //                                                               inputs[2],
+    //                                                               inputs[3],
+    //                                                               op->get_begin_mask(),
+    //                                                               op->get_end_mask(),
+    //                                                               op->get_new_axis_mask(),
+    //                                                               op->get_shrink_axis_mask(),
+    //                                                               op->get_ellipsis_mask(),
+    //                                                               output_shape);
+    // }
+    // p.add_primitive(*op, stridedSlicePrim);
 }
 
 REGISTER_FACTORY_IMPL(v1, StridedSlice);
