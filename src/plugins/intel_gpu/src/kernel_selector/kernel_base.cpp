@@ -113,9 +113,9 @@ JitConstants KernelBase::MakeBaseParamsJitConstants(const base_params& params, b
         }
     }
 
-#ifndef NDEBUG
+// #ifndef NDEBUG
     jit.AddConstant(MakeJitConstant("LayerID", params.layerID));
-#endif
+// #endif
     return jit;
 }
 

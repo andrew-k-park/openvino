@@ -34,6 +34,15 @@ static void CreateCommonReshapeOp(ProgramBuilder& p, const std::shared_ptr<ov::N
 
         // If second input is absent (it's optional in Squeeze op) or it's constant, create reshape with single input and compile time out pattern
         if (op->get_input_size() == 1 || second_const_input != nullptr) {
+            std::cout << "CreateCommonReshapeOp | name=" << layerName;
+            std::cout << ", special_zero=" << special_zero;
+            std::cout << ", output_pshape=" << output_pshape.to_string();
+            std::cout << ", in size=" << op->get_input_size();
+            std::cout << ", output_pattern=";
+            for (size_t i = 0; i < output_pattern.size(); ++i) {
+                std::cout << "[" << output_pattern[i] << "]";
+            }
+            std::cout << std::endl;
             reshape_prim = std::make_shared<cldnn::reshape>(layerName,
                                                             inputs[0],
                                                             special_zero,

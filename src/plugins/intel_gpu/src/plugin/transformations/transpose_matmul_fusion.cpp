@@ -97,6 +97,10 @@ TransposeMatMulMatcher::TransposeMatMulMatcher() {
         if (pattern_map.count(transpose_a_m) > 0) {
             auto tranpose_a_order = std::dynamic_pointer_cast<ov::op::v0::Constant>(pattern_map.at(transpose_a_order_m).get_node_shared_ptr());
             order_a = tranpose_a_order->cast_vector<int64_t>();
+            std::cout << "TransposeMatMulMatcher::callback | order_a=";
+            for (size_t i = 0; i < order_a.size(); ++i) {
+            std::cout << "[" << order_a[i] << "]";
+            }
             auto tranpose_a = std::dynamic_pointer_cast<ov::op::v1::Transpose>(pattern_map.at(transpose_a_m).get_node_shared_ptr());
             input_a_output_idx = tranpose_a->get_input_source_output(0).get_index();
         }
@@ -106,6 +110,11 @@ TransposeMatMulMatcher::TransposeMatMulMatcher() {
         if (pattern_map.count(transpose_b_m) > 0) {
             auto tranpose_b_order = std::dynamic_pointer_cast<ov::op::v0::Constant>(pattern_map.at(transpose_b_order_m).get_node_shared_ptr());
             order_b = tranpose_b_order->cast_vector<int64_t>();
+            std::cout << "TransposeMatMulMatcher::callback | order_b=";
+            for (size_t i = 0; i < order_b.size(); ++i) {
+            std::cout << "[" << order_b[i] << "]";
+            }
+            std::cout << std::endl;
             auto tranpose_b = std::dynamic_pointer_cast<ov::op::v1::Transpose>(pattern_map.at(transpose_b_m).get_node_shared_ptr());
             input_b_output_idx = tranpose_b->get_input_source_output(0).get_index();
         }
@@ -115,7 +124,20 @@ TransposeMatMulMatcher::TransposeMatMulMatcher() {
 
         auto input_a = ov::Output<Node>(pattern_map.at(input_a_m).get_node_shared_ptr(), input_a_output_idx);
         auto input_b = ov::Output<Node>(pattern_map.at(input_b_m).get_node_shared_ptr(), input_b_output_idx);
-
+        std::cout << "TransposeMatMulMatcher::callback | matmul's name=" << matmul->get_friendly_name()
+                  << "order_a=";
+        for (size_t i = 0; i < order_a.size(); ++i) {
+            std::cout << "[" << order_a[i] << "]";
+        }
+        std::cout << ", order_b=";
+        for (size_t i = 0; i < order_b.size(); ++i) {
+            std::cout << "[" << order_b[i] << "]";
+        }
+        std::cout << ", order_c=";
+        for (size_t i = 0; i < order_c.size(); ++i) {
+            std::cout << "[" << order_c[i] << "]";
+        }
+        std::cout << std::endl;
         auto gemm = std::make_shared<op::Gemm>(input_a, input_b, order_a, order_b, order_c);
         gemm->set_friendly_name(matmul->get_friendly_name());
         ov::copy_runtime_info(m.get_matched_nodes(), gemm);
@@ -197,7 +219,7 @@ TransposeMatMulTransposeMatcher::TransposeMatMulTransposeMatcher() {
 
         auto input_a = ov::Output<Node>(pattern_map.at(input_a_m).get_node_shared_ptr(), input_a_output_idx);
         auto input_b = ov::Output<Node>(pattern_map.at(input_b_m).get_node_shared_ptr(), input_b_output_idx);
-
+        std::cout << "TransposeMatMulTransposeMatcher::callback | matmul's name=" << matmul->get_friendly_name() << std::endl;
         auto gemm = std::make_shared<op::Gemm>(input_a, input_b, order_a, order_b, order_c);
         gemm->set_friendly_name(m.get_match_root()->get_friendly_name());
         ov::copy_runtime_info(m.get_matched_nodes(), gemm);

@@ -75,6 +75,20 @@ static void CreateCommonBroadcastOp(ProgramBuilder& p, const std::shared_ptr<ov:
         OPENVINO_THROW("[GPU] Can't cast Broadcast operation to any supported version");
     }
 
+    auto inConst = std::dynamic_pointer_cast<ov::op::v0::Constant>(op->get_input_node_shared_ptr(1));
+    if (inConst != nullptr) {
+        std::vector<int32_t> ts = inConst->cast_vector<int32_t>();
+        std::cout << "CreateCommonBroadcastOp | name=" << layerName;
+        std::cout << ", mode.m_type=" << mode.m_type;
+        std::cout << ", mode.m_axis=" << mode.m_axis;
+        std::cout << ", in size=" << op->get_input_size();
+        std::cout << ", target shape=";
+        for (size_t i = 0; i < ts.size(); ++i) {
+            std::cout << "[" << ts[i] << "]";
+        }
+        std::cout << std::endl;
+    }
+
     std::shared_ptr<cldnn::broadcast> broadcast_prim = nullptr;
     if (output_pshape.is_static()) {
         broadcast_prim = std::make_shared<cldnn::broadcast>(layerName,
