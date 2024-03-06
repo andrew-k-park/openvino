@@ -135,6 +135,8 @@ inline uint FUNC(get_idx_pos)(OPTIONAL_SHAPE_INFO_ARG uint out_b, uint out_f, ui
     const uint idx_f = idx[1];
     const uint idx_y = idx[2];
     const uint idx_x = idx[3];
+    printf("get_idx_pos | out_b(%u) out_f(%u) out_y(%u) out_x(%u) in_sb(%u) in_sf(%u) in_sy(%u) in_sx(%u) => in_pos(%u) => idx_b(%u) idx_f(%u) idx_y(%u) idx_x(%u)\n",
+          out_b, out_f, out_y, out_x, in_sb, in_sf, in_sy, in_sx, in_pos, idx_b, idx_f, idx_y, idx_x);
     const uint idx_pos = GET_UPDATES_INDEX(INPUT0, IDX_ORDER);
 
     return idx_pos;
@@ -196,7 +198,7 @@ KERNEL(broadcast_gpu_ref)(
         const uint out_w  = 0;
         const uint out_f  = (out_bfwz % OUTPUT_FEATURE_NUM);
         const uint out_b  = (out_bfwz / OUTPUT_FEATURE_NUM);
-
+        printf("broadcast_gpu_ref - use_opt_code=true | out_b(%u) out_f(%u) out_y(%u) out_x(%u)\n", out_b, out_f, out_y, out_x);
         const uint out_pos = OUTPUT_GET_INDEX(out_b, out_f, out_y, out_x);
         const uint idx_pos = FUNC_CALL(get_idx_pos)(OPTIONAL_SHAPE_INFO_TENSOR out_b, out_f, out_y, out_x);
 #endif
@@ -264,6 +266,7 @@ KERNEL(broadcast_gpu_ref)(
         const uint idx_pos = FUNC_CALL(get_idx_pos)(OPTIONAL_SHAPE_INFO_TENSOR out_b, out_f, out_z, out_y, out_x);
 #else
         const uint out_pos = OUTPUT_GET_INDEX(out_b, out_f, out_y, out_x);
+        printf("broadcast_gpu_ref - use_opt_code=false | out_b(%u) out_f(%u) out_y(%u) out_x(%u)\n", out_b, out_f, out_y, out_x);
         const uint idx_pos = FUNC_CALL(get_idx_pos)(OPTIONAL_SHAPE_INFO_TENSOR out_b, out_f, out_y, out_x);
 #endif
         output[out_pos] = input[idx_pos];

@@ -8,6 +8,7 @@
 #include <intel_gpu/primitives/input_layout.hpp>
 #include <intel_gpu/primitives/gemm.hpp>
 #include <intel_gpu/primitives/crop.hpp>
+#include <intel_gpu/primitives/broadcast.hpp>
 #include "openvino/reference/matmul.hpp"
 #include "openvino/reference/transpose.hpp"
 
@@ -843,8 +844,8 @@ public:
 
         const unsigned long BATCH_SIZE = 1;
         const unsigned long M_SIZE = 1;
-        const unsigned long K_SIZE = 32;
-        const unsigned long N_SIZE = 21;
+        const unsigned long K_SIZE = 3;
+        const unsigned long N_SIZE = 2;
 
         auto fill_mem = [&](cldnn::memory_ptr mem, std::vector<float>& data) {
             cldnn::mem_lock<float> mem_ptr(mem, get_test_stream());
@@ -873,9 +874,11 @@ public:
         cldnn::layout input0_layout;
         cldnn::layout input1_layout;
 
-        input0_shape = { BATCH_SIZE, 16, M_SIZE, K_SIZE };
+        input0_shape = { BATCH_SIZE, 2, M_SIZE, K_SIZE };
         input1_shape = { N_SIZE, BATCH_SIZE, 1, K_SIZE };
-        input1_target_shape = { 1, 1, 16, 1 };
+        // input1_target_shape = { 1, 1, 2, 1 };
+        // input1_shape = { N_SIZE, BATCH_SIZE, 2, K_SIZE };
+        // input1_target_shape = {};
         input0_order = { 0, 1, 2, 3 };
         input1_order = { 1, 2, 3, 0 };
 
@@ -894,10 +897,14 @@ public:
         topology topology;
         topology.add(input_layout("input0", input0_layout),
                      input_layout("input1", input1_layout),
-                     gemm("gemm", { input_info("input0"), input_info("input1") }, data_types::f32, input1_target_shape, input0_order, input1_order)
+                     broadcast("broadcast", input_info("input1"), { 1, 1, 2, 1 }, ov::AxisSet({}), ov::op::BroadcastType::BIDIRECTIONAL),
+                     gemm("gemm", { input_info("input0"), input_info("broadcast") }, data_types::f32, {}, input0_order, input1_order)
+                    //  gemm("gemm", { input_info("input0"), input_info("input1") }, data_types::f32, input1_target_shape, input0_order, input1_order)
         );
 
         ExecutionConfig config = get_test_default_config(engine);
+        ov::intel_gpu::ImplementationDesc gemm_ref_impl = { format::bfyx, "gemm_ref" };
+        config.set_property(ov::intel_gpu::force_implementations(ov::intel_gpu::ImplForcingMap{ {"gemm", gemm_ref_impl} }));
         config.set_property(ov::intel_gpu::optimize_data(true));
         config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
         network::ptr network = get_network(engine, topology, config, get_test_stream_ptr(), is_caching_test);
@@ -918,10 +925,10 @@ public:
         ov::Shape ref_input1_shape;
         ov::Shape ref_output_shape;
         
-        ref_input0_shape = { BATCH_SIZE, 16, M_SIZE, K_SIZE };
-        ref_input1_broadcasted_shape = { N_SIZE, BATCH_SIZE, 16, K_SIZE };
-        ref_input1_shape = { BATCH_SIZE, 16, K_SIZE, N_SIZE };
-        ref_output_shape = { BATCH_SIZE, 16, M_SIZE, N_SIZE };
+        ref_input0_shape = { BATCH_SIZE, 2, M_SIZE, K_SIZE };
+        ref_input1_broadcasted_shape = { N_SIZE, BATCH_SIZE, 2, K_SIZE };
+        ref_input1_shape = { BATCH_SIZE, 2, K_SIZE, N_SIZE };
+        ref_output_shape = { BATCH_SIZE, 2, M_SIZE, N_SIZE };
 
         std::vector<float> ref_out_data;
         ref_out_data.resize(ov::shape_size(ref_output_shape));
@@ -929,6 +936,7 @@ public:
         std::vector<float> ref_input_0_data(input_0_data.size());
         std::vector<float> ref_input_1_broadcasted_data(ov::shape_size(ref_input1_broadcasted_shape));
         std::vector<float> ref_input_1_data(ref_input_1_broadcasted_data.size());
+        // std::vector<float> ref_input_1_data(input_1_data.size());
 
         ov::reference::transpose((const char *)(input_0_data.data()),
                                  (char *)(ref_input_0_data.data()),
@@ -937,6 +945,11 @@ public:
                                  input0_order,
                                  ref_input0_shape);
 
+        std::cout << "input_1_data(" << input1_shape.to_string() << "=>" << ov::shape_size(input1_shape) << ")=" << std::endl;
+        for (uint32_t i = 0; i < input_1_data.size(); ++i) {
+            std::cout << "[" << i << "] " << input_1_data[i] << std::endl;
+        }
+
         ov::reference::broadcast(reinterpret_cast<const char*>(input_1_data.data()),
                                  reinterpret_cast<char*>(ref_input_1_broadcasted_data.data()),
                                  input1_shape,
@@ -944,12 +957,24 @@ public:
                                  ov::AxisSet({}),
                                  sizeof(float));
 
+        std::cout << "ref_input_1_broadcasted_data(" << ref_input1_broadcasted_shape.to_string() << "=>" << ov::shape_size(ref_input1_broadcasted_shape) << ")=" << std::endl;
+        for (uint32_t i = 0; i < ref_input_1_broadcasted_data.size(); ++i) {
+            std::cout << "[" << i << "] " << ref_input_1_broadcasted_data[i] << std::endl;
+        }
+
+        // ov::reference::transpose((const char *)(input_1_data.data()),
         ov::reference::transpose((const char *)(ref_input_1_broadcasted_data.data()),
                                  (char *)(ref_input_1_data.data()),
-                                 input1_shape,
+                                //  input1_shape,
+                                 ref_input1_broadcasted_shape,
                                  sizeof(float),
                                  input1_order,
                                  ref_input1_shape);
+
+        std::cout << "ref_input_1_data(" << ref_input1_shape.to_string() << "=>" << ov::shape_size(ref_input1_shape) << ")=" << std::endl;
+        for (uint32_t i = 0; i < ref_input_1_data.size(); ++i) {
+            std::cout << "[" << i << "] " << ref_input_1_data[i] << std::endl;
+        }
 
         ov::reference::matmul<float>(ref_input_0_data.data(),
                                      ref_input_1_data.data(),

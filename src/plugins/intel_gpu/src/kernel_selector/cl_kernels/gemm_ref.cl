@@ -30,6 +30,7 @@ inline uint FUNC(get_input0_index)(OPTIONAL_SHAPE_INFO_ARG uint b, uint f, uint 
 }
 
 inline uint FUNC(get_input1_index_nt)(OPTIONAL_SHAPE_INFO_ARG uint b, uint f, uint w, uint z, uint y, uint x) {
+    printf("get_input1_index_nt | b(%u) f(%u) w(%u) z(%u) y(%u) x(%u)\n", b, f, w, z, y, x);
 #if INPUT1_SIMPLE
     return GET_DATA_INDEX_6D_SAFE(INPUT1, b, f, w, z, y, x);
 #else
@@ -46,6 +47,7 @@ inline uint FUNC(get_input1_index_nt)(OPTIONAL_SHAPE_INFO_ARG uint b, uint f, ui
 }
 
 inline uint FUNC(get_input1_index)(OPTIONAL_SHAPE_INFO_ARG uint b, uint f, uint w, uint z, uint y, uint x) {
+    printf("get_input1_index | b(%u) f(%u) w(%u) z(%u) y(%u) x(%u)\n", b, f, w, z, y, x);
     return FUNC_CALL(get_input1_index_nt)(OPTIONAL_SHAPE_INFO_TENSOR INPUT1_DIMS_ORDER);
 }
 
@@ -132,6 +134,7 @@ KERNEL(gemm_ref)(
         #endif
 
         uint in0_idx = FUNC_CALL(get_input0_index)(OPTIONAL_SHAPE_INFO_TENSOR b0, f, w, z, y, ki);
+        printf("gemm_ref | b1(%u) f(%u) w(%u) z(%u) ki(%u) x(%u)\n", b1, f, w, z, ki, x);
         uint in1_idx = FUNC_CALL(get_input1_index)(OPTIONAL_SHAPE_INFO_TENSOR b1, f, w, z, ki, x);
 
         ACCUMULATOR_TYPE val0 = TO_ACCUMULATOR_TYPE(input0[in0_idx]);
