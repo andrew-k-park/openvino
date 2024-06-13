@@ -149,13 +149,15 @@ FullyConnectedHorizontalFusion::FullyConnectedHorizontalFusion() {
                     if (!current_is_scalar)
                         return false;
                     // validate all zp values are same
-                    int32_t cur_zp_val;
+                    int32_t cur_zp_val = 0;
                     if (auto zp_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(zp_nodes[i])) {
                         cur_zp_val = zp_const->cast_vector<int32_t>()[0];
                     } else if (auto zp_convert = std::dynamic_pointer_cast<ov::op::v0::Convert>(zp_nodes[i])) {
                         auto zp_const =
                             std::dynamic_pointer_cast<ov::op::v0::Constant>(zp_convert->get_input_node_shared_ptr(0));
                         cur_zp_val = zp_const->cast_vector<int32_t>()[0];
+                    } else {
+                        OPENVINO_ASSERT("Unsupported zp input node for FC horizontal fusion");
                     }
                     if (cur_zp_val != scalar_zp_val)
                         return false;
@@ -195,7 +197,6 @@ FullyConnectedHorizontalFusion::FullyConnectedHorizontalFusion() {
             }
             org_fc->clear_control_dependencies();
         }
-        std::cout << "Fusing done" << std::endl;
         return true;
     };
 
