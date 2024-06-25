@@ -179,8 +179,9 @@ std::vector<layout> reshape_inst::calc_output_layouts(reshape_node const& node, 
     auto run_shape_infer = [&](reshape::reshape_mode mode) {
          switch (mode) {
             case reshape::reshape_mode::base: {
-                // TODO: Just for debug
-                // OPENVINO_ASSERT(!input_layout.has_dynamic_pad());
+                if (!node.is_runtime_propagatable_padding() && input_layout.has_dynamic_pad()) {
+                    OPENVINO_ASSERT("[GPU] Padding can not be propagated");
+                }
                 ov::op::v1::Reshape op;
                 op.set_special_zero(prim->special_zero);
                 op.set_friendly_name(prim->id.c_str());
