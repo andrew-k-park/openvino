@@ -1402,19 +1402,23 @@ void primitive_inst::do_runtime_in_place_crop() {
                 } else if (crop_in_place_optimization::can_crop_be_optimized_simple_data_format(crop_layout, pred_layout)) {
                     crop_in_place_optimization::update_in_place_crop_padding_simple_data_format(crop_layout, pred_layout, reshape_layouts,
                                                                                                 offsets, crop_axis, true);
+                    // std::cout << "primitive_inst::do_runtime_in_place_crop(" << u->id() << ") | crop_layout="
+                    //           << crop_layout.to_string() << std::endl;
                     if (crop_users.size() == 1 && crop_users.front()->get_node().is_type<reshape>() && reshape_layouts.size() > 0) {
                         auto reshape_inst = crop_users.front();
+                        // std::cout << "primitive_inst::do_runtime_in_place_crop(" << reshape_inst->id() << ") | reshape_layouts[0]="
+                        //           << reshape_layouts[0].to_string() << std::endl;
                         reshape_inst->_impl_params->output_layouts[0] = reshape_layouts[0];
                         reshape_inst->set_shape_change();
                     }
                 } else {
                     u->set_can_be_optimized(false);
-                    GPU_DEBUG_TRACE_DETAIL << "[In place crop] " << u->id() << " cannot be optimized " << std::endl;
+                    // std::cout << "[In place crop] " << u->id() << " cannot be optimized " << std::endl;
                     return;
                 }
                 u->_impl_params->output_layouts[0] = crop_layout;
                 u->set_can_be_optimized(true);
-                GPU_DEBUG_TRACE_DETAIL << "[In place crop] " << u->id() << ": can_be_optimized " << std::endl;
+                // std::cout << "[In place crop] " << u->id() << ": can_be_optimized " << std::endl;
             }
         }
     }

@@ -183,6 +183,13 @@ FullyConnectedHorizontalFusion::FullyConnectedHorizontalFusion() {
         auto split_name = fc_nodes[0]->get_friendly_name() + "_split";
         auto axis_const = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {new_fc->get_output_partial_shape(0).size() - 1});
         auto split_const = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, orig_n_sizes);
+        // std::cout << "FullyConnectedHorizontalFusion | split_name=" << split_name
+        //           << ", axis=" << new_fc->get_output_partial_shape(0).size() - 1
+        //           << ", split_lengths={ ";
+        // for (auto& s : orig_n_sizes) {
+        //     std::cout << s << " ";
+        // }
+        // std::cout << "}" << std::endl;
         auto output_split = std::make_shared<ov::op::v1::VariadicSplit>(new_fc, axis_const, split_const);
         copy_runtime_info(fc_nodes[0], output_split);
         output_split->set_friendly_name(split_name);

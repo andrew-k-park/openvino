@@ -545,7 +545,9 @@ bool crop_in_place_optimization::optimize(crop_node& node) {
     node.set_output_layout(crop_layout);
     node.can_be_optimized(true);
     propagate_padding_to_opt_out_users(node, node.get_output_layout().data_padding);
-    GPU_DEBUG_TRACE_DETAIL << "[prepare_buffer_fusing] : " << node.id() << " can be optimized" << std::endl;
+    // std::cout << "[prepare_buffer_fusing] : " << node.id() << " can be optimized | "
+    //           << ", crop_layout=" << crop_layout.to_string()
+    //           << ", node's layout=" << node.get_output_layout().to_string() << std::endl;
     return false;
 }
 
@@ -714,7 +716,7 @@ void prepare_buffer_fusing::run(program& p) {
                 node.adjust_output_padding();
 
             node.can_be_optimized(can_reshape_be_optimized(node));
-            GPU_DEBUG_TRACE_DETAIL << "[prepare_buffer_fusing] : " << node.id() << " can be optimized" << std::endl;
+            // std::cout << "[prepare_buffer_fusing] : " << node.id() << " can be optimized" << std::endl;
         });
         program_helpers::do_for_types<kv_cache>(*node, [](kv_cache_node& node) {
             auto kv_out_layout = node.get_output_layout();
