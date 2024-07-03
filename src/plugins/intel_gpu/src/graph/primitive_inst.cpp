@@ -1220,15 +1220,27 @@ void primitive_inst::do_runtime_skip_permute() {
     // Set size to zero to pass the case that permute order is same with input order like [0, 1, 2, 3]
     int32_t size = 0;
     int32_t max_value = 0;
+    int32_t valid_input_axis = 0;
+    int32_t target_order_idx = 0;
+    // std::cout << "do_runtime_skip_permute | id=" << desc->id
+    //           << ", input pshape=" << _impl_params->get_input_layout(0).to_string()
+    //           << ", output pshape=" << _impl_params->get_output_layout().to_string()
+    //           << ", permute order = { ";
     for (int32_t i = 0; i < static_cast<int32_t>(permute_order.size()); ++i) {
+        // std::cout << permute_order[i] << " ";
         int32_t order = static_cast<int32_t>(permute_order[i]);
         int32_t dim = static_cast<int32_t>(input_shape[order]);
         if (i != order) {
-            if (dim > max_value)
+            if (dim > max_value) {
                 max_value = dim;
+                valid_input_axis = order;
+                target_order_idx = i;
+            }
             size = (size == 0) ? dim : (size * dim);
         }
     }
+    // std::cout << " }, valid_axis=" << valid_input_axis
+    //           << ", target_order_idx=" << target_order_idx << std::endl;
 
     // If the largest value and total size are different, can_be_optimized needs to be reset
     if (size != max_value) {
@@ -1236,13 +1248,30 @@ void primitive_inst::do_runtime_skip_permute() {
         GPU_DEBUG_TRACE_DETAIL << "--- Cannot optimize because size(" << size << ") and max_value(" << max_value
                                << ") are different" << std::endl;
 
-        GPU_DEBUG_TRACE_DETAIL << "[do_runtime_skip_permute] " << id() << " : reset can_be_optimized to false "
-                               << std::endl;
+        // std::cout << "[do_runtime_skip_permute] " << id() << " : reset can_be_optimized to false "
+        //                        << std::endl;
         return;
     }
-    GPU_DEBUG_TRACE_DETAIL << "[do_runtime_skip_permute] " << id() << " : can_be_optimized" << std::endl;
+    // Shuffle data padding from reshape's output layout
+    if (get_node().get_dependency(0).is_type<reshape>() && get_node().get_dependency(0).can_be_optimized()) {
+        auto reshape_out_layout = _impl_params->get_input_layout(0);
+        auto def_fmt = format::get_default_format(reshape_out_layout.get_rank());
+        auto lower_padd = reshape_out_layout.data_padding.lower_size().sizes(def_fmt);
+        auto upper_padd = reshape_out_layout.data_padding.upper_size().sizes(def_fmt);
+        auto tmp_lower_padd = lower_padd[valid_input_axis];
+        auto tmp_upper_padd = upper_padd[valid_input_axis];
+        lower_padd[valid_input_axis] = lower_padd[target_order_idx];
+        upper_padd[valid_input_axis] = upper_padd[target_order_idx];
+        lower_padd[target_order_idx] = tmp_lower_padd;
+        upper_padd[target_order_idx] = tmp_upper_padd;
+
+        reshape_out_layout.data_padding = padding(lower_padd, upper_padd);
+        // std::cout << "[do_runtime_skip_permute] " << id() << " : update layout=" << reshape_out_layout.to_string() << std::endl;
+        _impl_params->output_layouts[0].data_padding = padding(lower_padd, upper_padd);
+    }
+    // std::cout << "[do_runtime_skip_permute] " << id() << " : can_be_optimized" << std::endl;
     GPU_DEBUG_TRACE_DETAIL << "            - Input layout : " << _impl_params->get_input_layout(0).to_short_string() << std::endl;
-    GPU_DEBUG_TRACE_DETAIL << "            - Output layout : " << _impl_params->get_output_layout().to_short_string() << std::endl;
+    // std::cout << "            - Output layout : " << _impl_params->get_output_layout().to_string() << std::endl;
     set_can_be_optimized(true);
 }
 
