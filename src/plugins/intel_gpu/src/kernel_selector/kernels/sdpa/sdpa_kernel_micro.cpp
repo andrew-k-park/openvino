@@ -629,7 +629,7 @@ void SDPAKernelMicro::GetUpdateDispatchDataFunc(KernelData& kd) const {
 }
 
 KernelsPriority SDPAKernelMicro::GetKernelsPriority(const Params& /*params*/) const {
-    return NOT_SUPPORTED;
+    return FORCE_PRIORITY_1;
 }
 }  // namespace kernel_selector
 
