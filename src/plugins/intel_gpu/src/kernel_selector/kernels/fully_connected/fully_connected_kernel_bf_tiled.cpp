@@ -318,7 +318,7 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
                 return selector.Default(tune_params(1, 1, 4, 2, 1, 1, 1, EXE_MODE_DEFAULT));
             } else {
                 // tune_params(tile_b, tile_ofm, tile_ifm, tile_k, outer_n, dispatch_bsv, dispatch_fsv, exec_options)
-                if (params.weights.OFM().v > 4096) {
+                if (output_f / 2 > min_num_threads) {
                     return selector.Default(tune_params(1, 2, 4, 2, 2, 1, 1, EXE_MODE_DEFAULT));
                 } else {
                     return selector.Default(tune_params(1, 2, 4, 2, 1, 1, 1, EXE_MODE_DEFAULT));
@@ -671,6 +671,11 @@ KernelsData FullyConnected_bf_tiled::GetTunedKernelsDataByIndex(const Params &pa
 
     WeightsLayout weights_layout = WeightsLayout::os_iyx_osv16;
     if (fc_params.compressed && fc_params.inputs[0].GetDType() == Datatype::F16
+        && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_iyx_osv32)
+        && fc_params.weights.OFM().v > 4096
+        && (fc_params.weights.GetDType() == WeightsType::INT4 || fc_params.weights.GetDType() == WeightsType::UINT4)) {
+        weights_layout = WeightsLayout::os_iyx_osv32;
+    } else if (fc_params.compressed && fc_params.inputs[0].GetDType() == Datatype::F16
         // ioyx => os_is_yx_osv32_isv2 is not supported yet
         && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_is_yx_osv32_isv2)
         && (fc_params.weights.GetDType() == WeightsType::INT4 || fc_params.weights.GetDType() == WeightsType::UINT4)) {
