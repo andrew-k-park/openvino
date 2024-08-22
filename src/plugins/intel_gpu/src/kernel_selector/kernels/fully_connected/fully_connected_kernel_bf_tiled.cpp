@@ -671,11 +671,6 @@ KernelsData FullyConnected_bf_tiled::GetTunedKernelsDataByIndex(const Params &pa
 
     WeightsLayout weights_layout = WeightsLayout::os_iyx_osv16;
     if (fc_params.compressed && fc_params.inputs[0].GetDType() == Datatype::F16
-        && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_iyx_osv32)
-        && fc_params.weights.OFM().v > 4096
-        && (fc_params.weights.GetDType() == WeightsType::INT4 || fc_params.weights.GetDType() == WeightsType::UINT4)) {
-        weights_layout = WeightsLayout::os_iyx_osv32;
-    } else if (fc_params.compressed && fc_params.inputs[0].GetDType() == Datatype::F16
         // ioyx => os_is_yx_osv32_isv2 is not supported yet
         && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_is_yx_osv32_isv2)
         && (fc_params.weights.GetDType() == WeightsType::INT4 || fc_params.weights.GetDType() == WeightsType::UINT4)) {
