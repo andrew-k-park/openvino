@@ -347,7 +347,13 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
                 if (params.weights.GetLayout() == WeightsLayout::os_iyx_osv16) {
                     return selector.Default(tune_params(1, 1, 4, 4, 1, 1, EXE_MODE_DEFAULT));
                 } else {
-                    return selector.Default(tune_params(1, 2, 4, 2, 1, 1, EXE_MODE_DEFAULT));
+                    // tune_params(tile_b, tile_ofm, tile_ifm, tile_k, dispatch_bsv, dispatch_fsv, exec_options)
+                    size_t min_num_threads = params.engineInfo.computeUnitsCount * simd;
+                    if (output_f / 2 > min_num_threads) {
+                        return selector.Default(tune_params(1, 4, 4, 2, 1, 1, EXE_MODE_DEFAULT));
+                    } else {
+                        return selector.Default(tune_params(1, 2, 4, 2, 1, 1, EXE_MODE_DEFAULT));
+                    }
                 }
             }
         } else {
@@ -714,6 +720,11 @@ KernelsData FullyConnected_bf_tiled::GetTunedKernelsDataByIndex(const Params &pa
         && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_iyx_osv16)) {
         // Large K + Small N case to use [osv16 + TILE_K 4] + TILE_OFM 1 for batch 1
         weights_layout = WeightsLayout::os_iyx_osv16;
+    } else if (fc_params.compressed && fc_params.inputs[0].GetDType() == Datatype::F16
+        && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_iyx_osv32)
+        && fc_params.weights.OFM().v > 4096
+        && (fc_params.weights.GetDType() == WeightsType::INT4 || fc_params.weights.GetDType() == WeightsType::UINT4)) {
+        weights_layout = WeightsLayout::os_iyx_osv64;
     } else if (fc_params.compressed && fc_params.inputs[0].GetDType() == Datatype::F16
         // ioyx => os_is_yx_osv32_isv2 is not supported yet
         && (fc_params.weights.GetLayout() == WeightsLayout::oiyx || fc_params.weights.GetLayout() == WeightsLayout::os_is_yx_osv32_isv2)
