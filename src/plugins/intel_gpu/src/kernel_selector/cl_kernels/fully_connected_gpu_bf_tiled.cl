@@ -645,6 +645,9 @@ inline void FUNC(fc_bf_tiled_kernel_default)(
     ACTIVATION_VEC_TYPE activated[TILE_B] = { };
     for (uint bi = 0; bi < TILE_B; ++bi) {
         activated[bi] = TO_ACTIVATION_VEC_TYPE(acc[bi]);
+#if OUTER_OFM > 1
+        acc[bi] = 0;
+#endif
     }
 
 #if BIAS_TERM
