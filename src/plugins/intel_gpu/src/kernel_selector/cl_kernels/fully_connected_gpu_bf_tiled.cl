@@ -290,6 +290,9 @@ inline void FUNC(fc_bf_tiled_kernel_default)(
 #endif
     // =====================================================================================================================================
     // Main computation loop
+#if OUTER_OFM > 1
+    unroll_for (uint oi = 0; oi < OUTER_OFM; ++oi) {
+#endif
     uint iterations = MAIN_LOOP_ELEMENTS_COUNT / (TILE_IFM * SIMD);
     __attribute__((opencl_unroll_hint(1)))
     for (uint ni = 0; ni < iterations; ++ni) {
@@ -707,6 +710,9 @@ inline void FUNC(fc_bf_tiled_kernel_default)(
             output_offset += TILE_OUT_B_PITCH - TILE_OFM * SIMD;
         }
     }
+#if OUTER_OFM > 1
+    }
+#endif
     // =====================================================================================================================================
 }
 
