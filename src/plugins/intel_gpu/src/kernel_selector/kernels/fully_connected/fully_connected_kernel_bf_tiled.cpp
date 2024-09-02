@@ -319,7 +319,7 @@ FullyConnected_bf_tiled::GetAutoTuneParams(const fully_connected_params& params,
             } else {
                 // tune_params(tile_b, tile_ofm, tile_ifm, tile_k, outer_n, dispatch_bsv, dispatch_fsv, exec_options)
                 if (output_f / 2 > min_num_threads) {
-                    return selector.Default(tune_params(1, 2, 4, 2, 2, 1, 1, EXE_MODE_DEFAULT));
+                    return selector.Default(tune_params(1, 2, 4, 2, 4, 1, 1, EXE_MODE_DEFAULT));
                 } else {
                     return selector.Default(tune_params(1, 2, 4, 2, 1, 1, 1, EXE_MODE_DEFAULT));
                 }
