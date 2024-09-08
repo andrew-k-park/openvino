@@ -1681,13 +1681,10 @@ public:
         }
     }
 
-    void test_compressed_int4_scale_andrew(bool is_caching_test, bool is_dynamic, long int batch_num, long int scales_group_size = 128, bool is_wei_dyn = false) {
+    void test_compressed_int4_scale_andrew(bool is_caching_test, bool is_dynamic, long int batch_num, long int ifm_num, long int ofm_num, long int scales_group_size = 128, bool is_wei_dyn = false) {
         tests::random_generator rg(GET_SUITE_NAME);
         auto& engine = get_test_engine();
         auto supports_immad = engine.get_device_info().supports_immad;
-
-        long int ifm_num = 4096;
-        long int ofm_num = 27392;
 
         auto input_mem_host = engine.allocate_memory({ { batch_num, 1, ifm_num}, data_types::f32, format::bfyx });
         auto weights_mem_host = engine.allocate_memory({ {ofm_num, ifm_num}, data_types::u4, format::bfyx });
@@ -1717,7 +1714,7 @@ public:
 
         if (is_dynamic && is_wei_dyn) {
             // ifm_num is dynamic
-            in_layout = layout{ {-1, -1}, data_types::f16, format::bfyx };
+            in_layout = layout{ {-1, 1, -1}, data_types::f16, format::bfyx };
         }
 
         auto dcomp_zp_name = supports_immad ? "dcomp_zp" : "";
@@ -1749,7 +1746,7 @@ public:
             ASSERT_TRUE(impl != NULL);
             ASSERT_EQ(impl->get_kernels().size(), 2);
         }
-        int num_exec = 1;
+        int num_exec = 200;
         for (auto exec = 0; exec < num_exec; exec++) {
             network->set_input_data("input", input_mem_host);
 
@@ -3693,12 +3690,36 @@ TEST_F(fully_connected_gpu_tests, compressed_int4_scale_b1g128) {
     this->test_compressed_int4_scale(false, false, 1, 128);
 }
 
-TEST_F(fully_connected_gpu_tests, compressed_int4_scale_andrew) {
-    this->test_compressed_int4_scale_andrew(false, false, 1, 32);
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_chatglm3_andrew) {
+    this->test_compressed_int4_scale_andrew(false, false, 1, 4096, 27392, 32);
 }
 
-TEST_F(fully_connected_gpu_tests, compressed_int4_scale_andrew_batch) {
-    this->test_compressed_int4_scale_andrew(false, false, 1024, 32);
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_chatglm3_dyn_andrew) {
+    this->test_compressed_int4_scale_andrew(false, true, 1, 4096, 27392, 32);
+}
+
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_chatglm3_batch_andrew) {
+    this->test_compressed_int4_scale_andrew(false, false, 1024, 4096, 27392, 32);
+}
+
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_chatglm3_batch_dyn_andrew) {
+    this->test_compressed_int4_scale_andrew(false, true, 1024, 4096, 27392, 32);
+}
+
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_llama3_andrew) {
+    this->test_compressed_int4_scale_andrew(false, false, 1, 4096, 14336, 32);
+}
+
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_llama3_dyn_andrew) {
+    this->test_compressed_int4_scale_andrew(false, true, 1, 4096, 14336, 32);
+}
+
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_qwen2_andrew) {
+    this->test_compressed_int4_scale_andrew(false, false, 1, 3584, 18944, 32);
+}
+
+TEST_F(fully_connected_gpu_tests, compressed_int4_scale_qwen2_dyn_andrew) {
+    this->test_compressed_int4_scale_andrew(false, true, 1, 3584, 18944, 32);
 }
 
 TEST_F(fully_connected_gpu_tests, compressed_int4_scale_dyn_quan_single_batch) {
