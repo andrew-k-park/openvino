@@ -79,7 +79,8 @@ IndirectGemmOpt::IndirectGemmOpt() {
                                                                kv_cache_node->get_variable(),
                                                                kv_cache_node->get_concat_axis(),
                                                                gather_axis,
-                                                               kv_cache_node->get_output_element_type(0));
+                                                               kv_cache_node->get_output_element_type(0),
+                                                               kv_cache_node->get_present_transpose_order());
 
         indirect_kv_cache->set_friendly_name(kv_cache_node->get_friendly_name());
         ov::copy_runtime_info(kv_cache_node, indirect_kv_cache);
@@ -166,7 +167,8 @@ IndirectSDPAOpt::IndirectSDPAOpt() {
                                                                  kv_cache_node_0->get_variable(),
                                                                  kv_cache_node_0->get_concat_axis(),
                                                                  gather_axis_0,
-                                                                 kv_cache_node_0->get_output_element_type(0));
+                                                                 kv_cache_node_0->get_output_element_type(0),
+                                                                 kv_cache_node_0->get_present_transpose_order());
 
         auto indirect_kv_cache_1 = std::make_shared<op::KVCache>(gather_input_node_1,
                                                                  kv_cache_node_1->get_input_node_shared_ptr(1),
@@ -174,7 +176,8 @@ IndirectSDPAOpt::IndirectSDPAOpt() {
                                                                  kv_cache_node_1->get_variable(),
                                                                  kv_cache_node_1->get_concat_axis(),
                                                                  gather_axis_1,
-                                                                 kv_cache_node_1->get_output_element_type(0));
+                                                                 kv_cache_node_1->get_output_element_type(0),
+                                                                 kv_cache_node_1->get_present_transpose_order());
 
         indirect_kv_cache_0->set_friendly_name(kv_cache_node_0->get_friendly_name());
         indirect_kv_cache_1->set_friendly_name(kv_cache_node_1->get_friendly_name());

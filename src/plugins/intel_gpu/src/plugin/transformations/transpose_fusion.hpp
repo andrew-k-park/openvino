@@ -33,5 +33,11 @@ public:
     TransposeSDPAMatcher();
 };
 
+class TransposeKVCacheMatcher : public ov::pass::MatcherPass {
+public:
+    OPENVINO_RTTI("TransposeKVCacheMatcher", "0");
+    TransposeKVCacheMatcher();
+};
+
 }   // namespace intel_gpu
 }   // namespace ov

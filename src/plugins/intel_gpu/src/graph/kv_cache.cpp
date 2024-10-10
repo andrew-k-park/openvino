@@ -39,7 +39,7 @@ std::vector<layout> kv_cache_inst::calc_output_layouts(kv_cache_node const& /*no
     if (desc->num_outputs > 1)
         input_shapes.push_back(impl_param.get_input_layout(2).get<ShapeType>());
 
-    std::vector<ShapeType> output_shapes = shape_infer(&op, input_shapes);
+    std::vector<ShapeType> output_shapes = shape_infer(&op, input_shapes, desc->present_transpose_order);
 
     static const std::map<size_t, size_t> ports_map = {{0, 0}, {1, 2}};
 
