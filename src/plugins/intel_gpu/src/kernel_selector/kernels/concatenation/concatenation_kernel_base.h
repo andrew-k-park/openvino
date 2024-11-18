@@ -6,8 +6,32 @@
 
 #include "kernel_base_opencl.h"
 #include "kernel_selector_params.h"
+#include "kernel_selector_utils.h"
 
 namespace kernel_selector {
+struct TransposedDimensionAccessHelperBase : virtual DimensionAccessHelperBase {
+    explicit TransposedDimensionAccessHelperBase(const DataTensor& t, std::vector<int64_t> order)
+    : DimensionAccessHelperBase(t) {
+        size_t total_dims_count = dims.size();
+        size_t new_axis_count = total_dims_count - order.size();
+        transposed_order.resize(total_dims_count);
+        std::iota(transposed_order.begin(), transposed_order.end(), 0);
+        for (size_t i = 0; i < order.size(); i++) {
+            size_t transposed_order_pos = i < 2 ? i : i + new_axis_count;
+            transposed_order[transposed_order_pos] = order[i] < 2 ? order[i] : order[i] + new_axis_count;
+        }
+    }
+    Tensor::Dim& x_dim() { return dims[transposed_order[7]]; }
+    Tensor::Dim& y_dim() { return dims[transposed_order[6]]; }
+    Tensor::Dim& z_dim() { return dims[transposed_order[5]]; }
+    Tensor::Dim& w_dim() { return dims[transposed_order[4]]; }
+    Tensor::Dim& v_dim() { return dims[transposed_order[3]]; }
+    Tensor::Dim& u_dim() { return dims[transposed_order[2]]; }
+    Tensor::Dim& f_dim() { return dims[transposed_order[1]]; }
+    Tensor::Dim& b_dim() { return dims[transposed_order[0]]; }
+    std::vector<int64_t> transposed_order;
+};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // concatenation_params
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -21,6 +45,7 @@ struct concatenation_params : public base_params {
     size_t kernel_split_id = 0;
     MultiDataTensor original_input_layouts;
     bool kernelPerInput = true;
+    std::vector<int64_t> present_order;
 
     ParamsKey GetParamsKey() const override {
         auto k = base_params::GetParamsKey();

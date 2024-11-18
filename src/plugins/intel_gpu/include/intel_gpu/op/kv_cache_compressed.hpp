@@ -26,6 +26,7 @@ public:
                       int64_t concat_axis,
                       int64_t gather_axis,
                       const QuantizationAttrs& quantization_attrs,
+                      const std::vector<int64_t>& order_present,
                       const ov::element::Type output_type = ov::element::undefined);
 
     void validate_and_infer_types() override;
@@ -49,7 +50,8 @@ private:
 };
 
 std::vector<ov::PartialShape> shape_infer(const KVCacheCompressed* op,
-                                          const std::vector<ov::PartialShape>& input_shapes);
+                                          const std::vector<ov::PartialShape>& input_shapes,
+                                          const std::vector<int64_t>& order_present);
 
 }   // namespace op
 }   // namespace intel_gpu

@@ -79,6 +79,7 @@ IndirectGemmOpt::IndirectGemmOpt() {
                                                                kv_cache_node->get_variable(),
                                                                kv_cache_node->get_concat_axis(),
                                                                gather_axis,
+                                                               kv_cache_node->get_present_transpose_order(),
                                                                kv_cache_node->get_output_element_type(0));
 
         indirect_kv_cache->set_friendly_name(kv_cache_node->get_friendly_name());
@@ -166,6 +167,7 @@ IndirectSDPAOpt::IndirectSDPAOpt() {
                                                                  kv_cache_node_0->get_variable(),
                                                                  kv_cache_node_0->get_concat_axis(),
                                                                  gather_axis_0,
+                                                                 kv_cache_node_0->get_present_transpose_order(),
                                                                  kv_cache_node_0->get_output_element_type(0));
 
         auto indirect_kv_cache_1 = std::make_shared<op::KVCache>(gather_input_node_1,
@@ -174,6 +176,7 @@ IndirectSDPAOpt::IndirectSDPAOpt() {
                                                                  kv_cache_node_1->get_variable(),
                                                                  kv_cache_node_1->get_concat_axis(),
                                                                  gather_axis_1,
+                                                                 kv_cache_node_1->get_present_transpose_order(),
                                                                  kv_cache_node_1->get_output_element_type(0));
 
         indirect_kv_cache_0->set_friendly_name(kv_cache_node_0->get_friendly_name());

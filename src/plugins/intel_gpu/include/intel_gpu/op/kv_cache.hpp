@@ -25,6 +25,7 @@ public:
             const Output<Node>& new_token_data,
             const std::shared_ptr<ov::op::util::Variable>& past_values,
             int64_t concat_axis,
+            const std::vector<int64_t>& order_present,
             const ov::element::Type output_type = ov::element::undefined);
 
     KVCache(const Output<Node>& past,
@@ -33,6 +34,7 @@ public:
             const std::shared_ptr<ov::op::util::Variable>& past_values,
             int64_t concat_axis,
             int64_t gather_axis,
+            const std::vector<int64_t>& order_present,
             const ov::element::Type output_type = ov::element::undefined);
 
     bool visit_attributes(ov::AttributeVisitor& visitor) override;
@@ -54,22 +56,33 @@ public:
 
     bool get_indirect() const { return m_indirect; }
 
+    std::vector<int64_t> get_present_transpose_order() const { return m_order_present; }
+
+    static std::vector<int64_t> default_order(size_t rank) {
+        std::vector<int64_t> order(rank);
+        std::iota(order.begin(), order.end(), 0);
+        return order;
+    }
+
 protected:
     KVCache(const OutputVector& inputs,
             const std::shared_ptr<ov::op::util::Variable>& past_values,
             bool indirect,
             int64_t concat_axis,
             int64_t gather_axis,
+            const std::vector<int64_t>& order_present,
             const ov::element::Type output_type = ov::element::undefined);
 
     int64_t m_concat_axis = 0;
     int64_t m_gather_axis = 0;
     bool m_indirect = false;
-
+    std::vector<int64_t> m_order_present;
     ov::element::Type m_output_type;
 };
 
-std::vector<ov::PartialShape> shape_infer(const KVCache* op, const std::vector<ov::PartialShape>& input_shapes);
+std::vector<ov::PartialShape> shape_infer(const KVCache* op,
+                                          const std::vector<ov::PartialShape>& input_shapes,
+                                          const std::vector<int64_t>& order_present);
 
 }   // namespace op
 }   // namespace intel_gpu

@@ -307,6 +307,7 @@ struct kv_cache_impl : multi_stage_primitive<kv_cache> {
 
         params.axis = convert_axis(axis, impl_param.get_output_layout().get_rank());
         params.kernelPerInput = true;
+        params.present_order = primitive->present_transpose_order;
 
         const auto& in_offsets_map = impl_param.in_port_to_shape_info_offset; // [kv_past, kv_new_token, [beam_idx, beam_table_past]
         const auto& out_offsets_map = impl_param.out_port_to_shape_info_offset; // [kv_present, beam_table_present]

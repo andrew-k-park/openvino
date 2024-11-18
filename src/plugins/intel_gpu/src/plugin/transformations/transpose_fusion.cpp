@@ -4,6 +4,8 @@
 
 #include "intel_gpu/op/gemm.hpp"
 #include "intel_gpu/op/sdpa.hpp"
+#include "intel_gpu/op/kv_cache.hpp"
+#include "intel_gpu/op/read_value.hpp"
 #include "intel_gpu/runtime/utils.hpp"
 #include "openvino/core/node_vector.hpp"
 #include "openvino/core/partial_shape.hpp"
@@ -12,6 +14,7 @@
 #include "openvino/pass/pattern/op/label.hpp"
 #include "openvino/pass/pattern/op/pattern.hpp"
 #include "transpose_fusion.hpp"
+#include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/convert.hpp"
@@ -70,6 +73,66 @@ TransposeFusion::TransposeFusion(bool supports_immad) {
     add_matcher<TransposeMatMulTransposeMatcher>(supports_immad);
     add_matcher<TransposeMatMulMatcher>(supports_immad);
     add_matcher<TransposeSDPAMatcher>();
+    add_matcher<TransposeKVCacheMatcher>();
+}
+
+TransposeKVCacheMatcher::TransposeKVCacheMatcher() {
+    auto is_fp_type = [](const ov::Output<ov::Node>& output) -> bool {
+        switch (output.get_element_type()) {
+            case ov::element::f16:
+            case ov::element::f32: return true;
+            default: return false;
+        }
+    };
+    auto not_transpose = [is_fp_type](const ov::Output<ov::Node>& output) -> bool {
+        return std::dynamic_pointer_cast<ov::op::v1::Transpose>(output.get_node_shared_ptr()) == nullptr
+               && is_fp_type(output);
+    };
+    auto present_m = any_input(not_transpose);
+    auto transpose_present_order_m = wrap_type<ov::op::v0::Constant>(consumers_count(1));
+    auto transpose_present_m = wrap_type<ov::op::v1::Transpose>({present_m, transpose_present_order_m}, is_fp_type);
+    auto beam_idx_m = wrap_type<ov::op::v0::Parameter>();
+    auto past_m = wrap_type<ov::intel_gpu::op::ReadValue>();
+    auto gather_past_axis_m = wrap_type<ov::op::v0::Constant>(
+        ov::op::util::constant_predicate<int64_t>([](const std::vector<int64_t>& value) -> bool {
+            return value.size() == 1 && (value[0] == 0 || value[0] == 1);
+        }));
+    auto gather_past_m = wrap_type<ov::op::v8::Gather>({past_m, beam_idx_m, gather_past_axis_m});
+    auto kv_cache_m = wrap_type<ov::intel_gpu::op::KVCache>({gather_past_m, transpose_present_m});
+    ov::matcher_pass_callback callback = [OV_CAPTURE_CPY_AND_THIS](Matcher& m) {
+        const auto& pattern_map = m.get_pattern_value_map();
+        auto kv_cache = std::dynamic_pointer_cast<ov::intel_gpu::op::KVCache>(m.get_match_root());
+        if (!kv_cache || transformation_callback(kv_cache)) {
+            return false;
+        }
+        std::cout << "TransposeKVCacheMatcher::callback | name=" << kv_cache->get_friendly_name() << std::endl;
+        auto order_present = op::KVCache::default_order(kv_cache->get_input_partial_shape(1).size());
+        size_t input_past_output_idx = kv_cache->get_input_source_output(0).get_index();
+        size_t input_present_output_idx = kv_cache->get_input_source_output(1).get_index();
+        if (pattern_map.count(transpose_present_m) > 0) {
+            auto tranpose_present_order = std::dynamic_pointer_cast<ov::op::v0::Constant>(pattern_map.at(transpose_present_order_m).get_node_shared_ptr());
+            order_present = tranpose_present_order->cast_vector<int64_t>();
+            std::cout << "TransposeKVCacheMatcher::callback | order_present = ";
+            for (auto& o : order_present) {
+                std::cout << "[" << o << "]";
+            }
+            std::cout << std::endl;
+        }
+        auto input_past = ov::Output<Node>(pattern_map.at(gather_past_m).get_node_shared_ptr(), input_past_output_idx);
+        auto input_present = ov::Output<Node>(pattern_map.at(present_m).get_node_shared_ptr(), input_present_output_idx);
+        auto kv_cache_new = std::make_shared<ov::intel_gpu::op::KVCache>(input_past,
+                                                                         input_present,
+                                                                         kv_cache->get_variable(),
+                                                                         kv_cache->get_concat_axis(),
+                                                                         order_present,
+                                                                         kv_cache->get_output_element_type(0));
+        kv_cache_new->set_friendly_name(kv_cache->get_friendly_name());
+        ov::copy_runtime_info(m.get_matched_nodes(), kv_cache_new);
+        ov::replace_node(kv_cache, kv_cache_new);
+        return true;
+    };
+    auto m = std::make_shared<ov::pass::pattern::Matcher>(kv_cache_m, "TransposeKVCacheMatcher");
+    this->register_matcher(m, callback);
 }
 
 TransposeSDPAMatcher::TransposeSDPAMatcher() {

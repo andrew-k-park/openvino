@@ -87,12 +87,14 @@ KVCacheFusionMatcher::KVCacheFusionMatcher() {
                                                           concat_node->input(1).get_source_output(),
                                                           variable,
                                                           concat_axis,
+                                                          std::vector<int64_t>{},
                                                           new_read_value_node->get_output_element_type(0));
         } else {
             kv_cache_node = std::make_shared<op::KVCache>(new_read_value_node,
                                                           concat_node->input(1).get_source_output(),
                                                           variable,
                                                           concat_axis,
+                                                          std::vector<int64_t>{},
                                                           new_read_value_node->get_output_element_type(0));
         }
         kv_cache_node->set_friendly_name(concat_node->get_friendly_name());

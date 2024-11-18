@@ -44,7 +44,11 @@ KERNEL (concatenation_gpu_ref)(
 #   error concatenation_gpu_bfzyx_ref.cl: Unrecognized concat axis.
 #endif
 
+#ifdef INPUT1_DIMS_ORDER
+    uint input_offset  = FUNC_CALL(get_input_index)(OPTIONAL_SHAPE_INFO_TENSOR INPUT1_DIMS_ORDER);
+#else
     uint input_offset  = FUNC_CALL(get_input_index)(OPTIONAL_SHAPE_INFO_TENSOR b, f, w, z, y, x);
+#endif
     uint output_offset = FUNC_CALL(get_output_index)(OPTIONAL_SHAPE_INFO_TENSOR out_b, out_f, out_w, out_z, out_y, out_x);
 
     INPUT0_TYPE result = input[input_offset];

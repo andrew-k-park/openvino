@@ -84,9 +84,16 @@ ConcatenationKernelBase::DispatchData ConcatenationKernel_simple_Ref::SetDefault
     DispatchData dispatchData;
     const auto& input = params.inputs[0];
 
-    dispatchData.gws = { input.X().v * input.Y().v,
-                         input.Z().v * input.W().v,
-                         input.Feature().v * input.Batch().v };
+    if (!params.present_order.empty()) {
+        TransposedDimensionAccessHelperBase dims_present(input, params.present_order);
+        dispatchData.gws = { dims_present.x_dim().v * dims_present.y_dim().v,
+                             dims_present.z_dim().v * dims_present.w_dim().v,
+                             dims_present.f_dim().v * dims_present.b_dim().v };
+    } else {
+        dispatchData.gws = { input.X().v * input.Y().v,
+                             input.Z().v * input.W().v,
+                             input.Feature().v * input.Batch().v };
+    }
 
     auto in_layout = params.inputs[0].GetLayout();
     auto out_layout = params.outputs[0].GetLayout();
