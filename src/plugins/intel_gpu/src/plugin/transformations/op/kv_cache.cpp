@@ -16,6 +16,7 @@ namespace op {
 
 KVCache::KVCache(const OutputVector& inputs,
                  const std::shared_ptr<ov::op::util::Variable>& past_variable,
+                 bool exclude_batch,
                  bool indirect,
                  int64_t concat_axis,
                  int64_t gather_axis,
@@ -23,6 +24,7 @@ KVCache::KVCache(const OutputVector& inputs,
     : Op(inputs)
     , m_concat_axis(concat_axis)
     , m_gather_axis(gather_axis)
+    , m_exclude_batch(exclude_batch)
     , m_indirect(indirect)
     , m_output_type(output_type) {
     m_variable = past_variable;
@@ -32,10 +34,11 @@ KVCache::KVCache(const Output<Node>& past,
                  const Output<Node>& new_token_data,
                  const Output<Node>& beam_idx,
                  const std::shared_ptr<ov::op::util::Variable>& past_variable,
+                 bool exclude_batch,
                  int64_t concat_axis,
                  int64_t gather_axis,
                  const ov::element::Type output_type)
-    : KVCache({past, new_token_data, beam_idx}, past_variable, true, concat_axis, gather_axis, output_type) {
+    : KVCache({past, new_token_data, beam_idx}, past_variable, exclude_batch, true, concat_axis, gather_axis, output_type) {
     if (m_indirect)
         set_output_size(2);
     validate_and_infer_types();
@@ -44,9 +47,10 @@ KVCache::KVCache(const Output<Node>& past,
 KVCache::KVCache(const Output<Node>& past,
                  const Output<Node>& new_token_data,
                  const std::shared_ptr<ov::op::util::Variable>& past_variable,
+                 bool exclude_batch,
                  int64_t concat_axis,
                  const ov::element::Type output_type)
-    : KVCache({past, new_token_data}, past_variable, false, concat_axis, 0, output_type) {
+    : KVCache({past, new_token_data}, past_variable, exclude_batch, false, concat_axis, 0, output_type) {
     m_variable = past_variable;
     validate_and_infer_types();
 }
@@ -86,6 +90,7 @@ std::shared_ptr<Node> KVCache::clone_with_new_inputs(const ov::OutputVector& new
         return std::make_shared<KVCache>(new_args.at(0),
                                          new_args.at(1),
                                          m_variable,
+                                         m_exclude_batch,
                                          m_concat_axis,
                                          m_output_type);
 
@@ -94,6 +99,7 @@ std::shared_ptr<Node> KVCache::clone_with_new_inputs(const ov::OutputVector& new
                                          new_args.at(1),
                                          new_args.at(2),
                                          m_variable,
+                                         m_exclude_batch,
                                          m_concat_axis,
                                          m_gather_axis,
                                          m_output_type);
@@ -109,7 +115,14 @@ std::vector<ov::PartialShape> shape_infer(const KVCache* op, const std::vector<o
     // We update output shape with input1 shape by default, as input1 is always new, and in some situations, input0 shape
     // has zeros in some dimensions. For example to concat input0 [-1, 0, 0, 0] + input1 [-1, 4, -1, 128] along axis 2,
     // we could (and should) infer dim value of axis 1 and 3 in this case.
+    std::cout << "KVCache::shape_infer | name=" << op->get_friendly_name()
+              << ", gather_axis=" << gather_axis
+              << ", concat_axis=" << concat_axis
+              << ", op->get_exclude_batch()=" << op->get_exclude_batch()
+              << ", input_shapes[0]=" << input_shapes[0].to_string()
+              << ", input_shapes[1]=" << input_shapes[1].to_string();
     if (op->get_output_size() >= 2) {
+        std::cout << ", input_shapes[2]=" << input_shapes[2].to_string();
         out_shapes[0] = input_shapes[1];
         out_shapes[0][gather_axis] = input_shapes[2][0];
         out_shapes[0][concat_axis] += input_shapes[0][concat_axis];
@@ -118,10 +131,17 @@ std::vector<ov::PartialShape> shape_infer(const KVCache* op, const std::vector<o
         dims[gather_axis] = out_shapes[0][gather_axis];
         dims[concat_axis] = out_shapes[0][concat_axis];
         out_shapes[1] = dims;
+        if (op->get_exclude_batch())
+            out_shapes[1] = std::vector<ov::Dimension>(out_shapes[1].begin() + 1, out_shapes[1].end());
+        std::cout << ", out_shapes[1]=" << out_shapes[1].to_string();
     } else {
         out_shapes[0] = input_shapes[1];
         out_shapes[0][concat_axis] += input_shapes[0][concat_axis];
     }
+    if (op->get_exclude_batch())
+        out_shapes[0] = std::vector<ov::Dimension>(out_shapes[0].begin() + 1, out_shapes[0].end());
+
+    std::cout << ", out_shapes[0]=" << out_shapes[0].to_string() << std::endl;
 
     return out_shapes;
 }
@@ -132,7 +152,7 @@ KVCacheCompressed::KVCacheCompressed(const OutputVector& inputs,
                                      int64_t gather_axis,
                                      const QuantizationAttrs& quantization_attrs,
                                      const ov::element::Type output_type)
-    : KVCache(inputs, past_variable, true, concat_axis, gather_axis, output_type)
+    : KVCache(inputs, past_variable, false, true, concat_axis, gather_axis, output_type)
     , m_compressed(true)
     , m_quantization_attrs(quantization_attrs) {
     OPENVINO_ASSERT(quantization_attrs.quantization_dt == ov::element::i8,

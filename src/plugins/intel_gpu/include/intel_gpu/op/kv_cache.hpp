@@ -24,6 +24,7 @@ public:
     KVCache(const Output<Node>& past,
             const Output<Node>& new_token_data,
             const std::shared_ptr<ov::op::util::Variable>& past_values,
+            bool exclude_batch,
             int64_t concat_axis,
             const ov::element::Type output_type = ov::element::undefined);
 
@@ -31,6 +32,7 @@ public:
             const Output<Node>& new_token_data,
             const Output<Node>& beam_idx,
             const std::shared_ptr<ov::op::util::Variable>& past_values,
+            bool exclude_batch,
             int64_t concat_axis,
             int64_t gather_axis,
             const ov::element::Type output_type = ov::element::undefined);
@@ -52,11 +54,15 @@ public:
     void set_concat_axis(int64_t axis) { m_concat_axis = axis; }
     void set_gather_axis(int64_t axis) { m_gather_axis = axis; }
 
+    bool get_exclude_batch() const { return m_exclude_batch; }
+    void set_exclude_batch(bool exclude_batch) { m_exclude_batch = exclude_batch; }
+
     bool get_indirect() const { return m_indirect; }
 
 protected:
     KVCache(const OutputVector& inputs,
             const std::shared_ptr<ov::op::util::Variable>& past_values,
+            bool exclude_batch,
             bool indirect,
             int64_t concat_axis,
             int64_t gather_axis,
@@ -64,6 +70,7 @@ protected:
 
     int64_t m_concat_axis = 0;
     int64_t m_gather_axis = 0;
+    bool m_exclude_batch = false;
     bool m_indirect = false;
 
     ov::element::Type m_output_type;

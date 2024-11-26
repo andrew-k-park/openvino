@@ -81,17 +81,19 @@ KVCacheFusionMatcher::KVCacheFusionMatcher() {
         new_read_value_node->set_friendly_name(past_node->get_friendly_name());
         ov::copy_runtime_info(past_node, new_read_value_node);
         ov::replace_node(past_node, new_read_value_node);
-
+        std::cout << "KVCacheFusionMatcher::callback | concat_node=" << concat_node->get_friendly_name() << std::endl;
         if (pattern_map.count(gather_past) > 0) {
             kv_cache_node = std::make_shared<op::KVCache>(pattern_map.at(gather_past).get_node_shared_ptr(),
                                                           concat_node->input(1).get_source_output(),
                                                           variable,
+                                                          false,
                                                           concat_axis,
                                                           new_read_value_node->get_output_element_type(0));
         } else {
             kv_cache_node = std::make_shared<op::KVCache>(new_read_value_node,
                                                           concat_node->input(1).get_source_output(),
                                                           variable,
+                                                          false,
                                                           concat_axis,
                                                           new_read_value_node->get_output_element_type(0));
         }

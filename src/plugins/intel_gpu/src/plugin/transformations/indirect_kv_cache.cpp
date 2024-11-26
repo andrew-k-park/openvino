@@ -72,11 +72,12 @@ IndirectGemmOpt::IndirectGemmOpt() {
         auto gather_node = std::dynamic_pointer_cast<ov::op::v8::Gather>(pattern_map.at(gather_past).get_node_shared_ptr());
         auto gather_axis = gather_node->get_axis();
         ov::replace_node(gather_node, gather_input_node);
-
+        std::cout << "IndirectGemmOpt::callback | kv_cache_node=" << kv_cache_node->get_friendly_name() << std::endl;
         auto indirect_kv_cache = std::make_shared<op::KVCache>(gather_input_node,
                                                                kv_cache_node->input(1).get_source_output(),
                                                                beam_idx_node,
                                                                kv_cache_node->get_variable(),
+                                                               kv_cache_node->get_exclude_batch(),
                                                                kv_cache_node->get_concat_axis(),
                                                                gather_axis,
                                                                kv_cache_node->get_output_element_type(0));
@@ -159,11 +160,12 @@ IndirectSDPAOpt::IndirectSDPAOpt() {
 
         ov::replace_node(gather_node_0, gather_input_node_0);
         ov::replace_node(gather_node_1, gather_input_node_1);
-
+        std::cout << "IndirectSDPAOpt::callback | kv_cache_node_0=" << kv_cache_node_0->get_friendly_name() << std::endl;
         auto indirect_kv_cache_0 = std::make_shared<op::KVCache>(gather_input_node_0,
                                                                  kv_cache_node_0->get_input_node_shared_ptr(1),
                                                                  beam_idx_node,
                                                                  kv_cache_node_0->get_variable(),
+                                                                 kv_cache_node_0->get_exclude_batch(),
                                                                  kv_cache_node_0->get_concat_axis(),
                                                                  gather_axis_0,
                                                                  kv_cache_node_0->get_output_element_type(0));
@@ -172,6 +174,7 @@ IndirectSDPAOpt::IndirectSDPAOpt() {
                                                                  kv_cache_node_1->get_input_node_shared_ptr(1),
                                                                  beam_idx_node,
                                                                  kv_cache_node_1->get_variable(),
+                                                                 kv_cache_node_0->get_exclude_batch(),
                                                                  kv_cache_node_1->get_concat_axis(),
                                                                  gather_axis_1,
                                                                  kv_cache_node_1->get_output_element_type(0));

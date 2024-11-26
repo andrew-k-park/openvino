@@ -935,7 +935,13 @@ void primitive_inst::realloc_if_needed() {
     if (_node->is_type<kv_cache>()) {
         const auto& desc = _node->as<kv_cache>().get_primitive();
         auto& variable = get_network().get_variable(desc->variable_info.variable_id);
-        auto present_layout = _impl_params->output_layouts[0];
+        const auto& present_lay = _impl_params->output_layouts[0];
+        auto present_layout = present_lay;
+        if (desc->exclude_batch) {
+            auto present_shape = present_layout.get_partial_shape();
+            present_shape.insert(present_shape.begin(), ov::Dimension(1));
+            present_layout.set_partial_shape(present_shape);
+        }
         auto present_layout_rank = present_layout.get_partial_shape().size();
         const auto sequence_axis =
             kv_cache_inst::get_sequence_axis(desc->concat_axis, present_layout_rank);

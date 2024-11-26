@@ -58,6 +58,7 @@ std::vector<layout> kv_cache_inst::calc_output_layouts(kv_cache_node const& /*no
         op.set_output_size(desc->num_outputs);
         op.set_concat_axis(desc->concat_axis);
         op.set_gather_axis(desc->gather_axis);
+        op.set_exclude_batch(desc->exclude_batch);
 
         output_shapes = shape_infer(&op, input_shapes);
     }
@@ -122,6 +123,8 @@ void kv_cache_inst::update_shape_info_tensor(const kernel_impl_params& params) {
         const auto& runtime_in_lay = params.input_layouts[i];
 
         GPU_DEBUG_TRACE_DETAIL << id() << " : update shape_info for input[" << i << "]" << std::endl;
+        GPU_DEBUG_TRACE_DETAIL << id() << " : node_in_lay=" << node_in_lay.to_string()
+                               << " : runtime_in_lay=" << runtime_in_lay.to_string() << std::endl;
         fill_shape_info_data(runtime_in_lay, node_in_lay, shape_info_ptr, offset);
     }
 
@@ -139,6 +142,8 @@ void kv_cache_inst::update_shape_info_tensor(const kernel_impl_params& params) {
         }
 
         GPU_DEBUG_TRACE_DETAIL << id() << " : update shape_info for input[" << i << "]" << std::endl;
+        GPU_DEBUG_TRACE_DETAIL << id() << " : bt_state->get_initial_layout()=" << bt_state->get_initial_layout().to_string()
+                               << " : bt_layout=" << bt_layout.to_string() << std::endl;
         fill_shape_info_data(bt_layout, bt_state->get_initial_layout(), shape_info_ptr, offset);
     }
 
@@ -146,7 +151,17 @@ void kv_cache_inst::update_shape_info_tensor(const kernel_impl_params& params) {
         GPU_DEBUG_TRACE_DETAIL << id() << " : update shape_info for output[" << i << "]" << std::endl;
         const auto& node_out_lay = _node->get_output_layout(i);
         const auto& runtime_out_lay = params.output_layouts[i];
-        fill_shape_info_data(runtime_out_lay, node_out_lay, shape_info_ptr, offset);
+        auto runtime_out_layout = runtime_out_lay;
+        auto desc = params.typed_desc<kv_cache>();
+        if (desc->exclude_batch) {
+            auto runtime_out_shape = runtime_out_layout.get_partial_shape();
+            runtime_out_shape = ov::PartialShape(std::vector<ov::Dimension>(runtime_out_shape.begin(), runtime_out_shape.end() -1));
+            runtime_out_shape.insert(runtime_out_shape.begin(), ov::Dimension(1));
+            runtime_out_layout.set_partial_shape(runtime_out_shape);
+        }
+        GPU_DEBUG_TRACE_DETAIL << id() << " : node_out_lay=" << node_out_lay.to_string()
+                               << " : runtime_out_layout=" << runtime_out_layout.to_string() << std::endl;
+        fill_shape_info_data(runtime_out_layout, node_out_lay, shape_info_ptr, offset);
     }
 }
 

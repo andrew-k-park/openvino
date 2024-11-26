@@ -27,16 +27,19 @@ struct kv_cache : public primitive_base<kv_cache> {
              const ov::op::util::VariableInfo& variable_info,
              const int64_t concat_axis,
              const int64_t gather_axis,
+             const bool exclude_batch,
              const bool indirect)
         : primitive_base(id, inputs)
         , variable_info(variable_info)
         , concat_axis(concat_axis)
         , gather_axis(gather_axis)
+        , exclude_batch(exclude_batch)
         , indirect(indirect) {}
 
     ov::op::util::VariableInfo variable_info;
     int64_t concat_axis = 0;
     int64_t gather_axis = 0;
+    bool exclude_batch = false;
     bool indirect = false;
 
     bool compressed = false;
@@ -46,6 +49,7 @@ struct kv_cache : public primitive_base<kv_cache> {
         size_t seed = primitive::hash();
         seed = hash_combine(seed, concat_axis);
         seed = hash_combine(seed, gather_axis);
+        seed = hash_combine(seed, exclude_batch);
         seed = hash_combine(seed, indirect);
         seed = hash_combine(seed, compressed);
         seed = hash_range(seed, quantization_attributes.scales_zp_output_order.begin(), quantization_attributes.scales_zp_output_order.end());
@@ -68,6 +72,7 @@ struct kv_cache : public primitive_base<kv_cache> {
         return variable_info == rhs_casted.variable_info &&
                concat_axis == rhs_casted.concat_axis &&
                gather_axis == rhs_casted.gather_axis &&
+               exclude_batch == rhs_casted.exclude_batch &&
                indirect == rhs_casted.indirect &&
                compressed == rhs_casted.compressed &&
                quantization_attributes.scales_zp_output_order == rhs_casted.quantization_attributes.scales_zp_output_order &&
@@ -87,6 +92,7 @@ struct kv_cache : public primitive_base<kv_cache> {
         ob << make_data(&data_type, sizeof(ov::element::Type_t));
         ob << concat_axis;
         ob << gather_axis;
+        ob << exclude_batch;
         ob << indirect;
         ob << compressed;
         ob << make_data(&quantization_attributes.quantization_type, sizeof(quantization_attributes.quantization_type));
@@ -109,6 +115,7 @@ struct kv_cache : public primitive_base<kv_cache> {
         variable_info = { data_shape, data_type, variable_id };
         ib >> concat_axis;
         ib >> gather_axis;
+        ib >> exclude_batch;
         ib >> indirect;
         ib >> compressed;
         ib >> make_data(&quantization_attributes.quantization_type, sizeof(quantization_attributes.quantization_type));
