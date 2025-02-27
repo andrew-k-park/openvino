@@ -8,10 +8,22 @@
 
 namespace ov::intel_gpu {
 
-class ConvertStridedSlicesToVariadicSplit : public ov::pass::MatcherPass {
+class ConvertStridedSlicesToVariadicSplit : public ov::pass::GraphRewrite {
 public:
-    OPENVINO_MATCHER_PASS_RTTI("ConvertStridedSlicesToVariadicSplit");
+    OPENVINO_GRAPH_REWRITE_RTTI("ConvertStridedSlicesToVariadicSplit");
     ConvertStridedSlicesToVariadicSplit();
+};
+
+class ConvertFCStridedSlicesToVariadicSplitMatcher : public ov::pass::MatcherPass {
+public:
+    OPENVINO_MATCHER_PASS_RTTI("ConvertFCStridedSlicesToVariadicSplitMatcher");
+    ConvertFCStridedSlicesToVariadicSplitMatcher();
+};
+
+class ConvertReshapeStridedSlicesToVariadicSplitMatcher : public ov::pass::MatcherPass {
+public:
+    OPENVINO_MATCHER_PASS_RTTI("ConvertReshapeStridedSlicesToVariadicSplitMatcher");
+    ConvertReshapeStridedSlicesToVariadicSplitMatcher();
 };
 
 }   // namespace ov::intel_gpu
