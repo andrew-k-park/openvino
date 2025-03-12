@@ -16,6 +16,8 @@
 
 namespace ov::intel_cpu {
 
+int DumpHelper::counter = -1;
+
 static void formatNodeName(std::string& name) {
     std::replace(name.begin(), name.end(), '\\', '_');
     std::replace(name.begin(), name.end(), '/', '_');
@@ -128,7 +130,7 @@ static std::string createDumpFilePath(const std::string& blobDumpDir, const std:
     return dump_file;
 }
 
-void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count) {
+void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count, int id) {
     if (!shouldBeDumped(node, config, "IN")) {
         return;
     }
@@ -144,6 +146,9 @@ void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int coun
         std::string file_name = NameFromType(node->getType()) + "_" + nodeName;
         if (count != -1) {
             file_name += "_iter" + std::to_string(count);
+        }
+        if (id != -1) {
+            file_name += "_id" + std::to_string(id);
         }
         file_name += "_in" + std::to_string(i) + ".ieb";
         if (file_name.size() > 240) {
@@ -166,7 +171,7 @@ void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int coun
     dumpInternalBlobs(node, config);
 }
 
-void dumpOutputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count) {
+void dumpOutputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count, int id) {
     if (!shouldBeDumped(node, config, "OUT")) {
         return;
     }
@@ -182,11 +187,13 @@ void dumpOutputBlobs(const NodePtr& node, const DebugCapsConfig& config, int cou
         if (count != -1) {
             file_name += "_iter" + std::to_string(count);
         }
+        if (id != -1) {
+            file_name += "_id" + std::to_string(id);
+        }
         file_name += "_out" + std::to_string(i) + ".ieb";
         if (file_name.size() > 240) {
             file_name = file_name.substr(file_name.size() - 240);
         }
-
         std::string dump_file = createDumpFilePath(config.blobDumpDir, file_name, node->getExecIndex());
 
         std::cout << "Dump outputs:  " << dump_file << '\n';
