@@ -12,8 +12,8 @@
 namespace ov {
 namespace intel_cpu {
 
-void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count = -1);
-void dumpOutputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count = -1);
+void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count = -1, int id = -1);
+void dumpOutputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count = -1, int id = -1);
 
 class DumpHelper {
     const NodePtr& node;
@@ -26,12 +26,17 @@ public:
           count(_count),
           config(_config) {
         ov::util::create_directory_recursive(config.blobDumpDir);
-        dumpInputBlobs(node, config, count);
+        instance_id = ++counter;
+        dumpInputBlobs(node, config, count, instance_id);
     }
 
     ~DumpHelper() {
-        dumpOutputBlobs(node, config, count);
+        dumpOutputBlobs(node, config, count, instance_id);
     }
+
+private:
+    static int counter;
+    int instance_id;
 };
 
 #    define DUMP(...) DumpHelper __helper##__node(__VA_ARGS__);
