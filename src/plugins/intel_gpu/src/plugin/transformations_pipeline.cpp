@@ -86,6 +86,7 @@
 #include "plugin/transformations/optimize_subsequent_reshapes.hpp"
 #include "plugin/transformations/lora_horizontal_fusion.hpp"
 #include "plugin/transformations/sink_reshape.hpp"
+#include "plugin/transformations/increase_rms_precision.hpp"
 #include "transformations/common_optimizations/nop_elimination.hpp"
 #include "transformations/common_optimizations/rms_fusion.hpp"
 #include "transformations/common_optimizations/broadcast_elementwise_fusion.hpp"
@@ -1209,6 +1210,8 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             });
             manager.register_pass<ov::intel_gpu::DynamicQuantizeFullyConnected>(dynamic_quantization_group_size, asymmetric_dyn_quant);
         }
+
+        manager.register_pass<ov::intel_gpu::IncreaseRMSPrecision>();
 
         // Remove Pad in front of MaxPool if both the pads_begin and pads_end are zero.
         manager.register_pass<ov::pass::EliminatePad>();
