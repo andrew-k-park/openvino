@@ -32,7 +32,7 @@ static Datatype get_softmax_acc_type() {
 
 static bool is_prefill_stage(const sdpa_params& sdpa_params) {
     TransposedDimensionAccessHelperBase dims_q(sdpa_params.inputs[0], sdpa_params.input0_order);
-    auto target_seq_len = dims_q.y_dim().v;
+    auto target_seq_len = sdpa_params.input0_order.size() == 3 ? dims_q.f_dim().v : dims_q.y_dim().v;
 
     return target_seq_len > 1;
 }
@@ -46,7 +46,7 @@ static size_t get_partitions_num(const sdpa_params& sdpa_params, size_t kernel_t
         return 1;
 
     TransposedDimensionAccessHelperBase dims_k(sdpa_params.inputs[1], sdpa_params.input1_order);
-    auto source_seq_len = dims_k.y_dim().v;
+    auto source_seq_len = sdpa_params.input1_order.size() == 3 ? dims_k.f_dim().v : dims_k.y_dim().v;
 
     return CeilDiv(source_seq_len, SDPAKernelOpt::get_seq_len_partition_size(sdpa_params, sdpa_params.conf.head_size, kernel_type));
 }
@@ -67,7 +67,7 @@ static std::vector<size_t> get_internal_buffer_sizes(const sdpa_params& sdpa_par
             TransposedDimensionAccessHelperBase dims_q(sdpa_params.inputs[0], sdpa_params.input0_order);
             const auto& output = sdpa_params.outputs[0];
 
-            const auto head_size = dims_q.x_dim().v;
+            const auto head_size = sdpa_params.input0_order.size() == 3 ? dims_q.y_dim().v : dims_q.x_dim().v;
             const auto num_of_partitions = get_partitions_num(sdpa_params, kernel_type);
             const auto is_prefill = is_prefill_stage(sdpa_params);
 
@@ -263,8 +263,8 @@ CommonDispatchData SDPAKernelOpt::SetDefault(const sdpa_params& params, size_t k
         TransposedDimensionAccessHelperBase output(params.outputs[0], params.output_order);
 
         const size_t batch_size = output.b_dim().v;
-        const size_t heads_num = output.f_dim().v;
-        const size_t target_seq_len = dims_q.y_dim().v;
+        const size_t heads_num = params.output_order.size() == 3 ? 1 : output.f_dim().v;
+        const size_t target_seq_len = params.input0_order.size() == 3 ? dims_q.f_dim().v : dims_q.y_dim().v;
         const size_t head_size = static_cast<size_t>(params.conf.head_size);
         const size_t num_of_partitions = get_partitions_num(params, kernel_idx);
         const size_t target_seq_len_block_size = kernel_idx == 1 ? get_target_seq_len_block_size() : 1;
@@ -309,7 +309,7 @@ KernelsData SDPAKernelOpt::GetKernelsData(const Params& params) const {
     } else if (params.is_shape_agnostic) {
         kernels_type = { KernelsTypes::SINGLE_TOKEN, KernelsTypes::MULTI_TOKENS, KernelsTypes::FINALIZATION };
     } else {
-        TransposedDimensionAccessHelperBase dims_q(prim_params.inputs[0], prim_params.input0_order);
+        // TransposedDimensionAccessHelperBase dims_q(prim_params.inputs[0], prim_params.input0_order);
         const auto is_prefill = is_prefill_stage(prim_params);
 
         if (is_prefill) {

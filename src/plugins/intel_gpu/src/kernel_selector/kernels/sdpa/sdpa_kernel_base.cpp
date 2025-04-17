@@ -136,13 +136,15 @@ JitConstants SDPAKernelBase::GetJitConstants(const sdpa_params& params) const {
         jit.AddConstant(MakeJitConstant("INPUT2_DIMS_ORDER", GetDimsOrder(params.input2_order)));
 
     TransposedDimensionAccessHelperJit dims_q(params.inputs[0], params.input0_order);
-    const auto num_heads = params.conf.is_paged_attention ? std::to_string(params.conf.heads_num) : dims_q.f();
-    jit.AddConstant(MakeJitConstant("TARGET_SEQ_LEN", dims_q.y()));
+    const auto num_heads = params.conf.is_paged_attention ?
+                           std::to_string(params.conf.heads_num) :
+                           (params.input0_order.size() == 3 ? std::to_string(1) : dims_q.f());
+    jit.AddConstant(MakeJitConstant("TARGET_SEQ_LEN", (params.input0_order.size() == 3 ? dims_q.f() : dims_q.y())));
     jit.AddConstant(MakeJitConstant("NUM_HEADS", num_heads));
     jit.AddConstant(MakeJitConstant("NUM_KV_HEADS", params.conf.kv_heads_num));
 
     TransposedDimensionAccessHelperJit dims_k(params.inputs[1], params.input1_order);
-    jit.AddConstant(MakeJitConstant("SOURCE_SEQ_LEN", dims_k.y()));
+    jit.AddConstant(MakeJitConstant("SOURCE_SEQ_LEN", (params.input1_order.size() == 3 ? dims_k.f() : dims_k.y())));
 
     return jit;
 }
