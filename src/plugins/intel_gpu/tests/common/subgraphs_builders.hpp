@@ -77,7 +77,8 @@ inline std::shared_ptr<ov::Node> make_attention_mask(ov::Output<ov::Node> q,
     auto q_shape = std::make_shared<ov::op::v3::ShapeOf>(q, ov::element::i32);
     auto k_shape = std::make_shared<ov::op::v3::ShapeOf>(k, ov::element::i32);
 
-    auto seq_len_idx = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{}, {qkv_order[2]});
+    auto seq_len_dim = qkv_order.size() == 4 ? 2 : 1;
+    auto seq_len_idx = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{}, {qkv_order[seq_len_dim]});
     auto zero_i = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{}, {0});
     auto one_i = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{}, {1});
     auto zero_f = std::make_shared<ov::op::v1::ConvertLike>(zero_i, q);
@@ -95,7 +96,9 @@ inline std::shared_ptr<ov::Node> make_attention_mask(ov::Output<ov::Node> q,
     vertical_range = std::make_shared<ov::op::v0::Unsqueeze>(vertical_range, one_i);
     auto triu = std::make_shared<ov::op::v1::GreaterEqual>(horizontal_range, vertical_range);
     auto select = std::make_shared<ov::op::v1::Select>(triu, m, zero_f);
-    auto unsqueeze_axis = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{2}, {0, 1});
+    auto unsqueeze_axis_shape = qkv_order.size() == 4 ? ov::Shape{2} : ov::Shape{1};
+    auto unsqueeze_axis_val = qkv_order.size() == 4 ? std::vector<int64_t>{0, 1} : std::vector<int64_t>{0};
+    auto unsqueeze_axis = ov::op::v0::Constant::create(ov::element::i32, unsqueeze_axis_shape, unsqueeze_axis_val);
     return std::make_shared<ov::op::v0::Unsqueeze>(select, unsqueeze_axis);
 }
 
@@ -204,13 +207,14 @@ inline std::shared_ptr<ov::Model> make_llm_kv_cache_sdpa_pattern(ov::Dimension b
                                                                  bool stateful = false,
                                                                  bool fuse_cache_reorder = false,
                                                                  size_t num_groups = 1) {
-    ov::PartialShape kv_cache_size_def = {batch, n_heads / num_groups, -1, n_features};
-    ov::PartialShape new_token_size_def = {batch, n_heads / num_groups, -1, n_features};
-    ov::PartialShape q_size_def = {batch, n_heads, -1, n_features};
+    size_t rank = qkv_order.size();
+    ov::PartialShape kv_cache_size_def = rank == 4 ? ov::PartialShape{batch, n_heads / num_groups, -1, n_features} : ov::PartialShape{batch, -1, n_features};
+    ov::PartialShape new_token_size_def = rank == 4 ? ov::PartialShape{batch, n_heads / num_groups, -1, n_features} : ov::PartialShape{batch, -1, n_features};
+    ov::PartialShape q_size_def = rank == 4 ? ov::PartialShape{batch, n_heads, -1, n_features} : ov::PartialShape{batch, -1, n_features};
 
-    ov::PartialShape kv_cache_size = ov::PartialShape::dynamic(4);
-    ov::PartialShape new_token_size = ov::PartialShape::dynamic(4);
-    ov::PartialShape q_size = ov::PartialShape::dynamic(4);
+    ov::PartialShape kv_cache_size = ov::PartialShape::dynamic(rank);
+    ov::PartialShape new_token_size = ov::PartialShape::dynamic(rank);
+    ov::PartialShape q_size = ov::PartialShape::dynamic(rank);
 
     for (size_t i = 0; i < kv_cache_size_def.size(); i++) {
         kv_cache_size[qkv_order[i]] = kv_cache_size_def[i];
@@ -218,7 +222,7 @@ inline std::shared_ptr<ov::Model> make_llm_kv_cache_sdpa_pattern(ov::Dimension b
         q_size[qkv_order[i]] = q_size_def[i];
     }
 
-    int64_t concat_axis = qkv_order[2];
+    int64_t concat_axis = rank == 4 ? qkv_order[2] : qkv_order[1];
 
     auto past_k = std::make_shared<ov::op::v0::Parameter>(element_type, kv_cache_size);
     past_k->set_friendly_name("past_k");
@@ -276,7 +280,7 @@ inline std::shared_ptr<ov::Model> make_llm_kv_cache_sdpa_pattern(ov::Dimension b
     if (num_groups > 1) {
         auto nh = static_cast<int32_t>(n_heads.get_length());
         auto hs = static_cast<int32_t>(n_features.get_length());
-        std::vector<int32_t> target_shape = { 0, nh, -1, hs };
+        std::vector<int32_t> target_shape = rank == 4 ? std::vector<int32_t>{ 0, nh, -1, hs } : std::vector<int32_t>{ nh, -1, hs };
         std::vector<int32_t> target_shape_transposed(target_shape.size());
 
         for (size_t i = 0; i < target_shape.size(); i++) {
@@ -287,7 +291,7 @@ inline std::shared_ptr<ov::Model> make_llm_kv_cache_sdpa_pattern(ov::Dimension b
         v = make_gqa(v, num_groups, target_shape_transposed, nh);
     }
 
-    if (qkv_order != std::vector<int64_t>{0, 1, 2, 3}) {
+    if ((rank == 4 && qkv_order != std::vector<int64_t>{0, 1, 2, 3}) || (rank == 3 && qkv_order != std::vector<int64_t>{0, 1, 2})) {
         q = make_qkv_transpose(q, qkv_order);
         k = make_qkv_transpose(k, qkv_order);
         v = make_qkv_transpose(v, qkv_order);

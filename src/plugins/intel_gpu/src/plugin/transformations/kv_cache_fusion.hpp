@@ -81,5 +81,10 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& m) override;
 };
 
+class KVCacheFusionMatcher : public ov::pass::MatcherPass {
+public:
+    OPENVINO_MATCHER_PASS_RTTI("KVCacheFusionMatcher");
+    KVCacheFusionMatcher();
+};
 
 }   // namespace ov::intel_gpu

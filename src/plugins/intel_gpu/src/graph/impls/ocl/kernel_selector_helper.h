@@ -233,6 +233,15 @@ inline ov::PartialShape extend_shape_to_rank_from_begin(const ov::PartialShape& 
     return extended_pshape;
 }
 
+inline ov::PartialShape extend_pshape_to_rank_in_num_heads_dim(ov::PartialShape pshape, size_t rank = 4) {
+    if (pshape.size() >= rank) {
+        return pshape;
+    }
+    const size_t num_heads_dim = 1;
+    pshape.insert(pshape.begin() + num_heads_dim, ov::Dimension(1));
+    return pshape;
+}
+
 inline bool broadcastable(const ov::PartialShape& first_pshape, const ov::PartialShape& second_pshape, bool use_new_shape_infer,
                           bool first_to_second_only = false) {
     if (first_pshape.is_dynamic() || second_pshape.is_dynamic()) {

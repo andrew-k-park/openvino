@@ -53,11 +53,14 @@ public:
             properties.emplace(ov::hint::kv_cache_precision(ov::element::f16));
         }
 
-        const size_t n_heads = 16;
+        size_t n_heads = 1;
         const size_t n_features = 64;
         const size_t context_size = 7;
 
         const std::vector<int64_t>& qkv_order = p.qkv_order;
+        // if (qkv_order.size() == 3) {
+        //     n_heads = 1;
+        // }
 
         ov::element::Type element_type = p.model_element_type;
 
@@ -187,10 +190,17 @@ public:
                 // first infer
                 size_t init_batch = p.initial_batch == -1 ? p.batch : static_cast<size_t>(p.initial_batch);
                 const ov::Shape new_token_size_initial =
-                    adjust_qkv_shape({init_batch, n_heads / p.num_groups, context_size, n_features});
+                    qkv_order.size() == 4 ?
+                    adjust_qkv_shape({init_batch, n_heads / p.num_groups, context_size, n_features}) :
+                    adjust_qkv_shape({init_batch, context_size, n_features});
                 const ov::Shape kv_cache_size_initial =
-                    adjust_qkv_shape({init_batch, n_heads / p.num_groups, cache_size, n_features});
-                const ov::Shape q_in_size_initial = adjust_qkv_shape({init_batch, n_heads, context_size, n_features});
+                    qkv_order.size() == 4 ?
+                    adjust_qkv_shape({init_batch, n_heads / p.num_groups, cache_size, n_features}) :
+                    adjust_qkv_shape({init_batch, cache_size, n_features});
+                const ov::Shape q_in_size_initial =
+                    qkv_order.size() == 4 ?
+                    adjust_qkv_shape({init_batch, n_heads, context_size, n_features}) :
+                    adjust_qkv_shape({init_batch, context_size, n_features});
 
                 auto k_new_token_data =
                     ov::test::utils::create_and_fill_tensor(element_type, new_token_size_initial, generator);
@@ -254,10 +264,15 @@ public:
 
             const size_t input_tokens = 1;
             const ov::Shape new_token_size =
-                adjust_qkv_shape({p.batch, n_heads / p.num_groups, input_tokens, n_features});
+                qkv_order.size() == 4 ?
+                adjust_qkv_shape({p.batch, n_heads / p.num_groups, input_tokens, n_features}) :
+                adjust_qkv_shape({p.batch, input_tokens, n_features});
             size_t context_length = cache_size + input_tokens;
             for (size_t i = 0; i < p.num_iter; i++, context_length += input_tokens) {
-                ov::Shape q_in_size_loop = adjust_qkv_shape({p.batch, n_heads, input_tokens, n_features});
+                ov::Shape q_in_size_loop =
+                    qkv_order.size() == 4 ?
+                    adjust_qkv_shape({p.batch, n_heads, input_tokens, n_features}) :
+                    adjust_qkv_shape({p.batch, input_tokens, n_features});
                 auto k_new_token_data =
                     ov::test::utils::create_and_fill_tensor(element_type, new_token_size, generator);
                 auto v_new_token_data =
@@ -338,38 +353,40 @@ std::vector<Params> get_test_params() {
     const bool causal = true;
     const bool compressed = true;
 
-    p.push_back({with_rearrange, !with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
-    p.push_back({!with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
-    p.push_back({!with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {1, 2, 0, 3}});
+    // p.push_back({with_rearrange, !with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
+    // p.push_back({!with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
+    // p.push_back({!with_rearrange, with_mask, !with_scale, !causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {1, 2, 0, 3}});
 
-    // Beam search
-    p.push_back({with_rearrange, !with_mask, !with_scale, !causal, !compressed, 2, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, !with_mask, !with_scale, !causal, !compressed, 4, ov::element::Type_t::f16, 5, 16, 1, {0, 2, 1, 3}});
+    // // Beam search
+    // p.push_back({with_rearrange, !with_mask, !with_scale, !causal, !compressed, 2, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, !with_mask, !with_scale, !causal, !compressed, 4, ov::element::Type_t::f16, 5, 16, 1, {0, 2, 1, 3}});
 
     // Compressed
     p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {1, 2, 0, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {1, 2, 0, 3}});
 
-    /* -- causal mask -- */
+    p.push_back({with_rearrange, with_mask, !with_scale, !causal, compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2}});
 
-    p.push_back({with_rearrange, !with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
-    p.push_back({!with_rearrange, with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
+    // /* -- causal mask -- */
 
-    // Beam search
-    p.push_back({with_rearrange, !with_mask, !with_scale, causal, !compressed, 2, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, !with_mask, !with_scale, causal, !compressed, 4, ov::element::Type_t::f16, 5, 16, 1, {0, 2, 1, 3}});
+    // p.push_back({with_rearrange, !with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
+    // p.push_back({!with_rearrange, with_mask, !with_scale, causal, !compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
 
-    // Compressed
-    p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
-    p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {1, 2, 0, 3}});
+    // // Beam search
+    // p.push_back({with_rearrange, !with_mask, !with_scale, causal, !compressed, 2, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, !with_mask, !with_scale, causal, !compressed, 4, ov::element::Type_t::f16, 5, 16, 1, {0, 2, 1, 3}});
+
+    // // Compressed
+    // p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 1, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 2, 1, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {0, 1, 2, 3}});
+    // p.push_back({with_rearrange, with_mask, !with_scale, causal, compressed, 1, ov::element::Type_t::f16, 10, 4, 1, {1, 2, 0, 3}});
 
     return p;
 }

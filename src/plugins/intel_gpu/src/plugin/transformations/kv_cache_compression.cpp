@@ -206,7 +206,8 @@ KVCacheCompressionMatcher::KVCacheCompressionMatcher(ov::element::Type compressi
             scales_zp_output_order[0] = transposed_order[0];
             scales_zp_output_order[1] = transposed_order[1];
             scales_zp_output_order[2] = transposed_order[2];
-            scales_zp_output_order[3] = transposed_order[3];
+            if (data_rank == 4)
+                scales_zp_output_order[3] = transposed_order[3];
 
             return scales_zp_output_order;
         };

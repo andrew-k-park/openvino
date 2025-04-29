@@ -421,14 +421,14 @@ public:
     static kernel_impl_params static_canonicalize_shapes(const kernel_impl_params& impl_params) {
         auto updated_impl_params = impl_params;
 
-        auto extend_pshape_to_rank_in_num_heads_dim = [](ov::PartialShape pshape, size_t rank = 4) {
-            if (pshape.size() == rank) {
-                return pshape;
-            }
-            const size_t num_heads_dim = 1;
-            pshape.insert(pshape.begin() + num_heads_dim, ov::Dimension(1));
-            return pshape;
-        };
+        // auto extend_pshape_to_rank_in_num_heads_dim = [](ov::PartialShape pshape, size_t rank = 4) {
+        //     if (pshape.size() == rank) {
+        //         return pshape;
+        //     }
+        //     const size_t num_heads_dim = 1;
+        //     pshape.insert(pshape.begin() + num_heads_dim, ov::Dimension(1));
+        //     return pshape;
+        // };
 
         // For scale of 1D tensor or attention_mask of empty shape, use extend_shape_to_rank_from_end as before
         for (auto& input_layout : updated_impl_params.input_layouts) {
