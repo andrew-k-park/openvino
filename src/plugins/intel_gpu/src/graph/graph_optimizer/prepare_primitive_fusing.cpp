@@ -660,11 +660,15 @@ void prepare_primitive_fusing::fuse_simple_primitives(program &p) {
 
             auto out_layout = node.get_output_layout();
             // Do not fuse if the estimated format is fs_b_yx_fsv32 because the optimized kernel does not support fusion
-            if (out_layout.data_type == data_types::f16 && out_layout.is_static() && out_layout.batch() > 1 &&
-                ((lo.get_optimization_attributes().fs_b_yx_fsv32_network &&
-                  !lo.has_all_enabled_onednn_impls_optimization_attribute() && !has_reorder_behind_mvn()) ||
-                 out_layout.format == format::fs_b_yx_fsv32)) {
-                return false;
+            if (out_layout.data_type == data_types::f16) {
+                if ((out_layout.is_static() && out_layout.batch() > 1) ||
+                    (out_layout.is_dynamic() && node.get_users().front()->is_type<quantize>())) {
+                    if ((lo.get_optimization_attributes().fs_b_yx_fsv32_network &&
+                         !lo.has_all_enabled_onednn_impls_optimization_attribute() &&
+                         !has_reorder_behind_mvn()) || out_layout.format == format::fs_b_yx_fsv32) {
+                        return false;
+                    }
+                }
             }
             return true;
         };
@@ -882,10 +886,16 @@ void prepare_primitive_fusing::fuse_simple_primitives(program &p) {
             auto out_layout = quantize_node.get_output_layout();
             auto in_layout = input_data.get_output_layout();
 
-            // In dynamic shape, quantize-fusion is enabled in only onednn convolution.
-            if ((in_layout.is_dynamic() || out_layout.is_dynamic()) &&
-                (!input_data.is_type<convolution>() || (input_data.is_type<convolution>() && !lo.has_all_enabled_onednn_impls_optimization_attribute())))
-                return;
+            // In dynamic shape, quantize-fusion is enabled only for onednn convolution/fully_connected.
+            bool is_conv_or_fc = input_data.is_type<convolution>() || input_data.is_type<fully_connected>();
+            bool has_all_enabled_onednn_impls = lo.has_all_enabled_onednn_impls_optimization_attribute();
+
+            if (in_layout.is_dynamic() || out_layout.is_dynamic()) {
+                if (!(is_conv_or_fc || input_data.is_type<eltwise>() || input_data.is_type<activation>() || input_data.is_type<gather>())
+                    || (is_conv_or_fc && !has_all_enabled_onednn_impls)) {
+                    return;
+                }
+            }
 
             auto out_dt = out_layout.data_type;
             auto in_dt = input_data.get_input_layout(0).data_type;
@@ -901,15 +911,14 @@ void prepare_primitive_fusing::fuse_simple_primitives(program &p) {
                                      quantize_node.get_per_tensor_output_range();
 
             bool should_fuse = input_data.is_type<convolution>() && conv_supports_fusings(input_data.as<convolution>()) &&
-                           quantize_node.get_scale_shift_opt() &&
-                           ((out_dt == data_types::f32 || out_dt == data_types::f16)  ||
-                            in_layout.format == format::b_fs_yx_fsv16 ||
-                            in_layout.format == format::bs_fs_yx_bsv32_fsv16 ||
-                           // Avoid fusing to b_fs_yx_fsv16 (and similar) kernels
-                           (lo.has_all_enabled_onednn_impls_optimization_attribute()) ||
-                           (in_dt_is_i8_u8 && out_dt_is_i8_u8) ||
-                           (lo.should_select_b_fs_yx_fsv16_layout(input_data.as<convolution>(), input_data.get_input_layout(1)) &&
-                            !is_grouped_conv(input_data.as<convolution>())));
+                               quantize_node.get_scale_shift_opt() &&
+                               ((out_dt == data_types::f32 || out_dt == data_types::f16) ||
+                                in_layout.format == format::b_fs_yx_fsv16 ||
+                                in_layout.format == format::bs_fs_yx_bsv32_fsv16 ||
+                                has_all_enabled_onednn_impls || (in_dt_is_i8_u8 && out_dt_is_i8_u8) ||
+                                // Avoid fusing to b_fs_yx_fsv16 (and similar) kernels
+                                (lo.should_select_b_fs_yx_fsv16_layout(input_data.as<convolution>(), input_data.get_input_layout(1)) &&
+                                 !is_grouped_conv(input_data.as<convolution>())));
 
             should_fuse |= input_data.is_type<pooling>() && quantize_node.get_scale_shift_opt();
 
