@@ -692,7 +692,8 @@ void program::transfer_memory_to_device() {
 
             if (alloc_type == allocation_type::usm_host || alloc_type == allocation_type::usm_shared) {
                 // usm_device memory does not provide performance benefits on the LNL platform
-                if (get_engine().get_device_info().arch == gpu_arch::xe2 &&
+                if ((get_engine().get_device_info().arch == gpu_arch::xe2 ||
+                     get_engine().get_device_info().arch == gpu_arch::xe3) &&
                     get_engine().get_device_info().dev_type == device_type::integrated_gpu) {
                     return;
                 }
