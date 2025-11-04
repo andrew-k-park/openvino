@@ -2587,8 +2587,9 @@ memory::ptr primitive_inst::allocate_output(engine& _engine,
         (node.is_shape_infer_dep() && device_info.dev_type == device_type::integrated_gpu);
     const auto& lockable_mem_type = _engine.get_lockable_preferred_memory_allocation_type(layout.format.is_image_2d());
 
-    auto alloc_type = use_lockable_memory ? lockable_mem_type
-                    : !usm_device_allocatable ? lockable_mem_type : allocation_type::usm_device;
+    // auto alloc_type = use_lockable_memory ? lockable_mem_type
+    //                 : !usm_device_allocatable ? lockable_mem_type : allocation_type::usm_device;
+    auto alloc_type = lockable_mem_type;
 
     if (is_internal) {
         bool is_reorder_weights = node.is_type<reorder>() && node.as<reorder>().get_primitive()->weights_reorder_params;
