@@ -88,18 +88,47 @@ std::vector<layout> paged_attention_inst::calc_output_layouts(paged_attention_no
             output_layouts.push_back(layout{ov::PartialShape::dynamic(1), output_dt, format::bfyx});
         }
         if (desc->has_adaptive_rkv) {
-            // expecting 3 outputs, 2nd as above, 3rd - Adaptive R-KV block diversity
+            // Adaptive R-KV diversity output (3rd output)
+            // Output format: Concatenated diversity matrices for all sequences
+            // Each sequence contributes [num_blocks, eviction_size] elements
+            // where num_blocks = eviction_size / block_size
+            const auto start_size_idx = cldnn::paged_attention::PagedAttentionInputIdx::ADAPTIVE_RKV_START_SIZE;
             const auto evictable_sizes_idx = cldnn::paged_attention::PagedAttentionInputIdx::ADAPTIVE_RKV_EVICTABLE_SIZES;
             const auto output_dt = data_layout.data_type;
-            if (impl_param.get_input_layout(past_lens_idx).is_static()) {
+            
+            // Validate Adaptive R-KV inputs exist
+            OPENVINO_ASSERT(impl_param.input_layouts.size() > evictable_sizes_idx,
+                          "[GPU] Adaptive R-KV enabled but EVICTABLE_SIZES input missing. Expected at least ",
+                          evictable_sizes_idx + 1, " inputs, got ", impl_param.input_layouts.size());
+            
+            if (impl_param.get_input_layout(evictable_sizes_idx).is_static()) {
                 size_t num_elements_in_output = 0;
                 const auto& memory_deps = impl_param.memory_deps;
+                
+                // Read start_size for validation
+                const auto start_size_mem = memory_deps.at(start_size_idx);
+                mem_lock<int32_t, mem_lock_type::read> start_size_lock(start_size_mem, *impl_param.strm);
+                const int start_size = start_size_lock[0];
+                
+                // Read and validate evictable_sizes
                 const auto evictable_sizes_mem = memory_deps.at(evictable_sizes_idx);
-                mem_lock<int32_t, mem_lock_type::read> evictable_sizes_mem_lock(evictable_sizes_mem, *impl_param.strm);
+                mem_lock<int32_t, mem_lock_type::read> evictable_sizes_lock(evictable_sizes_mem, *impl_param.strm);
 
-                for (size_t i = 0; i < evictable_sizes_mem_lock.size(); i++) {
-                    size_t evictable_size = evictable_sizes_mem_lock[i];
-                    num_elements_in_output += evictable_size * evictable_size / desc->block_size;
+                for (size_t i = 0; i < evictable_sizes_lock.size(); i++) {
+                    const int evictable_size = evictable_sizes_lock[i];
+                    
+                    // Validate block alignment
+                    OPENVINO_ASSERT(evictable_size % desc->block_size == 0,
+                                  "[GPU] Adaptive R-KV evictable_size[", i, "] = ", evictable_size,
+                                  " must be a multiple of block_size = ", desc->block_size);
+                    OPENVINO_ASSERT(start_size % desc->block_size == 0,
+                                  "[GPU] Adaptive R-KV start_size = ", start_size,
+                                  " must be a multiple of block_size = ", desc->block_size);
+                    
+                    // Calculate output size for this sequence
+                    // Output shape: [num_blocks, eviction_size] where num_blocks = eviction_size / block_size
+                    const size_t num_blocks = evictable_size / desc->block_size;
+                    num_elements_in_output += num_blocks * evictable_size;
                 }
 
                 output_layouts.push_back(layout{ov::PartialShape{static_cast<long int>(num_elements_in_output)}, output_dt, format::bfyx});

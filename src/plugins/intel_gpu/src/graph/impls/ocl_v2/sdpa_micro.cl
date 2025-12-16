@@ -162,6 +162,13 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
 #endif
 #if IS_PAGED_ATTENTION
         const __global int* blocked_indexes_start_and_gws_mapping
+#if HAS_ADAPTIVE_RKV
+        , const __global int* adaptive_rkv_evictable_start_size
+        , const __global int* adaptive_rkv_evictable_sizes
+        , const __global int* adaptive_rkv_evictable_indices
+        , const __global int* adaptive_rkv_evictable_begins
+        , __global half* adaptive_rkv_diversity_output
+#endif
 #else
         int d, int k, int q
 #endif
@@ -813,6 +820,18 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
         /* Wait for S stores */
         intel_work_group_barrier_wait(CLK_LOCAL_MEM_FENCE);
 
+#if IS_PAGED_ATTENTION && HAS_ADAPTIVE_RKV && IS_PREFILL == 0
+        // Adaptive R-KV diversity calculation placeholder
+        // Note: Actual diversity computation should be performed via separate kernel dispatch
+        if (get_sub_group_local_id() == 0 && sg_ij == 0) {
+            const uint evictable_start = adaptive_rkv_evictable_start_size[gws_mapping * 2];
+            const uint evictable_size = adaptive_rkv_evictable_start_size[gws_mapping * 2 + 1];
+            if (evictable_size > 0) {
+                adaptive_rkv_diversity_output[gws_mapping] = 0.0h;
+            }
+        }
+#endif
+
         /* Last iteration: signal column sums are ready */
         if (last && need_sum_barrier)
             intel_work_group_barrier_arrive(CLK_LOCAL_MEM_FENCE);
@@ -912,5 +931,18 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
     tile_store_block_rem_q(A_tile_half, A, q, lda, sg_i0_vs, sg_j0_vs);
 #else
     tile_store(A_tile_half, A, d, q, lda, sg_i0_vs, sg_j0_vs);
+#endif
+
+#if IS_PAGED_ATTENTION && HAS_ADAPTIVE_RKV && IS_PREFILL == 0
+    // Adaptive R-KV diversity calculation placeholder
+    // Note: Actual diversity computation should be performed via separate kernel dispatch
+    // after this micro SDPA kernel completes
+    if (get_sub_group_local_id() == 0 && sg_ij == 0) {
+        const uint evictable_start = adaptive_rkv_evictable_start_size[gws_mapping * 2];
+        const uint evictable_size = adaptive_rkv_evictable_start_size[gws_mapping * 2 + 1];
+        if (evictable_size > 0) {
+            adaptive_rkv_diversity_output[gws_mapping] = 0.0h;
+        }
+    }
 #endif
 }

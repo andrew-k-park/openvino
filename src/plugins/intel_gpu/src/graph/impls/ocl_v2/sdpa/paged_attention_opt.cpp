@@ -10,11 +10,12 @@
 #include "paged_attention_opt.hpp"
 
 #include <array>
-#include <cstdint>
 #include <memory>
 #include <utility>
 
 #include "../primitive_ocl_base.hpp"
+#include "../utils/kernel_generator.hpp"
+#include "../paged_attention_adaptive_rkv.hpp"
 #include "common_utils/jitter.hpp"
 #include "intel_gpu/graph/kernel_impl_params.hpp"
 #include "intel_gpu/primitives/paged_attention.hpp"
@@ -24,8 +25,10 @@
 #include "primitive_inst.h"
 #include "sdpa_base.hpp"
 #include "sdpa_gen_opt.hpp"
+
 namespace ov::intel_gpu::ocl {
 namespace {
+// PagedAttentionStage is defined in paged_attention_adaptive_rkv.hpp
 
 constexpr ov::element::Type softmax_accumulator_type = ov::element::f32;
 constexpr size_t paged_attention_block_size = 16;
@@ -304,6 +307,10 @@ public:
             }
         }
 
+        if (desc->has_adaptive_rkv) {
+            jit.make("HAS_ADAPTIVE_RKV", 1);
+        }
+
         const size_t score_aggregation_idx = PagedAttentionInputIdx::SCORE_AGGREGATION;
         jit.add(make_type_jit_constants("SCORE_AGGREGATION_INPUT", params.input_layouts[score_aggregation_idx].data_type));
 
@@ -315,7 +322,7 @@ public:
         return jit;
     }
 
-    static void add_intermediate_inputs(Arguments& args, bool has_scores_output, bool is_multi_token_kernel = false, bool has_score_aggregation = false) {
+    static void add_intermediate_inputs(Arguments& args, bool has_scores_output, bool is_multi_token_kernel = false, bool has_score_aggregation = false, bool has_adaptive_rkv = false) {
         uint32_t internal_buffers_num = 3;  // kv cache update buffers
         if (has_scores_output) {
             args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // softmax_results
@@ -329,6 +336,15 @@ public:
         args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // exp_sums
         args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // max_logits
         args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // intermediate output
+
+        if (has_adaptive_rkv) {
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_START_SIZE});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_EVICTABLE_SIZES});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_INDICES});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_INDICES_BEGINS});
+            // Add internal buffer for diversity output
+            args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});
+        }
 
         if (is_multi_token_kernel) {
             // MULTIPLE_TOKENS kernels needs additional information related to mapping
@@ -410,7 +426,7 @@ public:
         }
 
         args.push_back({ArgumentDescriptor::Types::OUTPUT, 0});
-        add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation);
+        add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation, desc->has_adaptive_rkv);
 
         return args;
     }
@@ -499,7 +515,7 @@ public:
         args.push_back({ArgumentDescriptor::Types::OUTPUT, 0});
 
         const auto has_scores_output = params.output_layouts.size() > 1;
-        add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation);
+        add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation, desc->has_adaptive_rkv);
 
         args.push_back({ArgumentDescriptor::Types::SCALAR, 0});  // total_partitions_num
 
@@ -599,7 +615,7 @@ public:
         }
 
         args.push_back({ArgumentDescriptor::Types::OUTPUT, 0});
-        add_intermediate_inputs(args, has_scores_output, true, desc->has_score_aggregation);
+        add_intermediate_inputs(args, has_scores_output, true, desc->has_score_aggregation, desc->has_adaptive_rkv);
         return args;
     }
 
@@ -649,7 +665,7 @@ public:
         args.push_back({ArgumentDescriptor::Types::OUTPUT, 0});
 
         const auto has_scores_output = params.output_layouts.size() > 1;
-        add_intermediate_inputs(args, has_scores_output, true, desc->has_score_aggregation);
+        add_intermediate_inputs(args, has_scores_output, true, desc->has_score_aggregation, desc->has_adaptive_rkv);
 
         args.push_back({ArgumentDescriptor::Types::SCALAR, 0});  // total_partitions_num
 
@@ -707,7 +723,7 @@ public:
 
         const auto has_scores_output = params.output_layouts.size() > 1;
         const auto desc = params.typed_desc<paged_attention>();
-        add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation);
+        add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation, desc->has_adaptive_rkv);
 
         args.push_back({ArgumentDescriptor::Types::SCALAR, 0});  // total_partitions_num
 
@@ -1298,6 +1314,19 @@ public:
             res_event = {execute_stage(res_event, instance, pa_scores_calc)};
         }
 
+        // Adaptive R-KV: Compute diversity for KV cache eviction
+        if (desc->has_adaptive_rkv) {
+            auto diversity_event = PagedAttentionAdaptiveRKVIntegration::compute_diversity(
+                params,
+                rt_params->stage,
+                nullptr,  // TODO: Allocate diversity output buffer when needed
+                res_event
+            );
+            if (diversity_event) {
+                res_event = {diversity_event};
+            }
+        }
+
         return res_event[0];
     }
 
@@ -1461,7 +1490,7 @@ public:
 
         const auto multi_tokens_mode = stage == PagedAttentionStage::MIXED;
         if (multi_tokens_mode && !can_use_micro_sdpa) {
-            internal_buffers.emplace_back(total_tokens, softmax_accumulator_type, lockable);  // 9
+            internal_buffers.emplace_back(total_tokens, softmax_accumulator_type, lockable);  // 8 or 9
         }
 
 #ifdef ENABLE_ONEDNN_FOR_GPU
@@ -1472,6 +1501,17 @@ public:
             internal_buffers.emplace_back(indexes_buf_size * 4, indexes_dt, lockable);
         }
 #endif
+
+        // Add internal buffer for Adaptive R-KV diversity output
+        if (desc->has_adaptive_rkv && params.output_layouts.size() > 2) {
+            // Diversity output buffer: [batch_size, num_blocks, eviction_size]
+            // For placeholder in SDPA kernel, we just need a small buffer per sequence
+            const auto& past_lens = params.input_layouts[PagedAttentionInputIdx::PAST_LENS];
+            auto subsequences_number = past_lens.get_partial_shape()[0].get_length();
+            const auto diversity_buf_size = static_cast<size_t>(subsequences_number) * element_size;
+            internal_buffers.emplace_back(diversity_buf_size, params.output_layouts[0].data_type);  // diversity_output
+        }
+
         GPU_DEBUG_TRACE_DETAIL << "get_internal_buffer_descs: internal_buffers.size = " << internal_buffers.size() << std::endl;
         for (size_t i = 0; i < internal_buffers.size(); i++) {
             GPU_DEBUG_TRACE_DETAIL << "\tinternal_buffers[" << i << "] = " << internal_buffers[i].m_layout.to_short_string() << std::endl;

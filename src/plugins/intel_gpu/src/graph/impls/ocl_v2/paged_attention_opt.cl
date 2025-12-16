@@ -79,6 +79,13 @@ KERNEL(pa_sdpa_opt)(
 #if MULTI_TOKENS_PROCESSING
     , __global const int* gws_subseq_mapping
 #endif
+#if HAS_ADAPTIVE_RKV
+    , const __global int* adaptive_rkv_evictable_start_size
+    , const __global int* adaptive_rkv_evictable_sizes
+    , const __global int* adaptive_rkv_evictable_indices
+    , const __global int* adaptive_rkv_evictable_begins
+    , __global OUTPUT_TYPE* adaptive_rkv_diversity_output
+#endif
 ) {
     // Input shapes:
     // query: [sequences_num, HEADS_NUM * K_HEAD_SIZE]
@@ -649,6 +656,19 @@ KERNEL(pa_sdpa_opt)(
 
 #if SG_SCALE_FACTOR > 1
         }
+#endif
+
+#if HAS_ADAPTIVE_RKV && !MULTI_TOKENS_PROCESSING
+    // Adaptive R-KV diversity calculation placeholder
+    // Note: Actual diversity computation should be performed via separate kernel dispatch
+    // This is for GENERATE/MIXED stages (single token processing)
+    if (sgid == 0 && sglid == 0) {
+        const uint evictable_start = adaptive_rkv_evictable_start_size[seq_idx * 2];
+        const uint evictable_size = adaptive_rkv_evictable_start_size[seq_idx * 2 + 1];
+        if (evictable_size > 0) {
+            adaptive_rkv_diversity_output[seq_idx] = OUTPUT_VAL_ZERO;
+        }
+    }
 #endif
     }
 }

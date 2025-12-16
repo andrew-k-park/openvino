@@ -960,6 +960,10 @@ JitConstants SDPAMicroGenerator::get_jit_constants(const kernel_impl_params& par
             jit.make("HAS_SINK_INPUT", 1);
         }
 
+        if (desc->has_adaptive_rkv) {
+            jit.make("HAS_ADAPTIVE_RKV", 1);
+        }
+
         jit.add(make_layout_jit_constants("OUTPUT", params.output_layouts[0], out_offsets_map.at(0)));
         if (has_scores_output) {
             jit.add(make_layout_jit_constants("OUTPUT" + to_code_string(1), params.output_layouts[1], out_offsets_map.at(1)));
@@ -1269,6 +1273,16 @@ Arguments SDPAMicroGenerator::get_arguments_desc(const kernel_impl_params& param
             args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::SINKS});  // sink
 
         args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, 3});  // blocked_indexes_start_and_gws_mapping
+
+        if (desc->has_adaptive_rkv) {
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_START_SIZE});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_EVICTABLE_SIZES});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_INDICES});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_INDICES_BEGINS});
+            // Add internal buffer for diversity output (will be added in get_internal_buffer_descs)
+            uint32_t internal_buffer_idx = 4;  // After blocked_indexes_start_and_gws_mapping
+            args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffer_idx});
+        }
     } else {
         args.push_back({ArgumentDescriptor::Types::INPUT, ScaledDotProductAttentionInputIdx::KEY});    // K
         args.push_back({ArgumentDescriptor::Types::INPUT, ScaledDotProductAttentionInputIdx::QUERY});  // Q
