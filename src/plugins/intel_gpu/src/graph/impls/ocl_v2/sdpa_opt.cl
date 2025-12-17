@@ -891,6 +891,13 @@ KERNEL(sdpa_opt)(
     , __global OUTPUT_TYPE* tmp_out
     , const uint aligned_max_context_len
 #endif
+#if IS_PAGED_ATTENTION && HAS_ADAPTIVE_RKV
+    , const __global int* adaptive_rkv_evictable_start_size
+    , const __global int* adaptive_rkv_evictable_sizes
+    , const __global int* adaptive_rkv_evictable_indices
+    , const __global int* adaptive_rkv_evictable_begins
+    , __global OUTPUT_TYPE* adaptive_rkv_diversity_output
+#endif
 #else
     __global SOFTMAX_ACCUMULATOR_TYPE* exp_sums,
     __global SOFTMAX_ACCUMULATOR_TYPE* max_logits,
@@ -1580,6 +1587,25 @@ KERNEL(sdpa_opt)(
 #endif /*end of softmax calc*/
 
         barrier(CLK_LOCAL_MEM_FENCE);
+
+#if IS_PAGED_ATTENTION && HAS_ADAPTIVE_RKV
+        // Adaptive R-KV diversity calculation
+        // Note: This is a placeholder for integration with adaptive_rkv_diversity.cl kernel
+        // The actual diversity computation should be performed via a separate kernel dispatch
+        // after this SDPA kernel completes, using the attention scores from slm_qk_vals
+        if (sgid == 0 && sglid == 0) {
+            const uint seq_correspondence_idx = gws_seq_indexes_correspondence[target_seq_dim];
+            const uint evictable_start = adaptive_rkv_evictable_start_size[seq_correspondence_idx * 2];
+            const uint evictable_size = adaptive_rkv_evictable_start_size[seq_correspondence_idx * 2 + 1];
+            
+            // Mark that diversity calculation is needed for this sequence
+            // The diversity kernel will be invoked separately after SDPA completes
+            if (evictable_size > 0) {
+                // Placeholder: actual diversity calculation happens in adaptive_rkv_diversity.cl
+                adaptive_rkv_diversity_output[seq_correspondence_idx] = OUTPUT_VAL_ZERO;
+            }
+        }
+#endif
 
         // QK*V calculation
         {

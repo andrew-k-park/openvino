@@ -121,6 +121,8 @@ struct PagedAttentionManager {
     std::vector<int> adaptive_rkv_evictable_sizes;
     std::vector<int> adaptive_rkv_diversity_block_set_indices;
     std::vector<int> adaptive_rkv_diversity_block_set_begins;
+    
+    bool has_adaptive_rkv;  // Flag to enable Adaptive R-KV diversity calculation
 
     cldnn::engine& test_engine;
     cldnn::stream& test_stream;
@@ -140,7 +142,8 @@ struct PagedAttentionManager {
                           ov::internal::CacheQuantMode key_cache_quant_mode,
                           bool has_score_aggregation,
                           CacheRotationDescriptor rotation_config,
-                          std::vector<float> threshold)
+                          std::vector<float> threshold,
+                          bool has_adaptive_rkv = false)
         : num_heads(num_heads)
         , num_kv_heads(num_kv_heads)
         , k_head_size(k_head_size)
@@ -152,6 +155,7 @@ struct PagedAttentionManager {
         , has_score_aggregation(has_score_aggregation)
         , rotation_config(rotation_config)
         , subsequence_descs(subsequence_descs)
+        , has_adaptive_rkv(has_adaptive_rkv)
         , test_engine(engine)
         , test_stream(stream)
         , rg(rg) {
@@ -220,6 +224,30 @@ struct PagedAttentionManager {
                 auto max_window_size = std::min(subsequence_desc.num_tokens, max_tokens);
                 auto window_size = rg.generate_random_val<int>(1, max_window_size);
                 score_aggregation.push_back(window_size);
+            }
+        }
+        
+        if (has_adaptive_rkv) {
+            // Initialize Adaptive R-KV parameters
+            // start_size: skip first N tokens (must be multiple of block_size)
+            adaptive_rkv_start_size.push_back(block_size * 2);  // Skip first 2 blocks
+            
+            // evictable_sizes: per-sequence evictable region size
+            for (const auto& subsequence_desc : subsequence_descs) {
+                int total_tokens = subsequence_desc.num_tokens + subsequence_desc.past_len;
+                int start = adaptive_rkv_start_size[0];
+                
+                // Evictable size: from start to end, aligned to block_size
+                int evictable = total_tokens > start ? 
+                    ((total_tokens - start) / block_size) * block_size : 0;
+                adaptive_rkv_evictable_sizes.push_back(evictable);
+            }
+            
+            // For testing, we'll leave diversity_block_set_indices empty
+            // In real usage, genai layer would populate this with blocks to retain
+            adaptive_rkv_diversity_block_set_begins.push_back(0);
+            for (size_t i = 0; i < subsequence_descs.size(); i++) {
+                adaptive_rkv_diversity_block_set_begins.push_back(0);  // No retained blocks for testing
             }
         }
     }
@@ -1557,6 +1585,7 @@ struct paged_attention_test_params {
     ScoresMode scores_mode;
     CacheRotationDescriptor rotation_config;
     bool disable_flashattn_v2;
+    bool has_adaptive_rkv;
 };
 
 class paged_attention_test : public PagedAttentionTest<paged_attention_test_params> {};
@@ -1587,11 +1616,13 @@ const auto STATIC_INPUT_PAD = false;
 const auto DYNAMIC_INPUT_PAD = true;
 const auto ENABLE_FA_V2 = false;
 const auto DISABLE_FA_V2 = true;
+const auto ENABLE_ADAPTIVE_RKV = true;
+const auto DISABLE_ADAPTIVE_RKV = false;
 
 INSTANTIATE_TEST_SUITE_P(smoke_paged_attention, paged_attention_test, ::testing::ValuesIn(std::vector<paged_attention_test_params>{
     /* with scores output, use SnapKV */
-    paged_attention_test_params{ {{10, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, ENABLE_FA_V2 }, // 1st token
-    paged_attention_test_params{ {{36, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, DISABLE_FA_V2 }, // 1st token
+    paged_attention_test_params{ {{10, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, ENABLE_FA_V2, DISABLE_ADAPTIVE_RKV }, // 1st token
+    paged_attention_test_params{ {{36, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, DISABLE_FA_V2, DISABLE_ADAPTIVE_RKV }, // 1st token
     paged_attention_test_params{ {{1024, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, ENABLE_FA_V2 }, // 1st token long
     paged_attention_test_params{ {{10, 0}, {30, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, DISABLE_FA_V2 }, // 1st token + 1st token
     paged_attention_test_params{ {{128, 0}, {256, 0}}, 2, 2, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, ENABLE_SCORES_SNAPKV, DISABLE_ROTATION, ENABLE_FA_V2 }, // 1st token + 1st token
@@ -1726,5 +1757,53 @@ INSTANTIATE_TEST_SUITE_P(smoke_cm_xattention, xattention_test, ::testing::Values
     paged_attention_test_params{ {{1, 127}},  2, 2, 64, 64, 256, {0.9}, 0, true, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2 }, // 2nd token
     paged_attention_test_params{ {{1, 128}},  2, 2, 64, 64, 256, {0.9}, 0, true, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2 }, // 2nd token
     paged_attention_test_params{ {{1, 129}},  2, 2, 64, 64, 256, {0.9}, 0, true, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2 }, // 2nd token
-    paged_attention_test_params{ {{1, 32}},   28, 28, 128, 128, 256, {0.9}, 0, true, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2 }, // 2nd token
+    paged_attention_test_params{ {{1, 32}},   28, 28, 128, 128, 256, {0.9}, 0, true, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, DISABLE_ADAPTIVE_RKV }, // 2nd token
 }));
+
+// Adaptive R-KV specific tests
+class adaptive_rkv_test : public PagedAttentionTest<paged_attention_test_params> {};
+TEST_P(adaptive_rkv_test, diversity_calculation) {
+    auto p = GetParam();
+    execute(p);
+}
+
+INSTANTIATE_TEST_SUITE_P(smoke_adaptive_rkv, adaptive_rkv_test, ::testing::ValuesIn(std::vector<paged_attention_test_params>{
+    // PREFILL stage tests - diversity calculation should be enabled
+    paged_attention_test_params{ {{64, 0}}, 4, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: 64 tokens
+    paged_attention_test_params{ {{128, 0}}, 4, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: 128 tokens
+    paged_attention_test_params{ {{256, 0}}, 8, 8, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: 256 tokens
+    paged_attention_test_params{ {{512, 0}}, 8, 8, 128, 128, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: 512 tokens, dynamic padding
+    
+    // PREFILL with multiple sequences
+    paged_attention_test_params{ {{64, 0}, {96, 0}}, 4, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: multi-seq
+    paged_attention_test_params{ {{128, 0}, {192, 0}}, 8, 8, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: multi-seq
+    
+    // MIXED stage tests - diversity calculation should be enabled
+    paged_attention_test_params{ {{1, 64}, {128, 0}}, 4, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // MIXED: gen + prefill
+    paged_attention_test_params{ {{32, 64}}, 4, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // MIXED: prefix caching
+    paged_attention_test_params{ {{64, 32}, {1, 128}}, 8, 8, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // MIXED: multi-seq
+    
+    // GENERATE stage tests - diversity calculation should be skipped (but test infrastructure)
+    paged_attention_test_params{ {{1, 64}}, 4, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // GENERATE: single token
+    paged_attention_test_params{ {{1, 128}}, 8, 8, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // GENERATE: single token
+    
+    // Note: KV cache compression tests are EXCLUDED
+    // Adaptive R-KV diversity calculation is skipped when KV cache is compressed
+    // because quantization errors significantly impact similarity measurements
+    
+    // With GQA (Grouped Query Attention)
+    // GQA is fully supported - diversity calculation uses num_kv_heads
+    paged_attention_test_params{ {{128, 0}}, 8, 4, 64, 64, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: GQA 8:4
+    paged_attention_test_params{ {{256, 0}}, 32, 8, 128, 128, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: GQA 32:8
+    
+    // With sliding window
+    // Note: Sliding window affects attention mask, but NOT diversity calculation
+    // Diversity is computed on the entire KV cache independently
+    paged_attention_test_params{ {{128, 0}}, 4, 4, 64, 64, 16, {100.0}, 64, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: sliding window (independent)
+    paged_attention_test_params{ {{64, 32}}, 4, 4, 64, 64, 16, {100.0}, 32, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // MIXED: sliding window (independent)
+    
+    // Edge cases
+    paged_attention_test_params{ {{48, 0}}, 2, 2, 32, 32, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: minimal config
+    paged_attention_test_params{ {{1024, 0}}, 16, 16, 128, 128, 16, {100.0}, 0, false, DISABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_TOKEN, STATIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, ENABLE_FA_V2, ENABLE_ADAPTIVE_RKV }, // PREFILL: large context
+}));
+

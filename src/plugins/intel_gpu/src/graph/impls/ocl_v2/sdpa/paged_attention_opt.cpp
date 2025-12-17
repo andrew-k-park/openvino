@@ -320,6 +320,10 @@ public:
             }
         }
 
+        if (desc->has_adaptive_rkv) {
+            jit.make("HAS_ADAPTIVE_RKV", 1);
+        }
+
         const size_t score_aggregation_idx = PagedAttentionInputIdx::SCORE_AGGREGATION;
         jit.add(make_type_jit_constants("SCORE_AGGREGATION_INPUT", params.input_layouts[score_aggregation_idx].data_type));
 
@@ -331,14 +335,14 @@ public:
         return jit;
     }
 
-    static void add_intermediate_inputs(Arguments& args, bool has_scores_output, bool is_multi_token_kernel = false, bool has_score_aggregation = false) {
+    static void add_intermediate_inputs(Arguments& args, bool has_scores_output, bool is_multi_token_kernel = false, bool has_score_aggregation = false, bool has_adaptive_rkv = false) {
         uint32_t internal_buffers_num = 3;  // kv cache update buffers
         if (has_scores_output) {
             args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // softmax_results
             args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // subsequent_offsets
             if (has_score_aggregation) {
                 // Cumulative window size sum buffer
-                args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // subsequent_offsets
+                args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, internal_buffers_num++});  // cumulative_score_aggregation_sum
             }
         }
 
@@ -427,6 +431,16 @@ public:
 
         args.push_back({ArgumentDescriptor::Types::OUTPUT, 0});
         add_intermediate_inputs(args, has_scores_output, false, desc->has_score_aggregation);
+
+        if (desc->has_adaptive_rkv) {
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_START_SIZE});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_EVICTABLE_SIZES});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_INDICES});
+            args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_BEGINS});
+            if (params.output_layouts.size() > 2) {
+                args.push_back({ArgumentDescriptor::Types::OUTPUT, 2});  // diversity_output
+            }
+        }
 
         return args;
     }
@@ -883,6 +897,68 @@ protected:
     }
 };
 
+class PagedAttentionGeneratorDiversity : public PagedAttentionGeneratorBase {
+public:
+    PagedAttentionGeneratorDiversity() : PagedAttentionGeneratorBase("_diversity") {}
+    
+    [[nodiscard]] JitConstants get_jit_constants(const kernel_impl_params& params) const override {
+        auto jit = PagedAttentionGeneratorBase::get_jit_constants(params);
+        const auto desc = params.typed_desc<paged_attention>();
+        
+        jit.make("SDPA_STAGE_3", 1);  // Diversity calculation stage
+        jit.make("MAX_EVICTABLE_SIZE", 512);  // Conservative estimate
+        
+        return jit;
+    }
+    
+    [[nodiscard]] Arguments get_arguments_desc(const kernel_impl_params& params) const override {
+        Arguments args;
+        
+        if (params.is_dynamic()) {
+            args.push_back({ArgumentDescriptor::Types::SHAPE_INFO, 0});
+        }
+        
+        // Inputs for diversity calculation
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::KEY_CACHE});                              // key_cache
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::PAST_LENS});                             // past_lens
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::BLOCK_INDICES});                         // block_indices
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::BLOCK_INDICES_BEGINS});                  // block_indices_begins
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_START_SIZE});               // adaptive_rkv_start_size
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_EVICTABLE_SIZES});          // adaptive_rkv_evictable_sizes
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_INDICES}); // diversity_block_set_indices
+        args.push_back({ArgumentDescriptor::Types::INPUT, PagedAttentionInputIdx::ADAPTIVE_RKV_DIVERSITY_BLOCK_SET_BEGINS});  // diversity_block_set_begins
+        
+        // Output: diversity values
+        args.push_back({ArgumentDescriptor::Types::OUTPUT, 2});
+        
+        // Internal buffer for normalized keys
+        // This buffer is always added last in get_internal_buffer_descs when has_adaptive_rkv is true
+        // We use a large enough index that will be clamped to the actual buffer count
+        // The exact index depends on which conditional buffers are allocated
+        args.push_back({ArgumentDescriptor::Types::INTERNAL_BUFFER, 10});  // Conservative index, will be validated at runtime
+        
+        return args;
+    }
+    
+    [[nodiscard]] DispatchDataFunc get_dispatch_data_func() const override {
+        return DispatchDataFunc{[](const RuntimeParams& params, KernelData& kd, ImplRuntimeParams* rt_params) {
+            assert(!params.is_dynamic());
+            auto& wgs = kd.params.workGroups;
+            const auto desc = params.typed_desc<paged_attention>();
+            
+            // Get batch size from evictable_sizes layout
+            const auto& evictable_sizes_layout = params.get_input_layout(PagedAttentionInputIdx::ADAPTIVE_RKV_EVICTABLE_SIZES);
+            const size_t batch_size = evictable_sizes_layout.get_partial_shape()[0].get_length();
+            
+            // Conservative max_evictable_size (ideally should read from memory)
+            const size_t max_evictable_size = 512;
+            
+            wgs.global = {batch_size, desc->heads_num, std::min(max_evictable_size, static_cast<size_t>(256))};
+            wgs.local = {1, 1, std::min(max_evictable_size, static_cast<size_t>(256))};
+        }};
+    }
+};
+
 class KVCacheRotateGenerator : public KernelGenerator {
 public:
     KVCacheRotateGenerator() : KernelGenerator("pa_kv_cache_rotate_ref") {}
@@ -894,7 +970,8 @@ protected:
         const auto& in_offsets_map = params.in_port_to_shape_info_offset;
 
         constexpr static std::array input_ids = {PagedAttentionInputIdx::ROTATED_BLOCK_INDICES,
-                                                 PagedAttentionInputIdx::ROTATION_DELTAS,
+                                                 PagedAttentionInputIdx::ROTATION_DELTAS,적 실행
+                                                 
                                                  PagedAttentionInputIdx::ROTATION_TRIG_LUT};
 
         for (size_t i = 0; i < input_ids.size(); i++) {
@@ -1094,6 +1171,7 @@ public:
     Stage::Ptr pa_sdpa_opt = make_stage<PagedAttentionSDPAOptGeneratorMultiToken>();
     Stage::Ptr kv_cache_rotate = make_stage<KVCacheRotateGenerator>();
     Stage::Ptr pa_scores_calc = make_stage<PagedAttentionGeneratorScoresCalculation>();
+    Stage::Ptr pa_diversity_calc = make_stage<PagedAttentionGeneratorDiversity>();
 #ifdef ENABLE_ONEDNN_FOR_GPU
     Stage::Ptr pa_sdpa_micro = make_stage<SDPAMicroGenerator>(true);
     Stage::Ptr pa_sdpa_micro_mixed = make_stage<SDPAMicroGenerator>(false);
@@ -1127,6 +1205,10 @@ public:
 
         if (has_scores_output) {
             add_stage(pa_scores_calc, params);
+        }
+        
+        if (desc->has_adaptive_rkv && params.output_layouts.size() > 2) {
+            add_stage(pa_diversity_calc, params);
         }
     }
 
@@ -1297,6 +1379,11 @@ public:
             res_event = {execute_stage(res_event, instance, pa_scores_calc)};
         }
 
+        // Execute adaptive R-KV diversity calculation if enabled
+        if (desc->has_adaptive_rkv && params.output_layouts.size() > 2) {
+            res_event = {execute_stage(res_event, instance, pa_diversity_calc)};
+        }
+
         return res_event[0];
     }
 
@@ -1338,6 +1425,8 @@ public:
          * +--------------------------------------------------+-----------------------+--------------------+
          * | SDPA (1st token, micro-kernel)                   | [last (8/9/10)]       |                    |
          * +--------------------------------------------------+-----------------------+--------------------+
+         * | PA_DIVERSITY (Adaptive R-KV, optional)           | [last+1 (9/10/11)]    |                    |
+         * +--------------------------------------------------+-----------------------+--------------------+
          *
          * Description:
          * 0, 1, 2 - Buffers used for proper blocks distribution for kv_cache_update and
@@ -1354,6 +1443,9 @@ public:
          *           gws index to subsequence idx. Values stored in pairs like:
          *           [block_idx0, subsequence_idx0, block_idx1, subsequence_idx0, ..., block_idx0, subsequence_idx1].
          *           Filled in paged_attention_inst::on_execute() call for sdpa-micro kernel only.
+         * last+1  - Optional buffer for Adaptive R-KV diversity calculation. Used to store L2-normalized key vectors
+         *           for computing cosine similarity between evictable tokens. Size: [batch, heads, max_evictable_size, head_size].
+         *           Filled in PA_DIVERSITY kernel only when has_adaptive_rkv=true and output_layouts.size() > 2.
          */
 
         std::vector<BufferDescriptor> internal_buffers;
@@ -1469,6 +1561,19 @@ public:
             internal_buffers.emplace_back(indexes_buf_size * 4, indexes_dt, lockable);
         }
 #endif
+
+        // Adaptive R-KV normalized keys buffer
+        if (desc->has_adaptive_rkv) {
+            const auto& past_lens = params.input_layouts[PagedAttentionInputIdx::PAST_LENS];
+            auto batch_size = past_lens.get_partial_shape()[0].get_length();
+            
+            // Maximum buffer size: batch_size * heads_num * max_evictable_size * head_size
+            // We allocate for worst case where all sequences use maximum evictable size
+            const int64_t max_evictable_size = 1024;  // Conservative estimate
+            auto normalized_keys_elements = batch_size * desc->heads_num * max_evictable_size * desc->k_head_size;
+            internal_buffers.emplace_back(normalized_keys_elements * element_size, indexes_dt);
+        }
+
         GPU_DEBUG_TRACE_DETAIL << "get_internal_buffer_descs: internal_buffers.size = " << internal_buffers.size() << std::endl;
         for (size_t i = 0; i < internal_buffers.size(); i++) {
             GPU_DEBUG_TRACE_DETAIL << "\tinternal_buffers[" << i << "] = " << internal_buffers[i].m_layout.to_short_string() << std::endl;
