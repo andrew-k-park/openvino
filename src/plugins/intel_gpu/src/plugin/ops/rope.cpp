@@ -30,6 +30,17 @@ static void CreateRoPEOp(ProgramBuilder& p, const std::shared_ptr<op::internal::
 
     OPENVINO_ASSERT(!config.is_interleaved || !config.output_trans0213, "[GPU] Unsupported ROPE parameters");
 
+    // LTX-Video specific validation
+    if (config.is_ltx_video) {
+        OPENVINO_ASSERT(config.is_interleaved, "[GPU] LTX-Video RoPE requires interleaved mode");
+        OPENVINO_ASSERT(!config.is_chatglm && !config.is_qwen, 
+                        "[GPU] LTX-Video RoPE is incompatible with ChatGLM/Qwen modes");
+        OPENVINO_ASSERT(inputs.size() == 3, 
+                        "[GPU] LTX-Video RoPE expects exactly 3 inputs (input, cos, sin)");
+        OPENVINO_ASSERT(config.rotary_ndims == 2048, 
+                        "[GPU] LTX-Video RoPE expects rotary_ndims = 2048");
+    }
+
     auto rope = cldnn::rope(layer_type_name_ID(op),
                             inputs,
                             config,
