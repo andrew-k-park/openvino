@@ -69,6 +69,7 @@ bool RoPEFusion::run_on_model(const std::shared_ptr<ov::Model>& model) {
     symbolic_ctx_manager->register_pass<ov::pass::RoPEFusionGPTNEOX>(3);
     symbolic_ctx_manager->register_pass<ov::pass::RoPEFusionGPTJ>();
     symbolic_ctx_manager->register_pass<ov::pass::RoPEFusionGPTOSS>();
+    symbolic_ctx_manager->register_pass<ov::pass::RoPEFusionLtxVideo>();
     // optional heads & tails are fused in separate matcher pass,
     // after RoPENode has been created.
     symbolic_ctx_manager->register_pass<ov::pass::RoPEFusionCosSinPreprocess>();
@@ -1198,6 +1199,121 @@ RoPEFusionGPTOSS::RoPEFusionGPTOSS() {
                               new_node);
         ov::replace_node(root, new_node);
         register_new_node(new_node);
+        return true;
+    };
+
+    auto m = std::make_shared<pattern::Matcher>(result, matcher_name);
+    this->register_matcher(m, callback);
+}
+
+RoPEFusionLtxVideo::RoPEFusionLtxVideo() {
+    MATCHER_SCOPE(RoPEFusionLtxVideo);
+    
+    // LTX-Video 3D spatial-temporal RoPE (verified from IR dump Model11_1162_RoPEFusionGPTOSS.svg.dot):
+    // Input: [batch, seq_len, 2048] - 1024 complex pairs in interleaved format
+    // 
+    // Exact pattern from RMS_94371 (to_k output):
+    // 1. x → Reshape[...,1024,2] → Split(axis=-1) → [out0: real, out1: imag]
+    // 2. Split.out1 → Multiply(-1) → Squeeze → Unsqueeze → neg_imag
+    // 3. Concat(in0=neg_imag, in1=Split.out0, axis=-1) → Reshape → rotated_x
+    // 4. Multiply(x, cos) + Multiply(rotated_x, sin) = Add
+    
+    auto x = pattern::any_input();
+    auto cos_freqs = pattern::any_input();
+    auto sin_freqs = pattern::any_input();
+    
+    // Reshape to [batch, seq_len, 1024, 2]
+    // Note: shape can be Constant or dynamically computed (e.g., Concat for dynamic shapes)
+    auto reshape_shape = pattern::any_input();
+    auto x_reshape = pattern::wrap_type<v1::Reshape>({x, reshape_shape});
+    
+    // Split along axis=-1 into real (out0) and imag (out1)
+    auto split_axis = pattern::wrap_type<v0::Constant>();
+    auto split = pattern::wrap_type<v1::Split>({x_reshape, split_axis});
+    split->set_output_size(2);
+    
+    // Negate imaginary: Multiply(-1) → Squeeze → Unsqueeze
+    auto neg_constant = pattern::wrap_type<v0::Constant>();
+    auto neg_imag_mul = pattern::wrap_type<v1::Multiply>({split->output(1), neg_constant});
+    
+    auto squeeze_axes = pattern::wrap_type<v0::Constant>();
+    auto squeeze_imag = pattern::wrap_type<v0::Squeeze>({neg_imag_mul, squeeze_axes});
+    
+    auto unsqueeze_axes = pattern::wrap_type<v0::Constant>();
+    auto neg_imag_unsqueeze = pattern::wrap_type<v0::Unsqueeze>({squeeze_imag, unsqueeze_axes});
+    
+    // Concat [-imag, real] along axis=-1
+    auto x_rotated_concat = pattern::wrap_type<v0::Concat>({neg_imag_unsqueeze, split->output(0)});
+    
+    // Reshape back to [batch, seq_len, 2048]
+    // Note: shape can be Constant or dynamically computed
+    auto reshape_back_shape = pattern::any_input();
+    auto x_rotated = pattern::wrap_type<v1::Reshape>({x_rotated_concat, reshape_back_shape});
+    
+    // RoPE formula: x * cos + rotated_x * sin
+    auto real_mul_cos = pattern::wrap_type<v1::Multiply>({x, cos_freqs});
+    auto imag_mul_sin = pattern::wrap_type<v1::Multiply>({x_rotated, sin_freqs});
+    
+    // Final result: x * cos + rotated(x) * sin
+    auto result = pattern::wrap_type<v1::Add>({real_mul_cos, imag_mul_sin});
+
+    matcher_pass_callback callback = [OV_CAPTURE_CPY_AND_THIS](pattern::Matcher& m) {
+        const auto& pattern_map = m.get_pattern_value_map();
+        auto root = m.get_match_root();
+
+        // Verify this is the LTX-Video pattern by checking dimensions
+        if (pattern_map.find(x) == pattern_map.end()) {
+            return false;
+        }
+
+        const auto& x_val = pattern_map.at(x);
+        auto x_shape = x_val.get_partial_shape();
+
+        if (x_shape.rank().is_dynamic() || x_shape.rank().get_length() != 3) {
+            return false;
+        }
+        
+        // Last dimension should be 2048 (1024 complex pairs)
+        if (x_shape[2].is_dynamic() || x_shape[2].get_length() != 2048) {
+            return false;
+        }
+
+        ov::op::internal::RoPE::Config config;
+        OutputVector new_args;
+        
+        // LTX-Video uses pre-computed cos/sin tables with interleaved complex format
+        config.is_ltx_video = true;
+        config.is_interleaved = true;
+        config.rotary_ndims = 2048;  // Full dimension is rotary embedded
+        config.input_trans0213 = false;
+        config.output_trans0213 = false;
+        config.is_chatglm = false;
+        config.is_qwen = false;
+        
+        // Input tensor
+        new_args.push_back(x_val);
+        // Cos frequencies
+        new_args.push_back(pattern_map.at(cos_freqs));
+        // Sin frequencies  
+        new_args.push_back(pattern_map.at(sin_freqs));
+        
+        auto old_node = root;
+        auto new_node = std::make_shared<ov::op::internal::RoPE>(new_args, config);
+        new_node->set_friendly_name(old_node->get_friendly_name());
+        
+        std::cerr << "[RoPEFusionLtxVideo] Created RoPE node: " << new_node->get_friendly_name() << std::endl;
+        
+        // Copy runtime info from all matched nodes
+        NodeVector matched_nodes;
+        for (const auto& kv : pattern_map) {
+            matched_nodes.push_back(kv.second.get_node_shared_ptr());
+        }
+        ov::copy_runtime_info(matched_nodes, new_node);
+        
+        ov::replace_node(old_node, new_node);
+        register_new_node(new_node);
+        
+        std::cerr << "[RoPEFusionLtxVideo] ✓✓✓ SUCCESS: RoPE fusion completed! ✓✓✓" << std::endl;
         return true;
     };
 

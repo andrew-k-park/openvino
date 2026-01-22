@@ -96,6 +96,8 @@ protected:
                 jit.make("USE_ROPE_CACHE", true);
             }
             jit.make("CHATGLM", true);
+        } else if (desc->config.is_ltx_video) {
+            jit.make("LTX_VIDEO", true);
         } else if (desc->config.is_interleaved) {
             jit.make("RotateInterleaved", true);
         } else {
@@ -164,6 +166,14 @@ protected:
                         wgs.global = {b, f, cfg.head_cnt * (cfg.rotary_ndims / 2ul) / vec_size};
                     }
 
+                } else if (cfg.is_ltx_video) {
+                    // LTX-Video: [batch, seq_len, 2048] - no head structure
+                    // gws[0] = batch
+                    // gws[1] = seq_len 
+                    // gws[2] = 1024 / vec_size (HALF_ROTARY_NDIMS / vec_size)
+                    auto b = extract_channel(ChannelName::BATCH, in_l);
+                    auto f = extract_channel(ChannelName::FEATURE, in_l);
+                    wgs.global = {b, f, cfg.rotary_ndims / 2ul / vec_size};
                 } else {
                     auto b = extract_channel(ChannelName::BATCH, out_l);
                     auto f = extract_channel(ChannelName::FEATURE, out_l);
