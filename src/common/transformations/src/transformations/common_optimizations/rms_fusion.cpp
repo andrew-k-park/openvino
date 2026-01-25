@@ -4,6 +4,7 @@
 
 #include "transformations/common_optimizations/rms_fusion.hpp"
 
+#include <iostream>
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "openvino/op/add.hpp"
@@ -87,16 +88,19 @@ RMSFusion::RMSFusion(bool force_tail_convert, bool enable_div_x) {
         mul_or_div = std::make_shared<pattern::op::Or>(OutputVector{mul1});
     }
 
-    // x * 1/Sqrt(ReduceMean(x^2,axes)+eps) * gamma
+    // x * 1/Sqrt(ReduceMean(x^2,axes)+eps) * gamma (gamma is optional)
     auto gamma = pattern::wrap_type<v0::Constant>();
     auto gamma_convert = pattern::optional<v0::Convert>(gamma);
 
     auto mul2 = pattern::wrap_type<v1::Multiply>({gamma_convert, mul_or_div});
+    
+    // Support RMS without gamma: just x * 1/Sqrt(ReduceMean(x^2,axes)+eps)
+    auto rms_with_or_without_gamma = std::make_shared<pattern::op::Or>(OutputVector{mul2, mul_or_div});
 
-    std::shared_ptr<ov::Node> comp = mul2;
+    std::shared_ptr<ov::Node> comp = rms_with_or_without_gamma;
     if (force_tail_convert) {
         // compress RMS result
-        comp = pattern::wrap_type<v0::Convert>({mul2});
+        comp = pattern::wrap_type<v0::Convert>({rms_with_or_without_gamma});
     }
 
     matcher_pass_callback callback = [OV_CAPTURE_CPY_AND_THIS](pattern::Matcher& m) {
@@ -114,9 +118,33 @@ RMSFusion::RMSFusion(bool force_tail_convert, bool enable_div_x) {
             return false;
         }
 
-        auto gamma_node = pattern_map.at(gamma).get_node_shared_ptr();
-        if (pattern_map.find(gamma_convert) != pattern_map.end()) {
-            gamma_node = pattern_map.at(gamma_convert).get_node_shared_ptr();
+        // Check if gamma is present in the pattern
+        std::shared_ptr<ov::Node> gamma_node;
+        bool has_gamma = (pattern_map.find(gamma) != pattern_map.end());
+        
+        if (has_gamma) {
+            std::cout << "[RMSFusion] Pattern matched WITH gamma for node: " 
+                      << m.get_match_root()->get_friendly_name() << std::endl;
+            gamma_node = pattern_map.at(gamma).get_node_shared_ptr();
+            if (pattern_map.find(gamma_convert) != pattern_map.end()) {
+                gamma_node = pattern_map.at(gamma_convert).get_node_shared_ptr();
+            }
+        } else {
+            std::cout << "[RMSFusion] Pattern matched WITHOUT gamma for node: " 
+                      << m.get_match_root()->get_friendly_name() 
+                      << " - creating ones constant for gamma" << std::endl;
+            // No gamma in pattern, create a ones constant
+            const auto& mean_node = pattern_map.at(mean).get_node_shared_ptr();
+            auto input_shape = mean_node->get_input_partial_shape(0);
+            if (input_shape.rank().is_dynamic() || input_shape[input_shape.size() - 1].is_dynamic()) {
+                std::cout << "[RMSFusion] Failed: dynamic shape for gamma creation" << std::endl;
+                return false;  // Need static last dimension for gamma shape
+            }
+            auto last_dim = input_shape[input_shape.size() - 1].get_length();
+            auto gamma_shape = ov::Shape{static_cast<size_t>(last_dim)};
+            auto output_type = m.get_match_root()->get_output_element_type(0);
+            gamma_node = v0::Constant::create(output_type, gamma_shape, {1.0f});
+            std::cout << "[RMSFusion] Created gamma with shape: [" << last_dim << "]" << std::endl;
         }
 
         const auto& mean_node = pattern_map.at(mean).get_node_shared_ptr();
@@ -130,10 +158,16 @@ RMSFusion::RMSFusion(bool force_tail_convert, bool enable_div_x) {
         }
 
         auto output_type = m.get_match_root()->get_output_element_type(0);
-        auto rms = std::make_shared<ov::op::internal::RMS>(x_output, gamma_node, eps_value, output_type);
+        // elementwise_affine = false when gamma is ones constant (created, not from model)
+        auto rms = std::make_shared<ov::op::internal::RMS>(x_output, gamma_node, eps_value, output_type, has_gamma);
         rms->set_friendly_name(m.get_match_root()->get_friendly_name());
         ov::copy_runtime_info(m.get_matched_nodes(), rms);
         ov::replace_node(m.get_match_root(), rms);
+
+        std::cout << "[RMSFusion] Successfully fused RMS node: " 
+                  << rms->get_friendly_name() 
+                  << " (eps=" << eps_value 
+                  << ", has_gamma=" << (has_gamma ? "true" : "false") << ")" << std::endl;
 
         return true;
     };

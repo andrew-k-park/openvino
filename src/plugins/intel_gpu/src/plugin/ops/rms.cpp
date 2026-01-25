@@ -16,12 +16,16 @@ static void CreateRMSOp(ProgramBuilder& p, const std::shared_ptr<RMS>& op) {
     auto inputs = p.GetInputInfo(op);
     std::string primitive_name = layer_type_name_ID(op);
 
-    auto rms = cldnn::rms(primitive_name,
-                          inputs[0],
-                          inputs[1],
-                          op->get_epsilon());
-    rms.output_data_types = get_output_data_types(op);
-    p.add_primitive(*op, rms);
+    // Get elementwise_affine from RMS op attribute
+    bool elementwise_affine = op->get_elementwise_affine();
+
+    auto rms_prim = cldnn::rms(primitive_name,
+                               inputs[0],
+                               inputs[1],
+                               op->get_epsilon(),
+                               elementwise_affine);
+    rms_prim.output_data_types = get_output_data_types(op);
+    p.add_primitive(*op, rms_prim);
 }
 
 REGISTER_FACTORY_IMPL(internal, RMS);

@@ -41,7 +41,12 @@ KERNEL(rms_gpu_ref)(
 #elif INPUT0_DIMS == 5
                 const uint gamma_idx = z;
 #endif
+#if !ELEMENTWISE_AFFINE
+                // elementwise_affine=false: skip gamma multiplication (gamma is ones)
+                OUTPUT_TYPE result = TO_OUTPUT_TYPE(rms) * TO_OUTPUT_TYPE(input[input_idx]);
+#else
                 OUTPUT_TYPE result = TO_OUTPUT_TYPE(rms) * TO_OUTPUT_TYPE(input[input_idx]) * TO_OUTPUT_TYPE(gamma[gamma_idx]);
+#endif
                 #if HAS_FUSED_OPS
                     FUSED_OPS;
                     result = FUSED_OPS_RESULT;
