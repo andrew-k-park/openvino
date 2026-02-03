@@ -1547,5 +1547,90 @@ void RoPETestGPTOSS::SetUp() {
     function = buildROPE_GPTOSS(num_head, rotary_dims, element_type);
 }
 
+std::shared_ptr<ov::Model> RoPETestLtxVideo::buildROPE_LtxVideo(int batch,
+                                                                int seq_length,
+                                                                int rotary_dims,
+                                                                ov::element::Type element_type) {
+    // LTX-Video RoPE pattern: input [batch, seq_len, rotary_dims] where rotary_dims = 2 * half_rotary_dims
+    // Pattern: Reshape -> Split -> Multiply(-1) -> Concat -> Multiply(sin) + Multiply(cos)
+    auto input = std::make_shared<ov::opset1::Parameter>(element_type, PartialShape{batch, seq_length, rotary_dims});
+    auto cos_cache = std::make_shared<ov::opset1::Parameter>(element_type, PartialShape{1, seq_length, rotary_dims});
+    auto sin_cache = std::make_shared<ov::opset1::Parameter>(element_type, PartialShape{1, seq_length, rotary_dims});
+
+    // Reshape to [batch, seq_len, half_rotary_dims, 2]
+    auto reshape_shape = makeConst(element::i64, ov::Shape({4}), {0, 0, rotary_dims / 2, 2});
+    auto reshape = std::make_shared<ov::op::v1::Reshape>(input, reshape_shape, true);
+
+    // Split along last dimension to separate real and imaginary parts
+    auto split_axis = makeConst(element::i64, ov::Shape(), {-1});
+    auto split = std::make_shared<ov::op::v1::Split>(reshape, split_axis, 2);
+
+    // Negate imaginary part
+    auto neg_const = makeConst(element_type, ov::Shape({}), {-1.0f});
+    auto neg_imag = std::make_shared<ov::op::v1::Multiply>(split->output(1), neg_const);
+
+    // Concat [-imag, real] to get rotated vector
+    auto concat = std::make_shared<ov::op::v0::Concat>(OutputVector{neg_imag, split->output(0)}, -1);
+
+    // Reshape back to [batch, seq_len, rotary_dims]
+    auto reshape_back_shape = makeConst(element::i64, ov::Shape({3}), {0, 0, rotary_dims});
+    auto reshape_back = std::make_shared<ov::op::v1::Reshape>(concat, reshape_back_shape, true);
+
+    // Apply cos and sin
+    auto mul_cos = std::make_shared<ov::op::v1::Multiply>(input, cos_cache);
+    auto mul_sin = std::make_shared<ov::op::v1::Multiply>(reshape_back, sin_cache);
+    auto result = std::make_shared<ov::op::v1::Add>(mul_cos, mul_sin);
+
+    return std::make_shared<ov::Model>(ov::OutputVector{result}, ov::ParameterVector{input, cos_cache, sin_cache});
+}
+
+void RoPETestLtxVideo::generate_inputs(const std::vector<ov::Shape>& targetInputStaticShapes) {
+    const auto& funcInputs = function->inputs();
+
+    ov::test::utils::InputGenerateData in_data;
+    in_data.start_from = -1;
+    in_data.range = 2;
+    in_data.resolution = 32768;
+
+    auto cos_data = in_data;
+    cos_data.seed = 10;
+
+    auto sin_data = in_data;
+    sin_data.seed = 20;
+
+    ov::Tensor t_input = utils::create_and_fill_tensor(funcInputs[0].get_element_type(), targetInputStaticShapes[0], in_data);
+    ov::Tensor t_cos = utils::create_and_fill_tensor(funcInputs[1].get_element_type(), targetInputStaticShapes[1], cos_data);
+    ov::Tensor t_sin = utils::create_and_fill_tensor(funcInputs[2].get_element_type(), targetInputStaticShapes[2], sin_data);
+
+    inputs.clear();
+    inputs.insert({funcInputs[0].get_node_shared_ptr(), t_input});
+    inputs.insert({funcInputs[1].get_node_shared_ptr(), t_cos});
+    inputs.insert({funcInputs[2].get_node_shared_ptr(), t_sin});
+}
+
+void RoPETestLtxVideo::SetUp() {
+    const auto& [element_type, _targetDevice] = this->GetParam();
+    targetDevice = _targetDevice;
+
+    const int batch = 1;
+    const int seq_length = 2520;  // 7 frames * 30 * 12 patches
+    const int rotary_dims = 2048;  // LTX-Video uses 2048 dims for RoPE
+
+    std::vector<InputShape> input_shapes = {
+        {{batch, seq_length, rotary_dims}, {{batch, seq_length, rotary_dims}}},
+        {{1, seq_length, rotary_dims}, {{1, seq_length, rotary_dims}}},
+        {{1, seq_length, rotary_dims}, {{1, seq_length, rotary_dims}}}
+    };
+    init_input_shapes(input_shapes);
+    function = buildROPE_LtxVideo(batch, seq_length, rotary_dims, element_type);
+}
+
+std::string RoPETestLtxVideo::getTestCaseName(const testing::TestParamInfo<rope_params>& obj) {
+    const auto& [element_type, targetDevice] = obj.param;
+    std::ostringstream result;
+    result << "targetDevice=" << targetDevice << ",element_type=" << element_type.to_string();
+    return result.str();
+}
+
 }  // namespace test
 }  // namespace ov
