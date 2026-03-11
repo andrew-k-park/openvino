@@ -2489,3 +2489,462 @@ TEST_P(resample_opt_random_test, random_cached) {
 TEST(resample_gpu, basic_in2x3x2x2_nearest_cached) {
     test_basic_in2x3x2x2_nearest<float>(true);
 }
+
+// ============================================================
+// resample_bfyx_cubic_opt kernel tests
+// ============================================================
+
+// Fixed-value test: 1x1x4x4 → 1x1x8x8, HALF_PIXEL, f32
+// Expected values computed using the Keys cubic formula offline.
+TEST(resample_gpu, bfyx_cubic_opt_upscale_2x_f32) {
+    auto& engine = get_test_engine();
+
+    // 4×4 ramp-up input
+    auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 4, 4 } });
+    set_values(input, {
+        1.f, 2.f, 3.f, 4.f,
+        5.f, 6.f, 7.f, 8.f,
+        9.f,10.f,11.f,12.f,
+       13.f,14.f,15.f,16.f,
+    });
+
+    std::vector<int64_t> out_sizes{ 1, 1, 8, 8 };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::HALF_PIXEL));
+
+    // Run with resample_ref to get reference output
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    // Run with resample_bfyx_cubic_opt
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<float> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<float> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(ref_ptr[i], opt_ptr[i], 1e-4f) << " at index " << i;
+    }
+}
+
+// Fixed-value test: 1x1x4x4 → 1x1x8x8, HALF_PIXEL, f16
+TEST(resample_gpu, bfyx_cubic_opt_upscale_2x_f16) {
+    auto& engine = get_test_engine();
+
+    auto input_f32 = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 4, 4 } });
+    set_values(input_f32, {
+        1.f, 2.f, 3.f, 4.f,
+        5.f, 6.f, 7.f, 8.f,
+        9.f,10.f,11.f,12.f,
+       13.f,14.f,15.f,16.f,
+    });
+
+    auto input = engine.allocate_memory({ data_types::f16, format::bfyx, { 1, 1, 4, 4 } });
+    cldnn::mem_lock<ov::float16> inp_ptr(input, get_test_stream());
+    cldnn::mem_lock<float> inp_f32_ptr(input_f32, get_test_stream());
+    for (size_t i = 0; i < 16; ++i)
+        inp_ptr[i] = ov::float16(inp_f32_ptr[i]);
+
+    std::vector<int64_t> out_sizes{ 1, 1, 8, 8 };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::HALF_PIXEL));
+
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<ov::float16> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<ov::float16> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(static_cast<float>(ref_ptr[i]),
+                    static_cast<float>(opt_ptr[i]), 1e-2f) << " at index " << i;
+    }
+}
+
+// Downscale test: 1x1x8x8 → 1x1x4x4, HALF_PIXEL, f32
+TEST(resample_gpu, bfyx_cubic_opt_downscale_2x_f32) {
+    auto& engine = get_test_engine();
+
+    auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 8, 8 } });
+    std::vector<float> vals(64);
+    for (int i = 0; i < 64; ++i)
+        vals[i] = static_cast<float>(i + 1);
+    set_values(input, vals);
+
+    std::vector<int64_t> out_sizes{ 1, 1, 4, 4 };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::HALF_PIXEL));
+
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<float> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<float> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(ref_ptr[i], opt_ptr[i], 1e-4f) << " at index " << i;
+    }
+}
+
+// Multi-batch, multi-feature: 2x3x4x4 → 2x3x8x8, HALF_PIXEL, f32
+TEST(resample_gpu, bfyx_cubic_opt_multi_b_f_f32) {
+    auto& engine = get_test_engine();
+
+    const int B = 2, F = 3, HW = 4;
+    auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { B, F, HW, HW } });
+    std::vector<float> vals(B * F * HW * HW);
+    for (size_t i = 0; i < vals.size(); ++i)
+        vals[i] = static_cast<float>(i) * 0.5f;
+    set_values(input, vals);
+
+    std::vector<int64_t> out_sizes{ B, F, HW * 2, HW * 2 };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::HALF_PIXEL));
+
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<float> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<float> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(ref_ptr[i], opt_ptr[i], 1e-4f) << " at index " << i;
+    }
+}
+
+// Coordinate transform mode: ALIGN_CORNERS, f32
+TEST(resample_gpu, bfyx_cubic_opt_align_corners_f32) {
+    auto& engine = get_test_engine();
+
+    auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 1, 4, 4 } });
+    set_values(input, {
+        1.f, 2.f, 3.f, 4.f,
+        5.f, 6.f, 7.f, 8.f,
+        9.f,10.f,11.f,12.f,
+       13.f,14.f,15.f,16.f,
+    });
+
+    std::vector<int64_t> out_sizes{ 1, 1, 7, 7 };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::ALIGN_CORNERS));
+
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<float> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<float> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(ref_ptr[i], opt_ptr[i], 1e-4f) << " at index " << i;
+    }
+}
+
+// Coordinate transform mode: ASYMMETRIC, f32
+TEST(resample_gpu, bfyx_cubic_opt_asymmetric_f32) {
+    auto& engine = get_test_engine();
+
+    auto input = engine.allocate_memory({ data_types::f32, format::bfyx, { 1, 2, 5, 6 } });
+    std::vector<float> vals(60);
+    for (int i = 0; i < 60; ++i) vals[i] = static_cast<float>(i);
+    set_values(input, vals);
+
+    std::vector<int64_t> out_sizes{ 1, 2, 9, 11 };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::ASYMMETRIC));
+
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<float> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<float> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(ref_ptr[i], opt_ptr[i], 1e-4f) << " at index " << i;
+    }
+}
+
+// Qwen3-VL real-world scenario: 1x3x14x14 → 1x3x1024x2048, HALF_PIXEL, f16
+// (reduced to 1×3×14×14 → 1×3×56×56 to keep test time manageable)
+TEST(resample_gpu, bfyx_cubic_opt_qwen3vl_like_f16) {
+    auto& engine = get_test_engine();
+
+    const int F = 3, IN_H = 14, IN_W = 14, OUT_H = 56, OUT_W = 56;
+    auto input = engine.allocate_memory({ data_types::f16, format::bfyx, { 1, F, IN_H, IN_W } });
+    {
+        mem_lock<ov::float16> ptr{ input, get_test_stream() };
+        for (size_t i = 0; i < ptr.size(); ++i)
+            ptr[i] = ov::float16(static_cast<float>(i % 256) / 255.f);
+    }
+
+    std::vector<int64_t> out_sizes{ 1, F, OUT_H, OUT_W };
+    topology topo;
+    topo.add(input_layout("in", input->get_layout()));
+    topo.add(resample("resample", input_info("in"), out_sizes,
+                      std::vector<float>{}, {},
+                      {0, 0, 0, 0}, {0, 0, 0, 0},
+                      0, -0.75f,
+                      resample::InterpolateOp::InterpolateMode::CUBIC,
+                      resample::InterpolateOp::ShapeCalcMode::SIZES,
+                      resample::InterpolateOp::CoordinateTransformMode::HALF_PIXEL));
+
+    ExecutionConfig cfg_ref = get_test_default_config(engine);
+    cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_ref.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+    network net_ref(engine, topo, cfg_ref);
+    net_ref.set_input_data("in", input);
+    auto out_ref = net_ref.execute().at("resample").get_memory();
+
+    ExecutionConfig cfg_opt = get_test_default_config(engine);
+    cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    cfg_opt.set_property(ov::intel_gpu::force_implementations(
+        ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+    network net_opt(engine, topo, cfg_opt);
+    net_opt.set_input_data("in", input);
+    auto out_opt = net_opt.execute().at("resample").get_memory();
+
+    ASSERT_EQ(out_ref->count(), out_opt->count());
+    mem_lock<ov::float16> ref_ptr{ out_ref, get_test_stream() };
+    mem_lock<ov::float16> opt_ptr{ out_opt, get_test_stream() };
+    for (size_t i = 0; i < out_ref->count(); ++i) {
+        ASSERT_NEAR(static_cast<float>(ref_ptr[i]),
+                    static_cast<float>(opt_ptr[i]), 5e-3f) << " at index " << i;
+    }
+}
+
+// Parameterized random test: ref vs resample_bfyx_cubic_opt
+struct bfyx_cubic_opt_random_test_params {
+    data_types input_type;
+    tensor input_size;
+    tensor output_size;
+    resample::InterpolateOp::CoordinateTransformMode ctm;
+};
+
+struct bfyx_cubic_opt_random_test : testing::TestWithParam<bfyx_cubic_opt_random_test_params> {
+    tests::random_generator rg;
+
+    void SetUp() override { rg.set_seed(GET_SUITE_NAME); }
+
+    void fill_random(memory::ptr mem) {
+        auto l = mem->get_layout();
+        size_t b = l.batch(), f = l.feature(), y = l.spatial(1), x = l.spatial(0);
+        if (mem->get_layout().data_type == data_types::f32) {
+            auto d = rg.generate_random_4d<float>(b, f, y, x, -8, 8, 8);
+            mem_lock<float> ptr{ mem, get_test_stream() };
+            for (size_t bi = 0; bi < b; ++bi)
+                for (size_t fi = 0; fi < f; ++fi)
+                    for (size_t yi = 0; yi < y; ++yi)
+                        for (size_t xi = 0; xi < x; ++xi)
+                            ptr[l.get_linear_offset(tensor(batch(bi), feature(fi), spatial(xi, yi)))]
+                                = d[bi][fi][yi][xi];
+        } else {
+            auto d = rg.generate_random_4d<ov::float16>(b, f, y, x, -8, 8, 4);
+            mem_lock<ov::float16> ptr{ mem, get_test_stream() };
+            for (size_t bi = 0; bi < b; ++bi)
+                for (size_t fi = 0; fi < f; ++fi)
+                    for (size_t yi = 0; yi < y; ++yi)
+                        for (size_t xi = 0; xi < x; ++xi)
+                            ptr[l.get_linear_offset(tensor(batch(bi), feature(fi), spatial(xi, yi)))]
+                                = d[bi][fi][yi][xi];
+        }
+    }
+
+    void execute(const bfyx_cubic_opt_random_test_params& params) {
+        auto& engine = get_test_engine();
+        auto in_layout = layout(params.input_type, format::bfyx, params.input_size);
+        auto in_mem = engine.allocate_memory(in_layout);
+        fill_random(in_mem);
+
+        std::vector<int64_t> out_sizes{
+            params.output_size.batch[0], params.output_size.feature[0],
+            params.output_size.spatial[1], params.output_size.spatial[0]
+        };
+
+        topology topo;
+        topo.add(input_layout("in", in_layout));
+        topo.add(resample("resample", input_info("in"), out_sizes,
+                          std::vector<float>{}, {},
+                          {0, 0, 0, 0}, {0, 0, 0, 0},
+                          0, -0.75f,
+                          resample::InterpolateOp::InterpolateMode::CUBIC,
+                          resample::InterpolateOp::ShapeCalcMode::SIZES,
+                          params.ctm));
+
+        ExecutionConfig cfg_ref = get_test_default_config(engine);
+        cfg_ref.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+        cfg_ref.set_property(ov::intel_gpu::force_implementations(
+            ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_ref"}} }));
+        network net_ref(engine, topo, cfg_ref);
+        net_ref.set_input_data("in", in_mem);
+        auto out_ref = net_ref.execute().at("resample").get_memory();
+
+        ExecutionConfig cfg_opt = get_test_default_config(engine);
+        cfg_opt.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+        cfg_opt.set_property(ov::intel_gpu::force_implementations(
+            ov::intel_gpu::ImplForcingMap{ {"resample", {format::bfyx, "resample_bfyx_cubic_opt"}} }));
+        network net_opt(engine, topo, cfg_opt);
+        net_opt.set_input_data("in", in_mem);
+        auto out_opt = net_opt.execute().at("resample").get_memory();
+
+        ASSERT_EQ(out_ref->count(), out_opt->count());
+        const float tol = (params.input_type == data_types::f16) ? 5e-3f : 1e-4f;
+        if (params.input_type == data_types::f32) {
+            mem_lock<float> ref_ptr{ out_ref, get_test_stream() };
+            mem_lock<float> opt_ptr{ out_opt, get_test_stream() };
+            for (size_t i = 0; i < out_ref->count(); ++i)
+                ASSERT_NEAR(ref_ptr[i], opt_ptr[i], tol) << " at index " << i;
+        } else {
+            mem_lock<ov::float16> ref_ptr{ out_ref, get_test_stream() };
+            mem_lock<ov::float16> opt_ptr{ out_opt, get_test_stream() };
+            for (size_t i = 0; i < out_ref->count(); ++i)
+                ASSERT_NEAR(static_cast<float>(ref_ptr[i]),
+                            static_cast<float>(opt_ptr[i]), tol) << " at index " << i;
+        }
+    }
+};
+
+TEST_P(bfyx_cubic_opt_random_test, random) { execute(GetParam()); }
+
+using CTM = resample::InterpolateOp::CoordinateTransformMode;
+
+INSTANTIATE_TEST_SUITE_P(
+    bfyx_cubic_opt_smoke,
+    bfyx_cubic_opt_random_test,
+    testing::ValuesIn(std::vector<bfyx_cubic_opt_random_test_params>{
+        // upscale, f32, various CTMs
+        { data_types::f32, {1,  1,  5,  5}, {1,  1, 10, 10}, CTM::HALF_PIXEL },
+        { data_types::f32, {1,  1,  5,  5}, {1,  1, 10, 10}, CTM::ALIGN_CORNERS },
+        { data_types::f32, {1,  1,  5,  5}, {1,  1, 10, 10}, CTM::ASYMMETRIC },
+        // upscale, f16
+        { data_types::f16, {1,  3,  7,  7}, {1,  3, 14, 14}, CTM::HALF_PIXEL },
+        { data_types::f16, {1,  3,  7,  7}, {1,  3, 14, 14}, CTM::ASYMMETRIC },
+        // downscale
+        { data_types::f32, {1,  2, 16, 16}, {1,  2,  8,  8}, CTM::HALF_PIXEL },
+        { data_types::f16, {1,  2, 16, 16}, {1,  2,  8,  8}, CTM::HALF_PIXEL },
+        // non-uniform scale (4:3 aspect)
+        { data_types::f32, {1,  1,  4,  4}, {1,  1,  6,  9}, CTM::HALF_PIXEL },
+        { data_types::f16, {1,  1,  4,  4}, {1,  1,  6,  9}, CTM::HALF_PIXEL },
+        // multi-batch, multi-feature
+        { data_types::f32, {2,  4,  6,  8}, {2,  4, 12, 16}, CTM::HALF_PIXEL },
+        { data_types::f16, {2,  4,  6,  8}, {2,  4, 12, 16}, CTM::HALF_PIXEL },
+        // large upscale similar to Qwen3-VL (14→56)
+        { data_types::f16, {1,  3, 14, 14}, {1,  3, 56, 56}, CTM::HALF_PIXEL },
+    }));
