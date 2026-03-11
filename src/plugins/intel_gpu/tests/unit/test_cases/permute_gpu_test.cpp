@@ -2527,3 +2527,136 @@ INSTANTIATE_TEST_SUITE_P(, TiledPerformancePermuteTest,
         {{1, 256, 128, 256}, format::bfyx},
         {{1, 256, 256, 128}, format::b_fs_yx_fsv16},
     }));
+
+// -----------------------------------------------------------------------
+// permute_b_f_axes tests
+// Verifies correctness of the B <-> F axis swap optimized kernel.
+// All tests run both permute_ref and permute_b_f_axes on the same input
+// and compare results element-by-element.
+// -----------------------------------------------------------------------
+
+struct PermuteBFAxesParam {
+    std::vector<ov::Dimension::value_type> sizes;  // [B, F, spatial...]
+    cldnn::format fmt;
+    std::vector<uint16_t> order;
+    std::string desc;
+};
+
+class permute_b_f_axes_test : public ::testing::TestWithParam<PermuteBFAxesParam> {
+public:
+    cldnn::engine& engine = get_test_engine();
+    permute_b_f_axes_test() : engine(get_test_engine()) {}
+
+    template <data_types DType>
+    void run() {
+        using elem_t = typename ov::element_type_traits<DType>::value_type;
+        auto p = GetParam();
+
+        // Build tensor from sizes: sizes are [B, F, Y, X] or [B, F, Z, Y, X] etc.
+        // cldnn tensor ctor expects [B, F, X, Y, Z, W] — swap X and last spatial.
+        std::vector<ov::Dimension::value_type> t_sizes(p.sizes);
+        // sizes already in [B, F, spatial...] order aligned with bfyx/bfzyx/bfwzyx
+        // For a 4D tensor sizes = {B, F, Y, X}
+        // cldnn tensor(bfyx) = {B, F, X, Y} — note X and Y are swapped in the API
+        std::swap(t_sizes.at(2), t_sizes.back());
+        cldnn::tensor tensor(t_sizes);
+
+        auto input = engine.allocate_memory({DType, p.fmt, tensor});
+        tests::set_random_values<elem_t>(input);
+
+        topology topo(
+            input_layout("input", input->get_layout()),
+            permute("output", input_info("input"), p.order));
+
+        // --- reference run ---
+        ExecutionConfig cfg_ref = get_test_default_config(engine);
+        ov::intel_gpu::ImplementationDesc impl_ref = {p.fmt, "permute_ref"};
+        cfg_ref.set_property(ov::intel_gpu::force_implementations(
+            ov::intel_gpu::ImplForcingMap{{"output", impl_ref}}));
+        auto net_ref = get_network(engine, topo, cfg_ref, get_test_stream_ptr(), false);
+        net_ref->set_input_data("input", input);
+        auto out_ref_mem = net_ref->execute().at("output").get_memory();
+
+        // --- optimized run ---
+        ExecutionConfig cfg_opt = get_test_default_config(engine);
+        ov::intel_gpu::ImplementationDesc impl_opt = {p.fmt, "permute_b_f_axes"};
+        cfg_opt.set_property(ov::intel_gpu::force_implementations(
+            ov::intel_gpu::ImplForcingMap{{"output", impl_opt}}));
+        auto net_opt = get_network(engine, topo, cfg_opt, get_test_stream_ptr(), false);
+        net_opt->set_input_data("input", input);
+        auto out_opt_mem = net_opt->execute().at("output").get_memory();
+
+        // --- compare ---
+        cldnn::mem_lock<elem_t, mem_lock_type::read> ref_ptr(out_ref_mem, get_test_stream());
+        cldnn::mem_lock<elem_t, mem_lock_type::read> opt_ptr(out_opt_mem, get_test_stream());
+        const size_t n = out_ref_mem->get_layout().get_linear_size();
+        for (size_t i = 0; i < n; ++i) {
+            ASSERT_EQ(ref_ptr[i], opt_ptr[i]) << "Mismatch at element " << i;
+        }
+    }
+
+    static std::string PrintToStringParamName(
+        const testing::TestParamInfo<PermuteBFAxesParam>& info) {
+        return info.param.desc;
+    }
+};
+
+// --- 4D bfyx test cases ---
+class permute_b_f_axes_4d : public permute_b_f_axes_test {};
+
+INSTANTIATE_TEST_SUITE_P(
+    smoke_permute_b_f_axes,
+    permute_b_f_axes_4d,
+    ::testing::ValuesIn(std::vector<PermuteBFAxesParam>{
+        // X aligned to FP16 VEC_WIDTH=8
+        {{2, 3, 16, 64},   format::bfyx, {1, 0, 2, 3}, "4d_b2_f3_y16_x64_aligned"},
+        // X not aligned (remainder path)
+        {{2, 3, 16, 65},   format::bfyx, {1, 0, 2, 3}, "4d_b2_f3_y16_x65_remainder"},
+        // Qwen3-VL actual attention shape: [8192, 3, 16, 64]
+        {{8192, 3, 16, 64}, format::bfyx, {1, 0, 2, 3}, "4d_qwen3vl_attn_shape"},
+        // B=F (square case)
+        {{4, 4, 8, 8},     format::bfyx, {1, 0, 2, 3}, "4d_b4_f4_square"},
+        // X=1 edge case — scalar only, no vectorization
+        {{2, 3, 4, 1},     format::bfyx, {1, 0, 2, 3}, "4d_x1_scalar_only"},
+        // Large F > VEC_WIDTH
+        {{1, 16, 4, 16},   format::bfyx, {1, 0, 2, 3}, "4d_b1_f16_large_feat"},
+    }),
+    permute_b_f_axes_4d::PrintToStringParamName);
+
+TEST_P(permute_b_f_axes_4d, f16) { run<cldnn::data_types::f16>(); }
+TEST_P(permute_b_f_axes_4d, f32) { run<cldnn::data_types::f32>(); }
+TEST_P(permute_b_f_axes_4d, i8)  { run<cldnn::data_types::i8>();  }
+TEST_P(permute_b_f_axes_4d, i32) { run<cldnn::data_types::i32>(); }
+TEST_P(permute_b_f_axes_4d, i64) { run<cldnn::data_types::i64>(); }
+
+// --- 5D bfzyx test cases ---
+class permute_b_f_axes_5d : public permute_b_f_axes_test {};
+
+INSTANTIATE_TEST_SUITE_P(
+    smoke_permute_b_f_axes,
+    permute_b_f_axes_5d,
+    ::testing::ValuesIn(std::vector<PermuteBFAxesParam>{
+        {{2, 3, 4, 8, 16},  format::bfzyx, {1, 0, 2, 3, 4}, "5d_b2_f3_z4_y8_x16_aligned"},
+        {{2, 3, 4, 8, 17},  format::bfzyx, {1, 0, 2, 3, 4}, "5d_b2_f3_z4_y8_x17_remainder"},
+        {{1, 8, 2, 16, 64}, format::bfzyx, {1, 0, 2, 3, 4}, "5d_b1_f8_large"},
+    }),
+    permute_b_f_axes_5d::PrintToStringParamName);
+
+TEST_P(permute_b_f_axes_5d, f16) { run<cldnn::data_types::f16>(); }
+TEST_P(permute_b_f_axes_5d, f32) { run<cldnn::data_types::f32>(); }
+TEST_P(permute_b_f_axes_5d, i32) { run<cldnn::data_types::i32>(); }
+
+// --- 6D bfwzyx test cases ---
+class permute_b_f_axes_6d : public permute_b_f_axes_test {};
+
+INSTANTIATE_TEST_SUITE_P(
+    smoke_permute_b_f_axes,
+    permute_b_f_axes_6d,
+    ::testing::ValuesIn(std::vector<PermuteBFAxesParam>{
+        {{2, 3, 2, 4, 8, 16}, format::bfwzyx, {1, 0, 2, 3, 4, 5}, "6d_b2_f3_w2_z4_y8_x16_aligned"},
+        {{2, 3, 2, 4, 8, 17}, format::bfwzyx, {1, 0, 2, 3, 4, 5}, "6d_b2_f3_w2_z4_y8_x17_remainder"},
+    }),
+    permute_b_f_axes_6d::PrintToStringParamName);
+
+TEST_P(permute_b_f_axes_6d, f16) { run<cldnn::data_types::f16>(); }
+TEST_P(permute_b_f_axes_6d, f32) { run<cldnn::data_types::f32>(); }
