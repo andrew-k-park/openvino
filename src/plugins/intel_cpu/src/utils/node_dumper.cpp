@@ -30,11 +30,26 @@ static void formatNodeName(std::string& name) {
     std::replace(name.begin(), name.end(), ':', '-');
 }
 
-static bool shouldBeDumped(const NodePtr& node, const DebugCapsConfig& config, const std::string& portsKind) {
+static bool shouldBeDumped(const NodePtr& node, const DebugCapsConfig& config, const std::string& portsKind, int count = -1) {
     const auto& dumpFilters = config.blobDumpFilters;
 
     if (dumpFilters.empty()) {
         return false;
+    }
+
+    if (!config.blobDumpIterations.empty() && count >= 0) {
+        std::stringstream ss(config.blobDumpIterations);
+        int iterIdx = 0;
+        bool matched = false;
+        while (ss >> iterIdx) {
+            if (iterIdx == count) {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            return false;
+        }
     }
 
     if (auto it = dumpFilters.find(DebugCapsConfig::FILTER::BY_PORTS);
@@ -134,7 +149,7 @@ static std::filesystem::path createDumpFilePath(const std::filesystem::path& blo
 }
 
 void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count) {
-    if (!shouldBeDumped(node, config, "IN")) {
+    if (!shouldBeDumped(node, config, "IN", count)) {
         return;
     }
 
@@ -173,7 +188,7 @@ void dumpInputBlobs(const NodePtr& node, const DebugCapsConfig& config, int coun
 }
 
 void dumpOutputBlobs(const NodePtr& node, const DebugCapsConfig& config, int count) {
-    if (!shouldBeDumped(node, config, "OUT")) {
+    if (!shouldBeDumped(node, config, "OUT", count)) {
         return;
     }
 
