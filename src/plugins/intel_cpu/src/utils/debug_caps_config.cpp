@@ -66,6 +66,10 @@ void DebugCapsConfig::readProperties() {
         blobDumpFilters[FILTER::BY_NAME] = envVarValue;
     }
 
+    if (const auto* envVarValue = readEnv("OV_CPU_BLOB_DUMP_ITERATIONS")) {
+        blobDumpIterations = envVarValue;
+    }
+
     if (!blobDumpFilters.empty()) {
         ov::util::create_directory_recursive(blobDumpDir);
     }
