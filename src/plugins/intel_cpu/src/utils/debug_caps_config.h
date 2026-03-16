@@ -48,6 +48,7 @@ public:
     std::string blobDumpDir = "cpu_dump";
     FORMAT blobDumpFormat = FORMAT::TEXT;
     std::unordered_map<FILTER, std::string> blobDumpFilters;
+    std::string blobDumpIterations;  // space-separated iteration indices to dump, empty = all
     bool summaryPerf = false;
     std::string memoryStatisticsDumpPath;
 

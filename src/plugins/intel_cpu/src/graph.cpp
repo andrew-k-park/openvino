@@ -405,6 +405,12 @@ void Graph::Activate() {
 #endif
 
     CPU_DEBUG_CAP_ENABLE(serialize(*this));
+
+#ifdef CPU_DEBUG_CAPS
+    if (!getConfig().debugCaps.blobDumpFilters.empty()) {
+        ResetInferCount();
+    }
+#endif
 }
 
 void Graph::Configure([[maybe_unused]] bool optimize) {
