@@ -17,6 +17,7 @@
 #include "openvino/core/graph_util.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/concat.hpp"
+#include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/op/variadic_split.hpp"
@@ -58,6 +59,24 @@ FullyConnectedHorizontalFusion::FullyConnectedHorizontalFusion(bool fuse_mlp_swi
         auto is_placeholder = [](const std::shared_ptr<ov::Node> node) {
             return ov::as_type_ptr<op::Placeholder>(node);
         };
+        // Check if an FC has a LoRA consumer: Add(FC_output, MatMul(Multiply(...), B))
+        // When LoRA Add is present, FC horizontal fusion must be skipped to preserve
+        // oneDNN post-sum fusion which performs the Add in FP32 accumulator precision
+        auto has_lora_consumer = [](const std::shared_ptr<ov::Node>& fc_node) {
+            for (const auto& consumer : fc_node->get_users()) {
+                const auto& add = ov::as_type_ptr<ov::op::v1::Add>(consumer);
+                if (!add)
+                    continue;
+                for (size_t i = 0; i < 2; ++i) {
+                    const auto& matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->get_input_node_shared_ptr(i));
+                    if (!matmul)
+                        continue;
+                    if (ov::is_type<ov::op::v1::Multiply>(matmul->get_input_node_shared_ptr(0)))
+                        return true;
+                }
+            }
+            return false;
+        };
 
         const auto& fc = ov::as_type_ptr<op::FullyConnectedCompressed>(output.get_node_shared_ptr());
         const auto& input = fc->get_input_node_shared_ptr(0);
@@ -70,6 +89,8 @@ FullyConnectedHorizontalFusion::FullyConnectedHorizontalFusion(bool fuse_mlp_swi
             const auto& fc_user = ov::as_type_ptr<op::FullyConnectedCompressed>(u);
             if (!fc_user)
                 continue;
+            if (has_lora_consumer(fc_user))
+                return false;
             auto num_inputs = fc_user->inputs().size();
             if (num_inputs >= 5)
                 nodes_with_zp++;
