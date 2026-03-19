@@ -1408,8 +1408,9 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
                 manager.register_pass<ov::intel_gpu::LoRASubgraphHorizontalFusion>();
             }
 
-            // Temporary disabling for BMG due to regression
-            if (device_info.arch != cldnn::gpu_arch::xe2 && !config.get_enable_lora_operation()) {
+            // Use LoRAHorizontalFusion as a fallback when LoraSubgraphFusion is not available
+            // (skipped on IMMAD due to callback, or lora operation disabled) and not on BMG (xe2 regression)
+            if (device_info.arch != cldnn::gpu_arch::xe2 && (device_info.supports_immad || !config.get_enable_lora_operation())) {
                 manager.register_pass<ov::intel_gpu::LoRAHorizontalFusion>();
             }
         }
