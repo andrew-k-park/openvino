@@ -93,6 +93,7 @@
 #include "plugin/transformations/kv_cache_compression.hpp"
 #include "plugin/transformations/kv_cache_fusion.hpp"
 #include "plugin/transformations/lora_horizontal_fusion.hpp"
+#include "plugin/transformations/lora_horizontal_simple_fusion.hpp"
 #include "plugin/transformations/lora_subgraph_horizontal_fusion.hpp"
 #include "plugin/transformations/move_fc_reshape_to_weights.hpp"
 #include "plugin/transformations/optimize_subsequent_reshapes.hpp"
@@ -1429,8 +1430,12 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             }
 
             // Temporary disabling for BMG due to regression
-            if (device_info.arch != cldnn::gpu_arch::xe2 && (!config.get_enable_lora_operation() || device_info.supports_immad)) {
+            if (device_info.arch != cldnn::gpu_arch::xe2 && !config.get_enable_lora_operation()) {
                 manager.register_pass<ov::intel_gpu::LoRAHorizontalFusion>();
+            }
+
+            if (!config.get_enable_lora_operation() || device_info.supports_immad) {
+                manager.register_pass<ov::intel_gpu::LoRAHorizontalSimpleFusion>();
             }
         }
 
