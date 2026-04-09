@@ -491,7 +491,9 @@ void sdpa_kernel_lsc_prefetch(
 
             matrix<half, num_K, REG_M * REG_K> Kmat;
             //cm_slm_block_read(slm_K, GENX_NONE, slm_offset, Kmat.format<half>());
-            prefetch_K.set_block_y(wg_local_id + kv_pos + kv_step);
+            // Prefetch ahead: 2 steps on Xe2+ (more compute per iter), 1 step on Xe1/HPG
+            constexpr int k_prefetch_ahead = (q_step >= 16) ? 2*kv_step : kv_step;
+            prefetch_K.set_block_y(wg_local_id + kv_pos + k_prefetch_ahead);
             cm_prefetch<CacheHint::Cached, CacheHint::Cached>(prefetch_K.set_block_x(0));
 
             b2dK.set_block_y(kv_pos);
@@ -538,7 +540,9 @@ void sdpa_kernel_lsc_prefetch(
         Transpose2DMatrix(St, P);
 
         b2dV.set_block_y(kv_pos);
-        prefetch_V.set_block_y(wg_local_id +kv_pos + kv_step);
+        // Prefetch ahead: 2 steps on Xe2+, 1 step on Xe1/HPG
+        constexpr int v_prefetch_ahead = (q_step >= 16) ? 2*kv_step : kv_step;
+        prefetch_V.set_block_y(wg_local_id + kv_pos + v_prefetch_ahead);
         if (kv_pos == 0) {
             // ugemm_PV0(slm_V, P, rO, slm_offset);
             auto P2 = P.format<half, num_P_tiles, REG_M * REG_K>();
@@ -683,8 +687,8 @@ void sdpa_kernel_lsc_prefetch_kv2x(
         {
             auto St2 = St0.format<float, num_K, REG_M*REG_N>();
 
-            // Prefetch block 1's K while loading block 0's K
-            prefetch_K.set_block_y(wg_local_id + kv_pos + kv_step);
+            // Prefetch next iteration's block 0 K (2 logical steps ahead)
+            prefetch_K.set_block_y(wg_local_id + kv_pos + LOGICAL_KV_STEP);
             cm_prefetch<CacheHint::Cached, CacheHint::Cached>(prefetch_K.set_block_x(0));
 
             b2dK.set_block_y(kv_pos);
@@ -711,8 +715,8 @@ void sdpa_kernel_lsc_prefetch_kv2x(
         if (has_blk1) {
             auto St2 = St1.format<float, num_K, REG_M*REG_N>();
 
-            // Prefetch next iteration's block 0's K
-            prefetch_K.set_block_y(wg_local_id + kv_pos + LOGICAL_KV_STEP);
+            // Prefetch next iteration's block 1 K (3 kv_step ahead)
+            prefetch_K.set_block_y(wg_local_id + kv_pos + LOGICAL_KV_STEP + kv_step);
             cm_prefetch<CacheHint::Cached, CacheHint::Cached>(prefetch_K.set_block_x(0));
 
             b2dK.set_block_y(kv_pos + kv_step);
@@ -755,6 +759,7 @@ void sdpa_kernel_lsc_prefetch_kv2x(
             Transpose2DMatrix(St0, P);
 
             b2dV.set_block_y(kv_pos);
+            // Prefetch V for block 1 (next within this iteration)
             prefetch_V.set_block_y(wg_local_id + kv_pos + kv_step);
             auto P2 = P.format<half, num_P_tiles, REG_M * REG_K>();
 
@@ -802,6 +807,7 @@ void sdpa_kernel_lsc_prefetch_kv2x(
             Transpose2DMatrix(St1, P);
 
             b2dV.set_block_y(kv_pos + kv_step);
+            // Prefetch V for next iteration's block 0 (2 logical steps ahead)
             prefetch_V.set_block_y(wg_local_id + kv_pos + LOGICAL_KV_STEP);
             auto P2 = P.format<half, num_P_tiles, REG_M * REG_K>();
 
