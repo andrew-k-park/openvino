@@ -49,14 +49,22 @@ _GENX_MAIN_ void KERNEL_NAME(
     //#   key [kv_len, num_heads, S]
     //# value [kv_len, num_heads, S]
     constexpr int padded_head_size = (head_size + 16 - 1) / 16 *16;
+
+#if USE_LSC_PREFETCH
+    // LSC prefetch path loads K/V directly from memory via block-2D,
+    // no SLM needed — avoid reserving SLM to improve EU occupancy.
+    cm_slm_init(0);
+    uint slm_K = 0, slm_V = 0;  // unused, but keep variables for non-prefetch fallback paths
+#else
     constexpr uint K_SLM_SIZE = (4*kv_step * padded_head_size * sizeof(half));
     constexpr uint V_SLM_SIZE = (4*kv_step * padded_head_size * sizeof(half));
-    constexpr uint Q_SLM_SIZE = 0;//(q_step * padded_head_size * sizeof(half)) * local_size;
+    constexpr uint Q_SLM_SIZE = 0;
 
     cm_slm_init(K_SLM_SIZE + V_SLM_SIZE + Q_SLM_SIZE);
 
     auto slm_K = cm_slm_alloc(K_SLM_SIZE);
     auto slm_V = cm_slm_alloc(V_SLM_SIZE);
+#endif
 
     auto h = cm_group_id(0);
     auto hkv = h / (num_heads/num_kv_heads);
