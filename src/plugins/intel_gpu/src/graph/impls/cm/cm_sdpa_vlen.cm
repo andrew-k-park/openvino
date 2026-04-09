@@ -112,16 +112,31 @@ _GENX_MAIN_ void KERNEL_NAME(
 
 #if USE_LSC == 1
 #if USE_LSC_PREFETCH
-    sdpa_kernel_lsc_prefetch<false, num_heads, num_kv_heads, head_size, 0, 16>(
-                                wg_local_id,
-                                q_start,
-                                kv_seq_len,
-                                q_len,
-                                kv_seq_len, //kv_len,
-                                reinterpret_cast<svmptr_t>(query + qo_offset),
-                                reinterpret_cast<svmptr_t>(key + kv_offset),
-                                reinterpret_cast<svmptr_t>(value + kv_offset),
-                                reinterpret_cast<svmptr_t>(output + qo_offset));
+    // Use KV 2x unrolled version for small head_size on Xe2+ (q_step=16)
+    // On Xe1/HPG (q_step=8), the K1 prefetch distance is too short to hide memory latency
+    if constexpr (head_size <= 64 && q_step >= 16) {
+        sdpa_kernel_lsc_prefetch_kv2x<false, num_heads, num_kv_heads, head_size, 0, 16>(
+                                    wg_local_id,
+                                    q_start,
+                                    kv_seq_len,
+                                    q_len,
+                                    kv_seq_len,
+                                    reinterpret_cast<svmptr_t>(query + qo_offset),
+                                    reinterpret_cast<svmptr_t>(key + kv_offset),
+                                    reinterpret_cast<svmptr_t>(value + kv_offset),
+                                    reinterpret_cast<svmptr_t>(output + qo_offset));
+    } else {
+        sdpa_kernel_lsc_prefetch<false, num_heads, num_kv_heads, head_size, 0, 16>(
+                                    wg_local_id,
+                                    q_start,
+                                    kv_seq_len,
+                                    q_len,
+                                    kv_seq_len,
+                                    reinterpret_cast<svmptr_t>(query + qo_offset),
+                                    reinterpret_cast<svmptr_t>(key + kv_offset),
+                                    reinterpret_cast<svmptr_t>(value + kv_offset),
+                                    reinterpret_cast<svmptr_t>(output + qo_offset));
+    }
 #else
     sdpa_kernel_lsc<false, num_heads, num_kv_heads, head_size>(
                                 slm_K,

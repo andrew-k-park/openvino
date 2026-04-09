@@ -316,6 +316,48 @@ vector<float, cols> online_softmax_update(matrix_ref<T, rows, cols> St, vector_r
     return max_comp;
 }
 
+// 2-block fused online softmax: processes St0 and St1 jointly
+// to reduce softmax correction overhead when processing 2*kv_step tokens per iteration.
+// After return, St0/St1 contain the exponentiated probability values.
+template<typename T, int rows, int cols>
+vector<float, cols> online_softmax_update_2blk(
+    matrix_ref<T, rows, cols> St0,
+    matrix_ref<T, rows, cols> St1,
+    vector_ref<T, cols> cur_max,
+    vector_ref<T, cols> cur_sum) {
+    // Find max across both blocks
+    vector<float, cols> new_max_t;
+    new_max_t = cm_max<float>(St0[0], St0[1]);
+    #pragma unroll
+    for(int r = 2; r < rows; r++) new_max_t = cm_max<float>(new_max_t, St0[r]);
+    #pragma unroll
+    for(int r = 0; r < rows; r++) new_max_t = cm_max<float>(new_max_t, St1[r]);
+    new_max_t = cm_max<float>(new_max_t, cur_max);
+
+    // Pt = exp(St - new_max) for both blocks
+    constexpr float log2e = 1.4426950408889634f;
+    #pragma unroll
+    for(int r = 0; r < rows; r++) St0[r] = cm_exp((St0[r] - new_max_t)*log2e);
+    #pragma unroll
+    for(int r = 0; r < rows; r++) St1[r] = cm_exp((St1[r] - new_max_t)*log2e);
+
+    // Sum across both blocks
+    vector<float, cols> row_sum_t;
+    row_sum_t = cm_add<float>(St0[0], St0[1]);
+    #pragma unroll
+    for(int r = 2; r < rows; r++) row_sum_t = cm_add<float>(row_sum_t, St0[r]);
+    #pragma unroll
+    for(int r = 0; r < rows; r++) row_sum_t = cm_add<float>(row_sum_t, St1[r]);
+
+    // Correction factor for previous accumulator
+    vector<float, cols> max_comp;
+    max_comp = cm_exp((cur_max - new_max_t)*log2e);
+    cur_sum = cm_mul<float>(cur_sum, max_comp);
+    cur_sum = cm_add<float>(cur_sum, row_sum_t);
+    cur_max = new_max_t;
+    return max_comp;
+}
+
 #ifdef CM_HAS_LSC_UNTYPED_2D
     #define cm_load_normal cm_load<lsc::Normal>
     #define cm_load_transpose cm_load<lsc::Transpose>
