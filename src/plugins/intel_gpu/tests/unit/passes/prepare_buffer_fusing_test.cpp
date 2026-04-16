@@ -1995,3 +1995,94 @@ TEST(prepare_buffer_fusing, in_place_crop_dynamic_batch_axis_split_with_reshape_
     for (size_t i = 0; i < slice_elems; i++)
         ASSERT_FLOAT_EQ(v_out[i], input_data[2 * slice_elems + i]) << "V mismatch at " << i;
 }
+
+// GDN-like pattern: VariadicSplit with heterogeneous sizes where a crop's
+// accumulated offset is not divisible by a reshape consumer's divider.
+// e.g. split [128, 6, 6, 96] on axis 2, crop3 (96) at offset 140 → reshape [12, 8]
+// divider=8, 140 % 8 != 0 → crop must NOT be in-place optimized to avoid
+// integer division truncation in padding calculation.
+TEST(prepare_buffer_fusing, in_place_crop_misaligned_offset_with_reshape) {
+    auto& engine = get_test_engine();
+    tests::random_generator rg(GET_SUITE_NAME);
+
+    // Input: [1, 236, 1, 1] where 236 = 128 + 6 + 6 + 96
+    // Split on axis 1 (feature) into [128, 6, 6, 96]
+    // crop3 (size=96) → reshape [1, 12, 8, 1]: divider=8, offset=140, 140%8=4 ≠ 0
+    const int64_t total = 236;
+    const std::vector<int64_t> split_sizes = {128, 6, 6, 96};
+
+    auto in_layout = layout{ov::PartialShape{-1, total, 1, 1}, data_types::f32, format::bfyx};
+    auto input_mem = engine.allocate_memory({{1, total, 1, 1}, data_types::f32, format::bfyx});
+    auto axis_mem = engine.allocate_memory({{}, data_types::i64, format::bfyx});
+    auto splits_length_mem = engine.allocate_memory({{4}, data_types::i64, format::bfyx});
+
+    const int64_t axis = 1;
+
+    // Fill input with sequential values so we can verify exact data
+    std::vector<float> input_data(total);
+    for (int64_t i = 0; i < total; i++)
+        input_data[i] = static_cast<float>(i);
+    set_values(input_mem, input_data);
+    set_values<int64_t>(axis_mem, {axis});
+    set_values<int64_t>(splits_length_mem, split_sizes);
+
+    // Reshape crop3 [1,96,1,1] → [1,12,8,1]
+    const std::vector<int64_t> reshape_pattern = {1, 12, 8, 1};
+    const ov::PartialShape reshape_out_shape = {1, 12, 8, 1};
+
+    cldnn::crop_ngraph_op_mode op_mode = cldnn::crop_ngraph_op_mode::variadic_split;
+    topology topology(
+        input_layout("input", in_layout),
+        data("axis", axis_mem),
+        data("splits_length", splits_length_mem),
+        // crop0 (128): no reshape consumer, just output directly
+        crop("crop0", {input_info("input"), input_info("axis"), input_info("splits_length")}, cldnn::tensor(1), cldnn::tensor(0), op_mode, 0, axis),
+        reorder("output0", input_info("crop0"), format::bfyx, data_types::f32, std::vector<float>(), reorder_mean_mode::subtract, padding(), true),
+        // crop1 (6): no reshape
+        crop("crop1", {input_info("input"), input_info("axis"), input_info("splits_length")}, cldnn::tensor(1), cldnn::tensor(0), op_mode, 1, axis),
+        reorder("output1", input_info("crop1"), format::bfyx, data_types::f32, std::vector<float>(), reorder_mean_mode::subtract, padding(), true),
+        // crop2 (6): no reshape
+        crop("crop2", {input_info("input"), input_info("axis"), input_info("splits_length")}, cldnn::tensor(1), cldnn::tensor(0), op_mode, 2, axis),
+        reorder("output2", input_info("crop2"), format::bfyx, data_types::f32, std::vector<float>(), reorder_mean_mode::subtract, padding(), true),
+        // crop3 (96) → reshape [1,1,12,8]: offset=140, divider=8, 140%8=4 → misaligned!
+        crop("crop3", {input_info("input"), input_info("axis"), input_info("splits_length")}, cldnn::tensor(1), cldnn::tensor(0), op_mode, 3, axis),
+        reshape("reshape3", input_info("crop3"), false, reshape_pattern, reshape_out_shape, cldnn::reshape::reshape_mode::base),
+        reorder("output3", input_info("reshape3"), format::bfyx, data_types::f32, std::vector<float>(), reorder_mean_mode::subtract, padding(), true)
+    );
+
+    auto config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    config.set_property(ov::intel_gpu::optimize_data(true));
+    network network(engine, topology, config);
+    network.set_input_data("input", input_mem);
+
+    auto outputs = network.execute();
+
+    // Verify crop3 data: should be elements [140..235]
+    auto out3_mem = outputs.at("output3").get_memory();
+    cldnn::mem_lock<float> out3(out3_mem, get_test_stream());
+
+    ASSERT_EQ(out3.size(), 96u);
+    const size_t crop3_offset = 128 + 6 + 6;  // = 140
+    for (size_t i = 0; i < 96; i++)
+        ASSERT_FLOAT_EQ(out3[i], input_data[crop3_offset + i]) << "crop3 mismatch at " << i;
+
+    // Also verify other crops are correct
+    auto out0_mem = outputs.at("output0").get_memory();
+    cldnn::mem_lock<float> out0(out0_mem, get_test_stream());
+    ASSERT_EQ(out0.size(), 128u);
+    for (size_t i = 0; i < 128; i++)
+        ASSERT_FLOAT_EQ(out0[i], input_data[i]) << "crop0 mismatch at " << i;
+
+    auto out1_mem = outputs.at("output1").get_memory();
+    cldnn::mem_lock<float> out1(out1_mem, get_test_stream());
+    ASSERT_EQ(out1.size(), 6u);
+    for (size_t i = 0; i < 6; i++)
+        ASSERT_FLOAT_EQ(out1[i], input_data[128 + i]) << "crop1 mismatch at " << i;
+
+    auto out2_mem = outputs.at("output2").get_memory();
+    cldnn::mem_lock<float> out2(out2_mem, get_test_stream());
+    ASSERT_EQ(out2.size(), 6u);
+    for (size_t i = 0; i < 6; i++)
+        ASSERT_FLOAT_EQ(out2[i], input_data[128 + 6 + i]) << "crop2 mismatch at " << i;
+}

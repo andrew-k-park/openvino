@@ -26,6 +26,7 @@
 #include "lstm_seq_inst.h"
 #include "border_inst.h"
 #include "lora_inst.h"
+#include "gated_delta_net_inst.h"
 
 #include "pass_manager.h"
 #include "program_helpers.h"
@@ -545,6 +546,9 @@ bool crop_in_place_optimization::match(const program_node& node,
         if (user->is_type<lora>()) {
             return false;
         }
+        // gated_delta_net doesn't support padded inputs
+        if (user->is_type<gated_delta_net>())
+            return false;
     }
 
     // do not optimize crop, that must be calculated in propagate_constants
@@ -681,7 +685,7 @@ void crop_in_place_optimization::update_in_place_crop_padding_along_feature(cons
     }
 }
 
-void crop_in_place_optimization::update_in_place_crop_padding_simple_data_format(layout& crop_layout,
+bool crop_in_place_optimization::update_in_place_crop_padding_simple_data_format(layout& crop_layout,
                                                                                  layout& input_layout,
                                                                                  std::pair<const program_node*, layout>& user_info,
                                                                                  const tensor offsets,
@@ -694,6 +698,7 @@ void crop_in_place_optimization::update_in_place_crop_padding_simple_data_format
         crop_layout.data_padding._dynamic_dims_mask = dyn_pad_sizes;
 
         if (user_info.first && user_info.first->is_type<reshape>()) {
+            // Build-time: only set dynamic padding mask, no division needed
             auto reshape_desc = user_info.first->as<reshape>().get_primitive();
             auto reshape_mode = reshape_desc->mode;
             auto reshape_axis = crop_axis;
@@ -732,7 +737,7 @@ void crop_in_place_optimization::update_in_place_crop_padding_simple_data_format
             reshape_dyn_pad_mask[reshape_axis] = 1;
             user_info.second.data_padding._dynamic_dims_mask = reshape_dyn_pad_mask;
         }
-        return;
+        return true;
     }
 
     const auto& crop_size = crop_layout.get_tensor();
@@ -794,6 +799,14 @@ void crop_in_place_optimization::update_in_place_crop_padding_simple_data_format
                     reshape_upper_sizes[reshape_axis] = upper_sizes[crop_axis];
                     reshape_dyn_pad_mask[reshape_axis] = 1;
 
+                    // Check alignment: crop offset must be divisible by divider to avoid
+                    // integer division truncation. e.g. fused FC split [10240,48,48,6144]
+                    // with reshape [6144]->[48,128]: offset 10336 / 128 = 80.75 truncated to 80
+                    if (reshape_lower_sizes[reshape_axis] && reshape_lower_sizes[reshape_axis] % divider != 0)
+                        return false;
+                    if (reshape_upper_sizes[reshape_axis] && reshape_upper_sizes[reshape_axis] % divider != 0)
+                        return false;
+
                     if (reshape_lower_sizes[reshape_axis])
                         reshape_lower_sizes[reshape_axis] /= divider;
                     if (reshape_upper_sizes[reshape_axis])
@@ -829,6 +842,7 @@ void crop_in_place_optimization::update_in_place_crop_padding_simple_data_format
     } else {
         crop_layout.data_padding = padding(lower_sizes, upper_sizes);
     }
+    return true;
 }
 
 // ToDo remove friendship relation from  program_node
@@ -895,12 +909,14 @@ void prepare_buffer_fusing::run(program& p) {
                         user_info.second = reshape_node.get_output_layout();
                     }
                 }
-                crop_in_place_optimization::update_in_place_crop_padding_simple_data_format(crop_layout,
+                if (!crop_in_place_optimization::update_in_place_crop_padding_simple_data_format(crop_layout,
                                                                                             pred_layout,
                                                                                             user_info,
                                                                                             crop_params->input_offsets[0],
                                                                                             node.get_primitive()->axis,
-                                                                                            false);
+                                                                                            false)) {
+                    return;
+                }
                 if (user_info.first) {
                     node.get_users().front()->set_output_layout(user_info.second);
                 }
