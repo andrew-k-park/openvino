@@ -40,7 +40,10 @@ FullyConnectedHorizontalFusion::FullyConnectedHorizontalFusion(bool fuse_mlp_swi
     if (fuse_mlp_swiglu)
         min_num_fcs_to_fuse = 2;
     auto is_target_pattern = [min_num_fcs_to_fuse](const Output<Node>& output) {
-        const int max_num_fcs_to_fuse = 3;
+        // Supported patterns:
+        // - Standard attention: Q + K + V projections (3 FCs)
+        // - Linear attention (GDN): QKV + Z + A + B projections (4 FCs)
+        const int max_num_fcs_to_fuse = 4;
         // Currently this pass targets only compressed FCs (QKV) on dynamic generative models
         // inputs: input, weight, bias, scale, [zp]
         // Bias/scale/zp are constant or none
