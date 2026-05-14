@@ -1606,7 +1606,16 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
                         return true;
                     }
                 }
+
                 uint64_t adj_group_size = dynamic_quantization_group_size;
+                // WA: Qwen3-Next / Qwen3.5 hybrid models contain Mamba2-style "linear_attn" blocks
+                // whose activations (gated SSM state outputs) have a very wide dynamic range.
+                // Per-token INT8 activation quantization on these FCs causes severe accuracy loss
+                // / output collapse on dGPU. Force a smaller (grouped) quantization size instead
+                // of disabling dyn-quant entirely so that performance is preserved.
+                if (ov::intel_gpu::DynamicQuantizeFullyConnected::ShouldUseGs128ForLinearAttn(root->get_friendly_name(), adj_group_size)) {
+                    adj_group_size = 128;
+                }
                 const bool is_wei_i8u8 = cldnn::one_of(root->get_input_element_type(1), {ov::element::i8, ov::element::u8});
                 if (ov::intel_gpu::DynamicQuantizeFullyConnected::ShouldUseGs128(is_wei_i8u8, use_gs128_for_int8_per_token, adj_group_size)) {
                     adj_group_size = 128;

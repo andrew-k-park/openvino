@@ -54,6 +54,11 @@ DynamicQuantizeFullyConnected::DynamicQuantizeFullyConnected(uint64_t group_size
         if (DynamicQuantizeFullyConnected::ShouldUseGs128(is_wei_i8_u8, use_gs128_for_int8_per_token, adj_group_size)) {
             adj_group_size = 128;
         }
+        if (DynamicQuantizeFullyConnected::ShouldUseGs128ForLinearAttn(m_fc->get_friendly_name(), adj_group_size)) {
+            GPU_DEBUG_LOG << m_fc->get_friendly_name()
+                          << ": forcing dyn-quant group_size=128 (linear_attn block, sensitive to per-token quant)" << std::endl;
+            adj_group_size = 128;
+        }
 
         // Add precomputed_reduction connection, if possible
         if (precomputed_reduction && adj_group_size != UINT64_MAX && adj_group_size > 0 && has_static_wzp) {
