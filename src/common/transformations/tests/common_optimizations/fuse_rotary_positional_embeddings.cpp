@@ -2250,10 +2250,10 @@ TEST_F(TransformationTestsF, ConvertToROPE_GPTOSS_concat_axis_positive) {
 TEST_F(TransformationTestsF, ConvertToROPE_LlamaCpp) {
     // llama.cpp OV serializer RoPE (stateful): rank-3 x, rank-4 cos/sin -> broadcast lifts the
     // Multiply/Unsqueeze chain so the stack is rank-5 and the final Reshape is rank-4. The fused form
-    // re-packs x to half-split layout (even/odd Gather + Concat), Unsqueeze-lifts it to rank-4, runs
-    // RoPE in half-split mode (is_interleaved=false) with config.input_trans0213=true (the input-side
-    // Transpose is folded into the RoPE op by RoPEFusionPreprocess), then transposes back and Reshapes
-    // to the root layout.
+    // Unsqueeze-lifts x to rank-4 and runs RoPE with config.interleaved_input=true (the kernel reads
+    // even/odd lanes and writes half-split) and config.input_trans0213=true (the input-side Transpose
+    // is folded into the RoPE op by RoPEFusionPreprocess), then transposes back and Reshapes to the
+    // root layout.
     disable_rt_info_check();
     const int seq_len = 7;
     const int num_heads = 32;
@@ -2291,26 +2291,15 @@ TEST_F(TransformationTestsF, ConvertToROPE_LlamaCpp) {
         auto t_cos = std::make_shared<opset1::Parameter>(element::f32, PartialShape{1, seq_len, 1, half_ndims});
         auto t_sin = std::make_shared<opset1::Parameter>(element::f32, PartialShape{1, seq_len, 1, half_ndims});
 
-        // Re-pack x from interleaved lanes to half-split with even/odd Gather + Concat, then Unsqueeze
-        // to rank-4 [1, L, H, S]. The input-side Transpose([0,2,1,3]) that the LlamaCpp matcher emits
-        // is consumed by the downstream RoPEFusionPreprocess pass into config.input_trans0213=true.
-        // cos/sin keep their Transpose to [1, 1, L, half]; the post-RoPE Transpose([0,2,1,3]) and root
-        // Reshape stay in the fused graph. All index/axis/perm constants are i64 to match the fused
-        // graph (PRECISIONS is compared by default).
-        std::vector<int64_t> even_idx(half_ndims), odd_idx(half_ndims);
-        for (int k = 0; k < half_ndims; ++k) {
-            even_idx[k] = 2 * k;
-            odd_idx[k] = 2 * k + 1;
-        }
-        auto gather_axis = makeConst(element::i64, Shape{}, std::vector<int64_t>{-1});
-        auto even = makeOP<ov::opset8::Gather>(
-            {x, makeConst(element::i64, Shape{static_cast<size_t>(half_ndims)}, even_idx), gather_axis},
-            {{"batch_dims", 0}});
-        auto odd = makeOP<ov::opset8::Gather>(
-            {x, makeConst(element::i64, Shape{static_cast<size_t>(half_ndims)}, odd_idx), gather_axis},
-            {{"batch_dims", 0}});
-        auto x_hs = makeOP<opset1::Concat>({even, odd}, {{"axis", -1}});
-        auto x_unsq = makeOP<opset1::Unsqueeze>({x_hs, makeConst(element::i64, Shape{1}, std::vector<int64_t>{0})});
+        // x keeps its interleaved layout (no even/odd gather/concat): the RoPE op's interleaved_input
+        // mode reads the even/odd lanes inside the kernel. x is just Unsqueeze-lifted to rank-4
+        // [1, L, H, S]. The input-side Transpose([0,2,1,3]) the LlamaCpp matcher emits is consumed by
+        // the downstream RoPEFusionPreprocess pass into config.input_trans0213=true. cos/sin keep their
+        // Transpose to [1, 1, L, half]; the post-RoPE Transpose([0,2,1,3]) and root Reshape stay in the
+        // fused graph. All axis/perm constants are i64 to match the fused graph (PRECISIONS is compared
+        // by default). interleaved_input is not in the op's visit_attributes, so it is not listed below
+        // and the comparator (ATTRIBUTES off) does not check it.
+        auto x_unsq = makeOP<opset1::Unsqueeze>({x, makeConst(element::i64, Shape{1}, std::vector<int64_t>{0})});
 
         auto cos_t =
             makeOP<opset1::Transpose>({t_cos, makeConst(element::i64, Shape{4}, std::vector<int64_t>{0, 2, 1, 3})});
@@ -2385,26 +2374,15 @@ TEST_F(TransformationTestsF, ConvertToROPE_LlamaCpp_subtract_canonicalized_to_ad
         auto t_cos = std::make_shared<opset1::Parameter>(element::f32, PartialShape{1, seq_len, 1, half_ndims});
         auto t_sin = std::make_shared<opset1::Parameter>(element::f32, PartialShape{1, seq_len, 1, half_ndims});
 
-        // Re-pack x from interleaved lanes to half-split with even/odd Gather + Concat, then Unsqueeze
-        // to rank-4 [1, L, H, S]. The input-side Transpose([0,2,1,3]) that the LlamaCpp matcher emits
-        // is consumed by the downstream RoPEFusionPreprocess pass into config.input_trans0213=true.
-        // cos/sin keep their Transpose to [1, 1, L, half]; the post-RoPE Transpose([0,2,1,3]) and root
-        // Reshape stay in the fused graph. All index/axis/perm constants are i64 to match the fused
-        // graph (PRECISIONS is compared by default).
-        std::vector<int64_t> even_idx(half_ndims), odd_idx(half_ndims);
-        for (int k = 0; k < half_ndims; ++k) {
-            even_idx[k] = 2 * k;
-            odd_idx[k] = 2 * k + 1;
-        }
-        auto gather_axis = makeConst(element::i64, Shape{}, std::vector<int64_t>{-1});
-        auto even = makeOP<ov::opset8::Gather>(
-            {x, makeConst(element::i64, Shape{static_cast<size_t>(half_ndims)}, even_idx), gather_axis},
-            {{"batch_dims", 0}});
-        auto odd = makeOP<ov::opset8::Gather>(
-            {x, makeConst(element::i64, Shape{static_cast<size_t>(half_ndims)}, odd_idx), gather_axis},
-            {{"batch_dims", 0}});
-        auto x_hs = makeOP<opset1::Concat>({even, odd}, {{"axis", -1}});
-        auto x_unsq = makeOP<opset1::Unsqueeze>({x_hs, makeConst(element::i64, Shape{1}, std::vector<int64_t>{0})});
+        // x keeps its interleaved layout (no even/odd gather/concat): the RoPE op's interleaved_input
+        // mode reads the even/odd lanes inside the kernel. x is just Unsqueeze-lifted to rank-4
+        // [1, L, H, S]. The input-side Transpose([0,2,1,3]) the LlamaCpp matcher emits is consumed by
+        // the downstream RoPEFusionPreprocess pass into config.input_trans0213=true. cos/sin keep their
+        // Transpose to [1, 1, L, half]; the post-RoPE Transpose([0,2,1,3]) and root Reshape stay in the
+        // fused graph. All axis/perm constants are i64 to match the fused graph (PRECISIONS is compared
+        // by default). interleaved_input is not in the op's visit_attributes, so it is not listed below
+        // and the comparator (ATTRIBUTES off) does not check it.
+        auto x_unsq = makeOP<opset1::Unsqueeze>({x, makeConst(element::i64, Shape{1}, std::vector<int64_t>{0})});
 
         auto cos_t =
             makeOP<opset1::Transpose>({t_cos, makeConst(element::i64, Shape{4}, std::vector<int64_t>{0, 2, 1, 3})});
