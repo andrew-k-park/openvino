@@ -35,10 +35,13 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/op/unsqueeze.hpp"
 #include "ov_ops/gather_matmul.hpp"
+#include "ov_ops/gather_matmul_compressed.hpp"
+#include "ov_ops/moe_compressed.hpp"
 #include "transformations/common_optimizations/convert_tiled_moe_block_to_gather_matmuls.hpp"
 #include "transformations/common_optimizations/moe_op_fusion.hpp"
 
 using GatherMatmul = ov::op::internal::GatherMatmul;
+using GatherMatmulCompressed = ov::op::internal::GatherMatmulCompressed;
 
 // ============================================================================
 // IR model builders (original MOE pattern before any transformation)
@@ -750,6 +753,116 @@ inline std::shared_ptr<ov::Model> build_3gemm_bgm_to_moe_reference_model_multipl
     return std::make_shared<ov::Model>(ov::OutputVector{moe}, ov::ParameterVector{input});
 }
 
+// Per-branch compression scheme used by the compressed-3gemm builder. NNCF mixed-precision
+// quantization can emit different schemes per gate/up/down within a single MoE block — the
+// fusion pass must reject those graphs so they fall back to BGMCompressed execution.
+enum class CompressionScheme {
+    GroupedSym,   // INT4 grouped-symmetric: weight rank-4, scale rank-4, ZP = dynamic placeholder
+    GroupedAsym,  // INT4 grouped-asymmetric: weight rank-4, scale rank-4, ZP rank-4
+    PerOcSym,     // INT8 per-output-channel symmetric: weight rank-3, scale rank-3, ZP = dynamic placeholder
+};
+
+inline std::shared_ptr<ov::Model> build_3gemm_compressed_bgm_model(CompressionScheme gate_s,
+                                                                  CompressionScheme up_s,
+                                                                  CompressionScheme down_s) {
+    using namespace ov;
+
+    const size_t batch = 2;
+    const Dimension in_dim = Dimension::dynamic();
+    const size_t hidden_size = 2048;
+    const size_t intermediate_size = 4096;
+    const size_t group_size = 128;
+    const size_t number_of_experts = 3;
+    const size_t topk = 2;
+
+    // Build a BGMCompressed input bundle (B, scale, ZP) for one branch.
+    // K is the contracting dim (hidden_size for gate/up, intermediate_size for down).
+    // OFM is the output-feature dim (intermediate_size for gate/up, hidden_size for down).
+    auto make_branch = [&](size_t OFM, size_t K, CompressionScheme s) {
+        std::shared_ptr<ov::Node> w, scale, zp;
+        switch (s) {
+        case CompressionScheme::GroupedSym:
+        case CompressionScheme::GroupedAsym: {
+            const size_t G = K / group_size;
+            w = op::v0::Constant::create(element::f32, Shape{number_of_experts, OFM, G, group_size}, {1.0f});
+            scale = op::v0::Constant::create(element::f32, Shape{number_of_experts, OFM, G, 1}, {1.0f});
+            if (s == CompressionScheme::GroupedAsym) {
+                zp = op::v0::Constant::create(element::f32, Shape{number_of_experts, OFM, G, 1}, {0.0f});
+            } else {
+                zp = std::make_shared<op::v0::Constant>(element::dynamic, Shape{0});
+            }
+            break;
+        }
+        case CompressionScheme::PerOcSym: {
+            w = op::v0::Constant::create(element::f32, Shape{number_of_experts, OFM, K}, {1.0f});
+            scale = op::v0::Constant::create(element::f32, Shape{number_of_experts, OFM, 1}, {1.0f});
+            zp = std::make_shared<op::v0::Constant>(element::dynamic, Shape{0});
+            break;
+        }
+        }
+        return std::make_tuple(w, scale, zp);
+    };
+
+    auto input = std::make_shared<op::v0::Parameter>(element::f32, PartialShape{batch, in_dim, hidden_size});
+    auto experts_reshape = std::make_shared<op::v1::Reshape>(
+        input,
+        op::v0::Constant::create(element::i64, Shape{2}, std::vector<int64_t>{-1, static_cast<int64_t>(hidden_size)}),
+        false);
+    auto unsqueeze =
+        std::make_shared<op::v0::Unsqueeze>(experts_reshape, op::v0::Constant::create(element::i32, Shape{}, {0}));
+
+    // Router → topk
+    auto router_matmul = std::make_shared<op::v0::MatMul>(
+        experts_reshape,
+        op::v0::Constant::create(element::f32, Shape{number_of_experts, hidden_size}, {1.0f}),
+        false,
+        true);
+    auto router_topk = std::make_shared<op::v11::TopK>(router_matmul,
+                                                       op::v0::Constant::create(element::i64, Shape{}, {topk}),
+                                                       -1,
+                                                       op::v11::TopK::Mode::MAX,
+                                                       op::v11::TopK::SortType::SORT_VALUES,
+                                                       element::i64);
+    auto topk_indices = router_topk->output(1);
+    auto chosen_experts = router_topk->output(0);
+
+    auto bias = std::make_shared<op::v0::Constant>(element::dynamic, Shape{0});
+
+    auto [gate_w, gate_scale, gate_zp] = make_branch(intermediate_size, hidden_size, gate_s);
+    auto bgm_gate =
+        std::make_shared<GatherMatmulCompressed>(unsqueeze, gate_w, topk_indices, bias, gate_scale, gate_zp);
+    auto gate_act = std::make_shared<op::v4::Swish>(bgm_gate);
+
+    auto [up_w, up_scale, up_zp] = make_branch(intermediate_size, hidden_size, up_s);
+    auto bgm_up = std::make_shared<GatherMatmulCompressed>(unsqueeze, up_w, topk_indices, bias, up_scale, up_zp);
+    auto swiglu = std::make_shared<op::v1::Multiply>(gate_act, bgm_up);
+
+    auto [down_w, down_scale, down_zp] = make_branch(hidden_size, intermediate_size, down_s);
+    auto bgm_down =
+        std::make_shared<GatherMatmulCompressed>(swiglu, down_w, topk_indices, bias, down_scale, down_zp);
+
+    auto router_transpose = std::make_shared<op::v1::Transpose>(
+        chosen_experts,
+        op::v0::Constant::create(element::i64, Shape{2}, std::vector<int64_t>{1, 0}));
+    auto router_unsqueeze =
+        std::make_shared<op::v0::Unsqueeze>(router_transpose, op::v0::Constant::create(element::i32, Shape{}, {-1}));
+
+    auto final_mul = std::make_shared<op::v1::Multiply>(bgm_down, router_unsqueeze);
+    auto reduce_sum =
+        std::make_shared<op::v1::ReduceSum>(final_mul,
+                                            op::v0::Constant::create(element::i64, Shape{1}, std::vector<int64_t>{0}),
+                                            false);
+    auto end_reshape = std::make_shared<op::v1::Reshape>(
+        reduce_sum,
+        op::v0::Constant::create(
+            element::i64,
+            Shape{3},
+            std::vector<int64_t>{static_cast<int64_t>(batch), -1, static_cast<int64_t>(hidden_size)}),
+        true);
+
+    return std::make_shared<ov::Model>(ov::OutputVector{end_reshape}, ov::ParameterVector{input});
+}
+
 // ============================================================================
 // Tests for BGM→MOE passes (Convert3GatherMatmulMoeBlockToMoeOp, Convert2GatherMatmulMoeBlockToMoeOp)
 // ============================================================================
@@ -791,4 +904,67 @@ TEST_F(TransformationTestsF, Convert2GatherMatmulMoeBlockToMoeOp_basic) {
     model = build_2gemm_bgm_model();
     manager.register_pass<ov::pass::Convert2GatherMatmulMoeBlockToMoeOp>();
     model_ref = build_2gemm_bgm_to_moe_reference_model();
+}
+
+// Negative cases — MOECompressed::Config carries one group_size and one has_zp shared by gate/up/down.
+// NNCF mixed-precision IRs (e.g. Mixtral-8x7B INT4) violate this when only some experts within a layer
+// are kept INT4-grouped while the rest fall back to INT8-per-OC, or symmetric and asymmetric coexist.
+// Fusion must reject such graphs (no model_ref → expect graph unchanged) so they execute as plain
+// BGMCompressed instead of throwing in MOECompressed::validate_and_infer_types.
+
+TEST_F(TransformationTestsF, Convert3GatherMatmulMoeBlockToMoeOp_mixed_group_size_up_per_oc) {
+    // Mixtral-8x7B INT4 layer-0 shape: gate grouped, up per-OC, down grouped.
+    model = build_3gemm_compressed_bgm_model(CompressionScheme::GroupedSym,
+                                             CompressionScheme::PerOcSym,
+                                             CompressionScheme::GroupedSym);
+    manager.register_pass<ov::pass::Convert3GatherMatmulMoeBlockToMoeOp>();
+}
+
+TEST_F(TransformationTestsF, Convert3GatherMatmulMoeBlockToMoeOp_mixed_group_size_down_per_oc) {
+    model = build_3gemm_compressed_bgm_model(CompressionScheme::GroupedSym,
+                                             CompressionScheme::GroupedSym,
+                                             CompressionScheme::PerOcSym);
+    manager.register_pass<ov::pass::Convert3GatherMatmulMoeBlockToMoeOp>();
+}
+
+TEST_F(TransformationTestsF, Convert3GatherMatmulMoeBlockToMoeOp_mixed_has_zp) {
+    // gate/down symmetric, up asymmetric: ZP element-type disagrees across branches.
+    model = build_3gemm_compressed_bgm_model(CompressionScheme::GroupedSym,
+                                             CompressionScheme::GroupedAsym,
+                                             CompressionScheme::GroupedSym);
+    manager.register_pass<ov::pass::Convert3GatherMatmulMoeBlockToMoeOp>();
+}
+
+// Positive — uniform schemes still fuse; guards the negative checks against accidentally widening.
+// Uses plain TEST (not TransformationTestsF) so we can assert directly on the post-pass graph
+// without authoring a reference model for every BGM→MOECompressed shape detail.
+namespace {
+bool has_moe_compressed_op(const std::shared_ptr<ov::Model>& m) {
+    for (const auto& op : m->get_ordered_ops()) {
+        if (ov::is_type<ov::op::internal::MOECompressed>(op)) {
+            return true;
+        }
+    }
+    return false;
+}
+}  // namespace
+
+TEST(Convert3GatherMatmulMoeBlockToMoeOp, compressed_uniform_grouped_sym_fuses) {
+    auto model = build_3gemm_compressed_bgm_model(CompressionScheme::GroupedSym,
+                                                  CompressionScheme::GroupedSym,
+                                                  CompressionScheme::GroupedSym);
+    ov::pass::Manager mgr;
+    mgr.register_pass<ov::pass::Convert3GatherMatmulMoeBlockToMoeOp>();
+    mgr.run_passes(model);
+    EXPECT_TRUE(has_moe_compressed_op(model)) << "uniform grouped-sym scheme should fuse to MOECompressed";
+}
+
+TEST(Convert3GatherMatmulMoeBlockToMoeOp, compressed_uniform_per_oc_fuses) {
+    auto model = build_3gemm_compressed_bgm_model(CompressionScheme::PerOcSym,
+                                                  CompressionScheme::PerOcSym,
+                                                  CompressionScheme::PerOcSym);
+    ov::pass::Manager mgr;
+    mgr.register_pass<ov::pass::Convert3GatherMatmulMoeBlockToMoeOp>();
+    mgr.run_passes(model);
+    EXPECT_TRUE(has_moe_compressed_op(model)) << "uniform per-OC scheme should fuse to MOECompressed";
 }
