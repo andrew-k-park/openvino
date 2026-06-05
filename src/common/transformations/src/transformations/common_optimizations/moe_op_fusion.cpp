@@ -177,15 +177,29 @@ Convert3GatherMatmulMoeBlockToMoeOp::Convert3GatherMatmulMoeBlockToMoeOp(bool ha
             auto topk_shape = topk_indices.get_partial_shape();
             OPENVINO_ASSERT(topk_shape[1].is_static(), "K dimension in moe topk input should be static.");
 
-            // group_size derived from down-scale; weight_logical_K handles rank-3/4.
+            // group_size and has_zp must agree across gate/up/down — MOECompressed::Config carries one value
+            // each. NNCF mixed-precision (e.g. INT4-grouped + INT8-per-OC) can violate this; bail to BGM fallback.
             const auto gate_K = weight_logical_K(weight_shape);
+            const auto up_K = weight_logical_K(pm.at(up_w_m).get_partial_shape().to_shape());
             const auto down_K = weight_logical_K(pm.at(down_w_m).get_partial_shape().to_shape());
+            const auto gate_scale_shape = pm.at(gate_scale_m).get_partial_shape().to_shape();
+            const auto up_scale_shape = pm.at(up_scale_m).get_partial_shape().to_shape();
             const auto down_scale_shape = pm.at(down_scale_m).get_partial_shape().to_shape();
-            const size_t down_num_groups = (down_scale_shape.size() >= 3) ? down_scale_shape[2] : 1;
-            const size_t group_size =
-                (down_num_groups <= 1) ? std::numeric_limits<size_t>::max() : (down_K / down_num_groups);
-            // dynamic-typed zp = symmetric placeholder.
+            auto implied_gs = [](size_t K, const ov::Shape& s) {
+                const size_t ng = (s.size() >= 3) ? s[2] : 1;
+                return (ng <= 1) ? std::numeric_limits<size_t>::max() : (K / ng);
+            };
+            const size_t group_size = implied_gs(down_K, down_scale_shape);
+            if (implied_gs(gate_K, gate_scale_shape) != group_size ||
+                implied_gs(up_K, up_scale_shape) != group_size) {
+                return false;
+            }
+            // dynamic-typed zp = symmetric placeholder; gate/up/down must agree.
             const bool has_zp = pm.at(gate_zp_m).get_element_type() != ov::element::dynamic;
+            if ((pm.at(up_zp_m).get_element_type() != ov::element::dynamic) != has_zp ||
+                (pm.at(down_zp_m).get_element_type() != ov::element::dynamic) != has_zp) {
+                return false;
+            }
 
             MOECompressed::Config compressed_config{
                 {ov::op::internal::MOE::Expert_type::GEMM3_SWIGLU, 0.0f, expert_beta, 0, activation_type},
