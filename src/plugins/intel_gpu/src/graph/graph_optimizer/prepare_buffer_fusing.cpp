@@ -594,6 +594,31 @@ bool crop_in_place_optimization::match(const program_node& node,
         (!crop_node.get_dependency(1).is_constant() || !crop_node.get_dependency(2).is_constant()))
         return false;
 
+    // CVS-188346: a dynamic variadic_split feeding a gemm/convolution produced
+    // wrong outputs when in-place crop was applied (e.g. YOLO11 attention
+    // Q/K/V split scaled then matmul'd; K read from stale strides, matmul
+    // output became zero). The direct-user gemm/conv guard above only
+    // catches split -> gemm; here we also reject when any descendant within
+    // a small neighborhood across transparent ops is a gemm/convolution.
+    if (crop_node.get_primitive()->op_mode == cldnn::crop_ngraph_op_mode::variadic_split) {
+        std::vector<const program_node*> stack(node.get_users().begin(), node.get_users().end());
+        std::unordered_set<const program_node*> visited;
+        const size_t max_visit = 16;
+        while (!stack.empty() && visited.size() < max_visit) {
+            const auto* n = stack.back();
+            stack.pop_back();
+            if (!visited.insert(n).second)
+                continue;
+            if (n->is_type<gemm>() || n->is_type<convolution>())
+                return false;
+            if (n->is_type<reshape>() || n->is_type<eltwise>() || n->is_type<activation>() ||
+                n->is_type<permute>()) {
+                for (auto u : n->get_users())
+                    stack.push_back(u);
+            }
+        }
+    }
+
     if (node.get_users().size() > 0) {
         GPU_DEBUG_IF(node.get_config().get_disable_runtime_buffer_fusing() && node.is_dynamic()) {
             return false;
