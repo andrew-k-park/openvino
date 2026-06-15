@@ -2531,3 +2531,58 @@ TEST(prepare_buffer_fusing, in_place_crop_dynamic_indivisible_padding_with_resha
             ASSERT_FLOAT_EQ(out2[f * crop2_last + y], input_data[f * total_last + offset2 + y])
                 << "output2 mismatch at f=" << f << " y=" << y;
 }
+
+// CVS-188346: dynamic VariadicSplit feeding a gemm/matmul through a
+// transparent op chain (e.g. eltwise scale -> matmul, as in YOLO11/YOLO12
+// attention block) used to be optimized in-place but produced wrong reads
+// from the gemm side because dyn-pad mask propagation through the
+// intermediate eltwise user chain leaves stale strides. The existing
+// direct-user gemm/conv guard only checks node->users(); this test pins
+// the transitive guard.
+TEST(prepare_buffer_fusing, in_place_crop_dynamic_variadic_split_to_gemm_via_eltwise) {
+    auto& engine = get_test_engine();
+
+    // Mimic attention block:
+    //   qkv [-1, 4, 128, 16]  --VariadicSplit on axis=2 [32,32,64]-->  q,k,v
+    //   q   [-1, 4,  32, 16]  --Multiply (scale)-->  q_scaled
+    //   q_scaled, k                                  --Gemm (Q*K^T)-->  attn
+    auto in_layout = layout{ ov::PartialShape{-1, 4, 128, 16}, data_types::f32, format::bfyx };
+    auto axis_mem = engine.allocate_memory({ {}, data_types::i64, format::bfyx });
+    auto splits_length_mem = engine.allocate_memory({ {3}, data_types::i64, format::bfyx });
+    auto scale_mem = engine.allocate_memory({ {1, 1, 1, 1}, data_types::f32, format::bfyx });
+
+    const int64_t axis = 2;
+    set_values<int64_t>(axis_mem, { axis });
+    set_values<int64_t>(splits_length_mem, { 32, 32, 64 });
+    set_values<float>(scale_mem, { 0.176777f });
+
+    auto op_mode = cldnn::crop_ngraph_op_mode::variadic_split;
+    topology topology(
+        input_layout("qkv", in_layout),
+        data("axis", axis_mem),
+        data("splits_length", splits_length_mem),
+        data("scale", scale_mem),
+        crop("q", { input_info("qkv"), input_info("axis"), input_info("splits_length") },
+             cldnn::tensor(1), cldnn::tensor(0), op_mode, 0, axis),
+        crop("k", { input_info("qkv"), input_info("axis"), input_info("splits_length") },
+             cldnn::tensor(1), cldnn::tensor(0), op_mode, 1, axis),
+        // q_scaled = q * scale -- transparent eltwise; q's direct user is not a gemm.
+        eltwise("q_scaled", { input_info("q"), input_info("scale") }, eltwise_mode::prod),
+        gemm("attn", { input_info("q_scaled"), input_info("k") },
+             data_types::f32, false, true),
+        reorder("output", input_info("attn"), format::bfyx, data_types::f32)
+    );
+
+    ExecutionConfig config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    config.set_property(ov::intel_gpu::optimize_data(true));
+    auto prog = program::build_program(engine, topology, config, false, true);
+    program_wrapper::apply_opt_pass<prepare_buffer_fusing>(*prog);
+    ASSERT_NE(prog, nullptr);
+
+    // The transitive guard must reject in-place crop on the K branch (direct gemm user)
+    // and on the Q branch (eltwise -> gemm).
+    ASSERT_FALSE(prog->get_node("q").as<crop>().can_be_optimized());
+    ASSERT_FALSE(prog->get_node("k").as<crop>().can_be_optimized());
+}
+
