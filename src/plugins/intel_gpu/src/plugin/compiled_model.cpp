@@ -13,6 +13,7 @@
 #include "intel_gpu/plugin/graph.hpp"
 #include "intel_gpu/plugin/compiled_model.hpp"
 #include "intel_gpu/plugin/async_infer_request.hpp"
+#include "intel_gpu/plugin/metadata.hpp"
 
 #include <sstream>
 #include <sys/types.h>
@@ -209,6 +210,7 @@ void CompiledModel::export_model(std::ostream& model) const {
     const ov::EncryptionCallbacks encryption_callbacks = m_config.get_cache_encryption_callbacks();
 
     const ov::CacheMode cache_mode = m_config.get_cache_mode();
+    const std::streampos blob_start = model.tellp();
     std::unique_ptr<cldnn::BinaryOutputBuffer> ob_ptr =
         encryption_callbacks.encrypt
             ? std::make_unique<cldnn::EncryptedBinaryOutputBuffer>(model, encryption_callbacks.encrypt)
@@ -265,6 +267,9 @@ void CompiledModel::export_model(std::ostream& model) const {
 
     get_graph(0)->export_model(ob);
     ob.flush();
+
+    const auto& info = m_context->get_device().get_info();
+    write_metadata(model, blob_start, info.driver_version, info.dev_name);
 }
 
 std::shared_ptr<const ov::Model> CompiledModel::get_runtime_model() const {
