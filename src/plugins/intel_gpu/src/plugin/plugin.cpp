@@ -19,6 +19,7 @@
 #include "intel_gpu/graph/serialization/utils.hpp"
 #include "intel_gpu/graph/serialization/vector_serializer.hpp"
 #include "intel_gpu/plugin/compiled_model.hpp"
+#include "intel_gpu/plugin/metadata.hpp"
 #include "intel_gpu/plugin/transformations_pipeline.hpp"
 #include "intel_gpu/runtime/debug_configuration.hpp"
 #include "intel_gpu/runtime/device_query.hpp"
@@ -426,6 +427,12 @@ std::shared_ptr<ov::ICompiledModel> Plugin::import_model(std::istream& model,
 
     ov::CacheMode cache_mode = config.get_cache_mode();
     ov::EncryptionCallbacks encryption_callbacks = config.get_cache_encryption_callbacks();
+
+    const std::streampos blob_start = model.tellg();
+    uint64_t blob_data_size = 0;
+    const auto& info = context_impl->get_device().get_info();
+    verify_metadata(model, blob_start, info.driver_version, info.dev_name, blob_data_size);
+    model.seekg(blob_start);
 
     std::unique_ptr<cldnn::BinaryInputBuffer> ib_ptr =
         encryption_callbacks.decrypt
