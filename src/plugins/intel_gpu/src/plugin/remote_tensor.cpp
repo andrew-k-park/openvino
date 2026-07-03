@@ -315,7 +315,7 @@ void RemoteTensorImpl::allocate() {
 
     m_layout.set_partial_shape(shape_copy);
 
-    const bool reset = false;
+    const bool reset = true;
 
     switch (m_mem_type) {
     case TensorType::BT_BUF_INTERNAL: {

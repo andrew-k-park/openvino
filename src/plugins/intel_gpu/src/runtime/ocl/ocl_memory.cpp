@@ -54,6 +54,12 @@ gpu_buffer::gpu_buffer(ocl_engine* engine,
                        const layout& layout)
     : lockable_gpu_mem(), memory(engine, layout, allocation_type::cl_mem, nullptr)
     , _buffer(engine->get_cl_context(), CL_MEM_READ_WRITE, size()) {
+    // fill zero to buffer
+    auto& stream = engine->get_service_stream();
+    auto ev = fill(stream);
+    if (ev) {
+        stream.wait_for_events({ev});
+    }
     m_mem_tracker = std::make_shared<MemoryTracker>(engine, _buffer.get(), layout.bytes_count(), allocation_type::cl_mem);
 }
 
@@ -62,7 +68,13 @@ gpu_buffer::gpu_buffer(ocl_engine* engine,
                        const cl::Buffer& buffer,
                        std::shared_ptr<MemoryTracker> mem_tracker)
     : lockable_gpu_mem(), memory(engine, new_layout, allocation_type::cl_mem, mem_tracker)
-    , _buffer(buffer) {}
+    , _buffer(buffer) {
+    auto& stream = engine->get_service_stream();
+    auto ev = fill(stream);
+    if (ev) {
+        stream.wait_for_events({ev});
+    }
+}
 
 void* gpu_buffer::lock(const stream& stream, mem_lock_type type) {
     auto& cl_stream = downcast<const ocl_stream>(stream);

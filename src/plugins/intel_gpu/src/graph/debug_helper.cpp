@@ -403,6 +403,25 @@ NodeDebugHelper::NodeDebugHelper(const primitive_inst& inst)
     , m_program(inst.get_network().get_program().get())
     , m_iter(m_network.iteration) {
     const auto& config = m_network.get_config();
+
+    // Validate input buffers before execution
+    // NOTE: Temporarily disabled. At constructor time (before prepare_primitive/execute),
+    // dynamic-shape deps may not have their memory/layout finalized yet, so this can be
+    // unreliable. Re-enable once the timing is validated.
+    if (config.get_validate_output_buffer() && !m_network.is_internal()) {
+        m_stream.finish(); // Wait for stream completion before checking input buffers
+        for (size_t i = 0; i < m_inst.dependencies().size(); i++) {
+            auto input_mem = m_inst.dep_memory_ptr(i);
+            if (input_mem == nullptr) {
+                continue;
+            }
+            auto dep = m_inst.dependencies().at(i);
+            auto input_layout = dep.first->get_output_layout(dep.second);
+            std::string info = m_inst.id() + " src(" + std::to_string(i) + ") before execute at iteration " + std::to_string(m_network.get_current_iteration_num());
+            validate_data_range(input_mem, m_stream, input_layout, info);
+        }
+    }
+
     // Load binary dump for input layers
     if (!config.get_load_dump_raw_binary().empty()) {
         const std::string layer_name = m_inst.id();
@@ -476,7 +495,8 @@ NodeDebugHelper::NodeDebugHelper(const primitive_inst& inst)
         const std::string& layer_name = inst.id();
 
         if (is_target_iteration(m_iter, config.get_dump_iterations()) &&
-            config.get_dump_tensors() != ov::intel_gpu::DumpTensors::out && is_layer_for_dumping(config, layer_name)) {
+            config.get_dump_tensors() != ov::intel_gpu::DumpTensors::out && is_layer_for_dumping(config, layer_name) &&
+            !m_inst.is_constant()) {
             m_stream.finish(); // Wait for stream completion before dumping input buffers
             std::string debug_str_for_bin_load = " Command for loading : OV_LOAD_DUMP_RAW_BINARY=\"" + layer_name + ":";
             for (size_t i = 0; i < m_inst.dependencies().size(); i++) {
@@ -523,9 +543,20 @@ NodeDebugHelper::~NodeDebugHelper() {
 
     if (config.get_validate_output_buffer() && !m_network.is_internal()) {
         m_stream.finish(); // Wait for stream completion before checking output buffers
+        for (size_t i = 0; i < m_inst.dependencies().size(); i++) {
+            auto input_mem = m_inst.dep_memory_ptr(i);
+            if (input_mem == nullptr) {
+                continue;
+            }
+            auto dep = m_inst.dependencies().at(i);
+            auto input_layout = dep.first->get_output_layout(dep.second);
+            std::string info = m_inst.id() + " src(" + std::to_string(i) + ") after execute at iteration " + std::to_string(m_network.get_current_iteration_num());
+            validate_data_range(input_mem, m_stream, input_layout, info);
+        }
+
         for (size_t i = 0; i < m_inst.outputs_memory_count(); i++) {
             auto output_mem = m_inst.output_memory_ptr(i);
-            std::string info = m_inst.id() + "(" + std::to_string(i) + ") at iteration " + std::to_string(m_network.get_current_iteration_num());
+            std::string info = m_inst.id() + " dst(" + std::to_string(i) + ") at iteration " + std::to_string(m_network.get_current_iteration_num());
             validate_data_range(output_mem, m_stream, m_inst.get_output_layout(i), info);
         }
 
@@ -559,7 +590,8 @@ NodeDebugHelper::~NodeDebugHelper() {
 
         if (is_target_iteration(m_iter, config.get_dump_iterations()) &&
             config.get_dump_tensors() != ov::intel_gpu::DumpTensors::in &&
-            is_layer_for_dumping(config, layer_name)) {
+            is_layer_for_dumping(config, layer_name) &&
+            !m_inst.is_constant()) {
             m_stream.finish(); // Wait for stream completion before dumping output buffers
             std::string debug_str_for_bin_load = " Command for loading : OV_LOAD_DUMP_RAW_BINARY=\""
                                                     + layer_name + ":";
