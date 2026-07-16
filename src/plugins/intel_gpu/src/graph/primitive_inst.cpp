@@ -290,6 +290,7 @@ event::ptr primitive_inst::set_output_memory(memory::ptr mem_new, bool check, si
 }
 
 void primitive_inst::update_shape() {
+    auto host_profile = get_network().profile_host_time(network::HostTimeStage::update_shape);
     OV_ITT_SCOPED_TASK(ov::intel_gpu::itt::domains::intel_gpu_plugin, openvino::itt::handle("update_shape: " + id()));
     GPU_DEBUG_PROFILED_STAGE(instrumentation::pipeline_stage::shape_inference);
     if (_update_shape_done_by_other) {
@@ -1264,6 +1265,7 @@ void primitive_inst::realloc_outputs(bool prev_execution_skipped) {
 }
 
 void primitive_inst::realloc_if_needed(bool prev_execution_skipped) {
+    auto host_profile = get_network().profile_host_time(network::HostTimeStage::reallocation);
     realloc_outputs(prev_execution_skipped);
     realloc_intermediates();
 }
@@ -1378,6 +1380,7 @@ void primitive_inst::update_shape_info_tensor(const kernel_impl_params& params) 
 }
 
 void primitive_inst::update_impl(bool use_async_compilation) {
+    auto host_profile = get_network().profile_host_time(network::HostTimeStage::implementation_update);
     OV_ITT_SCOPED_TASK(ov::intel_gpu::itt::domains::intel_gpu_plugin, openvino::itt::handle("update_impl: " + id()));
     GPU_DEBUG_PROFILED_STAGE(instrumentation::pipeline_stage::update_implementation);
     auto prev_impl_str =  _impl != nullptr ? _impl->get_kernel_name() : "nullptr";
@@ -2074,7 +2077,10 @@ void primitive_inst::prepare_primitive() {
                         || (_impl_params->output_layouts[0].is_static() && _impl_params->output_layouts[0].count() == 0);
     const auto orig_outputs = _outputs;
     if ((is_dynamic() || get_node().is_in_shape_of_subgraph()) && !has_inner_networks()) {
-        do_runtime_in_place_concat();
+        {
+            auto host_profile = get_network().profile_host_time(network::HostTimeStage::runtime_optimizations);
+            do_runtime_in_place_concat();
+        }
         update_shape();
 
         if (_impl_params->output_layouts[0].count() == 0) {
@@ -2115,17 +2121,20 @@ void primitive_inst::prepare_primitive() {
         // Check successor reorder if layouts are same
         // Need to set can_be_optimized for user reorder at predecessor because
         // if the user is can_be_optimized and output node then current nodes' output should be allocated to host.
-        do_runtime_skip_reorder();
-        do_runtime_skip_gather();
-        update_paddings();
-        do_runtime_in_place_kv_cache();
-        do_runtime_skip_permute();
-        do_runtime_skip_strided_slice();
-        do_runtime_skip_broadcast();
-        do_runtime_skip_scatter_update();
-        do_runtime_skip_lora();
-        do_runtime_in_place_crop();
-        do_runtime_skip_resample();
+        {
+            auto host_profile = get_network().profile_host_time(network::HostTimeStage::runtime_optimizations);
+            do_runtime_skip_reorder();
+            do_runtime_skip_gather();
+            update_paddings();
+            do_runtime_in_place_kv_cache();
+            do_runtime_skip_permute();
+            do_runtime_skip_strided_slice();
+            do_runtime_skip_broadcast();
+            do_runtime_skip_scatter_update();
+            do_runtime_skip_lora();
+            do_runtime_in_place_crop();
+            do_runtime_skip_resample();
+        }
 
         if (!is_valid_fusion()) {
             OV_ITT_SCOPED_TASK(ov::intel_gpu::itt::domains::intel_gpu_plugin, openvino::itt::handle("unfused_subgraph_build: " + id()));
@@ -2190,7 +2199,10 @@ void primitive_inst::prepare_primitive() {
         set_flag(ExecutionFlags::ARG_UPDATE_REQUIRED);
         set_arguments();
     }
-    on_execute();
+    {
+        auto host_profile = get_network().profile_host_time(network::HostTimeStage::on_execute);
+        on_execute();
+    }
 
     if (!get_node().is_type<condition>() && !get_node().is_type<loop>()) {
         for (size_t i = 0; i < _outputs.size(); ++i) {
@@ -2314,6 +2326,7 @@ void primitive_inst::execute() {
 }
 
 void primitive_inst::set_arguments() {
+    auto host_profile = get_network().profile_host_time(network::HostTimeStage::primitive_set_arguments);
     OV_ITT_SCOPED_TASK(ov::intel_gpu::itt::domains::intel_gpu_plugin, openvino::itt::handle("set_arguments: " + id()));
     GPU_DEBUG_PROFILED_STAGE(instrumentation::pipeline_stage::set_arguments);
     OPENVINO_ASSERT(_has_valid_input, id(), " has invalid/unset input");
@@ -2536,6 +2549,7 @@ void primitive_inst::allocate_internal_buffers(bool reset) {
 }
 
 void primitive_inst::update_weights() {
+    auto host_profile = get_network().profile_host_time(network::HostTimeStage::weights_update);
     OV_ITT_SCOPED_TASK(ov::intel_gpu::itt::domains::intel_gpu_plugin, openvino::itt::handle("update_weights: " + id()));
     GPU_DEBUG_PROFILED_STAGE(instrumentation::pipeline_stage::update_weights);
     if (!_impl)
@@ -2960,6 +2974,7 @@ cldnn::network::ptr primitive_inst::get_unfused_subgraph() {
 } while (0)
 
 bool primitive_inst::is_valid_fusion() const {
+    auto host_profile = get_network().profile_host_time(network::HostTimeStage::fusion_validation);
     if (!is_dynamic())
         return true;
 

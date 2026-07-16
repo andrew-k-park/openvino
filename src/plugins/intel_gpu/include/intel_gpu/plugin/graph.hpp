@@ -22,6 +22,7 @@
 
 namespace ov::intel_gpu {
 struct HostTimeProfilingEntry {
+    int64_t iteration = -1;
     int64_t inputs_processing = 0;
     int64_t enqueue = 0;
     int64_t wait = 0;

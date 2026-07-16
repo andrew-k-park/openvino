@@ -60,6 +60,31 @@
 #endif
 
 namespace cldnn {
+
+network::HostTimeScope::HostTimeScope(network& network, HostTimeStage stage) : _stage(stage) {
+    if (network._host_time_profiling_active) {
+        _network = &network;
+        _parent = network._active_host_time_scope;
+        network._active_host_time_scope = this;
+        _start = std::chrono::steady_clock::now();
+    }
+}
+
+network::HostTimeScope::~HostTimeScope() {
+    if (_network == nullptr)
+        return;
+
+    const auto elapsed = std::chrono::steady_clock::now() - _start;
+    const auto elapsed_ns = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+    const auto index = static_cast<size_t>(_stage);
+    _network->_host_time_breakdown.duration_ns[index] += elapsed_ns;
+    _network->_host_time_breakdown.exclusive_ns[index] += elapsed_ns - _child_duration_ns;
+    _network->_host_time_breakdown.calls[index]++;
+    _network->_active_host_time_scope = _parent;
+    if (_parent != nullptr)
+        _parent->_child_duration_ns += elapsed_ns;
+}
 namespace {
 
 #ifdef GPU_DEBUG_CONFIG
@@ -947,7 +972,21 @@ bool network::has_event(const primitive_id& id) const {
 }
 
 void network::execute_impl(const std::vector<event::ptr>& events) {
-    set_arguments();
+#ifdef GPU_DEBUG_CONFIG
+    const auto host_time_level = get_config().get_host_time_profiling();
+    const auto& host_time_iterations = get_config().get_host_time_profiling_iterations();
+    _host_time_profiling_active = host_time_level >= 3 &&
+                                  (host_time_iterations.empty() || host_time_iterations.count(iteration) != 0);
+    if (_host_time_profiling_active) {
+        _host_time_breakdown = {};
+        _host_time_breakdown.iteration = iteration;
+    }
+#endif
+
+    {
+        auto profile = profile_host_time(HostTimeStage::network_set_arguments);
+        set_arguments();
+    }
 
     // This extra flush command is needed for dynamic models in both cases of out_of_order / in_order operating mode
     // since it reduces `bubbles` number in pipeline and GPU's idle time by timely flushing new kernels to device.
@@ -966,23 +1005,44 @@ void network::execute_impl(const std::vector<event::ptr>& events) {
             inst->add_dep_events(events);
         }
 
-        inst->prepare_primitive();
-        inst->execute();
+        {
+            auto profile = profile_host_time(HostTimeStage::prepare);
+            inst->prepare_primitive();
+        }
+        {
+            auto profile = profile_host_time(HostTimeStage::primitive_execute);
+            inst->execute();
+        }
 
         executed_prims++;
-        if (needs_flushing && executed_prims % flush_frequency == 0)
+        if (needs_flushing && executed_prims % flush_frequency == 0) {
+            auto profile = profile_host_time(HostTimeStage::flush);
             get_stream().flush();
+        }
     }
 
     // Using output of previous network as input to another one may cause hazard (in OOOQ mode) if user would not
     // provide proper event to execution. Flushing pipeline should prevent this kind of issues.
     // In scenarios with a big number of very small networks it can provide performance drop.
-    get_stream().flush();
+    {
+        auto profile = profile_host_time(HostTimeStage::flush);
+        get_stream().flush();
+    }
 
     // Reset all flags for the next execution
-    for (auto& inst : _exec_order) {
-        inst->reset_flags();
+    {
+        auto profile = profile_host_time(HostTimeStage::reset_flags);
+        for (auto& inst : _exec_order) {
+            inst->reset_flags();
+        }
     }
+
+#ifdef GPU_DEBUG_CONFIG
+    if (_host_time_profiling_active) {
+        _host_time_breakdowns.push_back(_host_time_breakdown);
+        _host_time_profiling_active = false;
+    }
+#endif
 }
 
 std::vector<primitive_id> network::get_input_ids() const {

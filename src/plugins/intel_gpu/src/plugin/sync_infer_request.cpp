@@ -361,6 +361,7 @@ void SyncInferRequest::enqueue() {
 
     m_internal_outputs.clear();
 
+    const auto network_iteration = network->get_current_iteration_num();
     auto network_enqueue_start = std::chrono::high_resolution_clock::now();
     m_internal_outputs = network->execute(dependencies);
     auto network_enqueue_end = std::chrono::high_resolution_clock::now();
@@ -381,6 +382,7 @@ void SyncInferRequest::enqueue() {
         const uint64_t inputs_processing = total_time - network_enqueue_time;
 
         HostTimeProfilingEntry entry;
+    entry.iteration = network_iteration;
         entry.inputs_processing = inputs_processing;
         entry.enqueue = network_enqueue_time;
 

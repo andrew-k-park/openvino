@@ -17,6 +17,8 @@
 #include "intel_gpu/plugin/variable_state.hpp"
 
 #include <map>
+#include <array>
+#include <chrono>
 #include <vector>
 #include <unordered_map>
 #include <string>
@@ -68,6 +70,46 @@ class ICompilationContext;
 struct network {
 public:
     using ptr = std::shared_ptr<network>;
+
+    enum class HostTimeStage : uint8_t {
+        network_set_arguments,
+        prepare,
+        update_shape,
+        runtime_optimizations,
+        fusion_validation,
+        implementation_update,
+        weights_update,
+        reallocation,
+        primitive_set_arguments,
+        on_execute,
+        primitive_execute,
+        flush,
+        reset_flags,
+        count,
+    };
+
+    struct HostTimeBreakdown {
+        int64_t iteration = -1;
+        std::array<uint64_t, static_cast<size_t>(HostTimeStage::count)> duration_ns{};
+        std::array<uint64_t, static_cast<size_t>(HostTimeStage::count)> exclusive_ns{};
+        std::array<uint64_t, static_cast<size_t>(HostTimeStage::count)> calls{};
+    };
+
+    class HostTimeScope {
+    public:
+        HostTimeScope(network& network, HostTimeStage stage);
+        ~HostTimeScope();
+
+        HostTimeScope(const HostTimeScope&) = delete;
+        HostTimeScope& operator=(const HostTimeScope&) = delete;
+
+    private:
+        network* _network = nullptr;
+        HostTimeScope* _parent = nullptr;
+        HostTimeStage _stage;
+        std::chrono::steady_clock::time_point _start;
+        uint64_t _child_duration_ns = 0;
+    };
 
     network(program::ptr program, stream::ptr stream, bool is_internal, bool is_primary_stream);
     network(program::ptr program, bool is_internal, bool is_primary_stream);
@@ -226,6 +268,9 @@ public:
 
     const ExecutionConfig& get_config() const { return _program->get_config(); }
 
+    HostTimeScope profile_host_time(HostTimeStage stage) { return HostTimeScope(*this, stage); }
+    const std::vector<HostTimeBreakdown>& get_host_time_breakdowns() const { return _host_time_breakdowns; }
+
     std::shared_ptr<ShapePredictor> get_shape_predictor() { return _shape_predictor; }
     void set_shape_predictor(std::shared_ptr<ShapePredictor> shape_predictor) { _shape_predictor = shape_predictor; }
 
@@ -248,6 +293,10 @@ private:
     bool _enable_profiling = false;
     bool _reset_arguments;
     bool _reuse_variable_mem = false;
+    bool _host_time_profiling_active = false;
+    HostTimeScope* _active_host_time_scope = nullptr;
+    HostTimeBreakdown _host_time_breakdown;
+    std::vector<HostTimeBreakdown> _host_time_breakdowns;
 
     /* Common memory pointer for shape_info */
     memory::ptr _shape_info_ptr;

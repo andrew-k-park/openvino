@@ -170,31 +170,49 @@ Graph::~Graph() {
             return ss.str();
         };
 
-        auto print_entry = [this, &get_time_str, &log_level](std::string name, HostTimeProfilingEntry& entry, int64_t iters_num = 1) {
+        auto print_entry = [this, &get_time_str, &log_level](const std::string& name,
+                                                             HostTimeProfilingEntry& entry,
+                                                             int64_t sample_count = 1,
+                                                             int64_t last_iteration = -1) {
+            std::stringstream header;
+            header << "[network_id=" << m_network->get_id() << " stream_id=" << m_stream_id;
+            if (sample_count == 1) {
+                header << " iteration=" << entry.iteration;
+            } else {
+                header << " iterations=" << entry.iteration << ".." << last_iteration
+                       << " sample_count=" << sample_count;
+            }
+
             if (log_level == 1) {
-                GPU_DEBUG_COUT << "[network_id=" << m_network->get_id() << " stream_id=" << m_stream_id << " iter_num=" << iters_num << "] " << name << " infer enqueue host time: "
-                               << get_time_str(entry.enqueue, iters_num) << std::endl;
+                header << "] " << name << " infer enqueue host time: "
+                       << get_time_str(entry.enqueue, sample_count);
+                GPU_DEBUG_COUT << header.str() << std::endl;
             } else if (log_level >= 2) {
                 auto total_time = entry.inputs_processing + entry.enqueue + entry.wait + entry.outputs_processing;
 
-                GPU_DEBUG_COUT << "[network_id=" << m_network->get_id() << " stream_id=" << m_stream_id << " iter_num=" << iters_num << "] " << name << " infer host time: "
-                               << get_time_str(total_time, iters_num) << std::endl;
-                GPU_DEBUG_COUT << " - " << " Inputs processing: " << get_time_str(entry.inputs_processing, iters_num) << std::endl;
-                GPU_DEBUG_COUT << " - " << " Enqueue: " << get_time_str(entry.enqueue, iters_num) << std::endl;
-                GPU_DEBUG_COUT << " - " << " Wait: " << get_time_str(entry.wait, iters_num) << std::endl;
-                GPU_DEBUG_COUT << " - " << " Outputs processing: " << get_time_str(entry.outputs_processing, iters_num) << std::endl;
+                header << "] " << name << " infer host time: "
+                       << get_time_str(total_time, sample_count);
+                GPU_DEBUG_COUT << header.str() << std::endl;
+                GPU_DEBUG_COUT << " - " << " Inputs processing: " << get_time_str(entry.inputs_processing, sample_count) << std::endl;
+                GPU_DEBUG_COUT << " - " << " Enqueue: " << get_time_str(entry.enqueue, sample_count) << std::endl;
+                GPU_DEBUG_COUT << " - " << " Wait: " << get_time_str(entry.wait, sample_count) << std::endl;
+                GPU_DEBUG_COUT << " - " << " Outputs processing: " << get_time_str(entry.outputs_processing, sample_count) << std::endl;
             }
         };
 
-        if (host_exec_times.size() >= 1) {
+        const auto& selected_iterations = m_config.get_host_time_profiling_iterations();
+        const bool targeted_breakdown = log_level >= 3 && !selected_iterations.empty();
+
+        if (!targeted_breakdown && host_exec_times.size() >= 1) {
             print_entry("First", host_exec_times[0], 1);
         }
 
-        if (host_exec_times.size() >= 2) {
+        if (!targeted_breakdown && host_exec_times.size() >= 2) {
             HostTimeProfilingEntry avg;
 
             const auto begin = std::begin(host_exec_times) + 1;
             const auto end = std::end(host_exec_times);
+            avg.iteration = begin->iteration;
             avg.inputs_processing = std::accumulate(begin, end, int64_t{0},
                 [](int64_t sum, const HostTimeProfilingEntry& entry) { return sum + entry.inputs_processing; });
             avg.enqueue = std::accumulate(begin, end, int64_t{0},
@@ -204,8 +222,104 @@ Graph::~Graph() {
             avg.outputs_processing = std::accumulate(begin, end, int64_t{0},
                 [](int64_t sum, const HostTimeProfilingEntry& entry) { return sum + entry.outputs_processing; });
 
-            const auto iters_num = host_exec_times.size() - 1;
-            print_entry("Avg", avg, iters_num);
+            const auto sample_count = host_exec_times.size() - 1;
+            print_entry("Avg", avg, sample_count, host_exec_times.back().iteration);
+        }
+
+        if (log_level >= 3) {
+            auto get_time_ns_str = [](uint64_t time_ns) {
+                double time = static_cast<double>(time_ns) / 1000.0;
+                std::string resolution = " mcs";
+                if (time > 1000.0) {
+                    resolution = " ms";
+                    time /= 1000.0;
+                }
+
+                std::stringstream ss;
+                ss << std::fixed << std::setprecision(2) << time << resolution;
+                return ss.str();
+            };
+
+            const auto& breakdowns = m_network->get_host_time_breakdowns();
+            for (const auto& breakdown : breakdowns) {
+                const auto exec_time = std::find_if(host_exec_times.begin(), host_exec_times.end(), [&breakdown](const HostTimeProfilingEntry& entry) {
+                    return entry.iteration == breakdown.iteration;
+                });
+                if (exec_time == host_exec_times.end())
+                    continue;
+
+                const auto total_time = exec_time->inputs_processing + exec_time->enqueue +
+                                        exec_time->wait + exec_time->outputs_processing;
+                  std::stringstream report;
+                  report << "[network_id=" << m_network->get_id() << " stream_id=" << m_stream_id
+                      << " iteration=" << breakdown.iteration << "] Selected infer host time hierarchy:" << std::endl;
+                  report << get_time_str(total_time) << "  Inference host time" << std::endl;
+                  report << "|- " << get_time_str(exec_time->inputs_processing)
+                      << "  Input/output tensor preparation" << std::endl;
+                  report << "|- " << get_time_str(exec_time->enqueue)
+                      << "  Enqueue (network::execute; host submission only)" << std::endl;
+
+                  const auto print_stage = [&breakdown, &get_time_ns_str, &report](const char* tree_prefix,
+                                                        const char* name,
+                                                        cldnn::network::HostTimeStage stage,
+                                                        bool exclusive = false) {
+                    const auto index = static_cast<size_t>(stage);
+                    const auto duration_ns = exclusive ? breakdown.exclusive_ns[index] : breakdown.duration_ns[index];
+                      report << tree_prefix << get_time_ns_str(duration_ns) << "  " << name
+                          << " (calls=" << breakdown.calls[index] << ")" << std::endl;
+                };
+
+                print_stage("|  |- ", "Network argument setup (network::set_arguments)",
+                            cldnn::network::HostTimeStage::network_set_arguments);
+                  report << "|  |- Primitive loop" << std::endl;
+                print_stage("|  |  |- ", "Prepare primitives (primitive_inst::prepare_primitive; inclusive)",
+                            cldnn::network::HostTimeStage::prepare);
+                  report << "|  |  |  Prepare sub-stages (exclusive, non-overlapping):" << std::endl;
+                print_stage("|  |  |  |- ", "Shape propagation (update_shape)",
+                            cldnn::network::HostTimeStage::update_shape, true);
+                print_stage("|  |  |  |- ", "Runtime layout/in-place/skip checks (do_runtime_*, update_paddings)",
+                            cldnn::network::HostTimeStage::runtime_optimizations, true);
+                print_stage("|  |  |  |- ", "Dynamic fusion validation (is_valid_fusion)",
+                            cldnn::network::HostTimeStage::fusion_validation, true);
+                print_stage("|  |  |  |- ", "Implementation selection/update (update_impl)",
+                            cldnn::network::HostTimeStage::implementation_update, true);
+                print_stage("|  |  |  |- ", "Weight update/reorder (update_weights)",
+                            cldnn::network::HostTimeStage::weights_update, true);
+                print_stage("|  |  |  |- ", "Output/intermediate buffer allocation (realloc_if_needed)",
+                            cldnn::network::HostTimeStage::reallocation, true);
+                print_stage("|  |  |  |- ", "Kernel argument setup (primitive_inst::set_arguments)",
+                            cldnn::network::HostTimeStage::primitive_set_arguments, true);
+                print_stage("|  |  |  |- ", "Per-primitive pre-execution hook (on_execute)",
+                            cldnn::network::HostTimeStage::on_execute, true);
+                print_stage("|  |  |  `- ", "Other prepare_primitive work",
+                            cldnn::network::HostTimeStage::prepare, true);
+                print_stage("|  |  `- ", "Submit primitive commands (primitive_inst::execute; host only)",
+                            cldnn::network::HostTimeStage::primitive_execute);
+                print_stage("|  |- ", "Queue flush (stream::flush)", cldnn::network::HostTimeStage::flush);
+                print_stage("|  |- ", "Reset per-iteration execution flags", cldnn::network::HostTimeStage::reset_flags);
+
+                const auto network_set_arguments = static_cast<size_t>(cldnn::network::HostTimeStage::network_set_arguments);
+                const auto prepare = static_cast<size_t>(cldnn::network::HostTimeStage::prepare);
+                const auto primitive_execute = static_cast<size_t>(cldnn::network::HostTimeStage::primitive_execute);
+                const auto flush = static_cast<size_t>(cldnn::network::HostTimeStage::flush);
+                const auto reset_flags = static_cast<size_t>(cldnn::network::HostTimeStage::reset_flags);
+                const auto classified_enqueue_ns = breakdown.duration_ns[network_set_arguments] +
+                                                   breakdown.duration_ns[prepare] +
+                                                   breakdown.duration_ns[primitive_execute] +
+                                                   breakdown.duration_ns[flush] +
+                                                   breakdown.duration_ns[reset_flags];
+                const auto enqueue_ns = static_cast<uint64_t>(exec_time->enqueue) * 1000;
+                const auto other_enqueue_ns = enqueue_ns > classified_enqueue_ns
+                                                ? enqueue_ns - classified_enqueue_ns
+                                                : 0;
+                  report << "|  `- " << get_time_ns_str(other_enqueue_ns)
+                      << "  Other network::execute work" << std::endl;
+                  report << "|- " << get_time_str(exec_time->wait)
+                      << "  GPU/event synchronization wait" << std::endl;
+                  report << "`- " << get_time_str(exec_time->outputs_processing)
+                      << "  Output shape/copy/profiling processing" << std::endl;
+                  GPU_DEBUG_COUT << report.str();
+            }
         }
     }
 }
