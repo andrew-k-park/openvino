@@ -55,7 +55,8 @@ static std::shared_ptr<dnnl::convolution_forward::primitive_desc> get_convolutio
         weights_layout.format = format::get_default_format(weights_layout.get_rank() + 1, true, true);
     }
 
-    auto [input_md, weights_md, output_md] = onednn::get_conv_memory_descs(input_layout, weights_layout, output_layout, tag_in_out);
+    auto [input_md, weights_md, output_md] =
+        onednn::get_conv_memory_descs(input_layout, weights_layout, output_layout, tag_in_out, true);
 
     dnnl::memory::dims stride(prim->stride.begin(), prim->stride.end());
     dnnl::memory::dims dilation(prim->dilation.begin(), prim->dilation.end());
@@ -155,6 +156,12 @@ protected:
     std::unordered_map<int, dnnl::memory> get_arguments(convolution_inst& instance) const override {
         std::unordered_map<int, dnnl::memory> args = parent::get_arguments(instance);
 
+        const auto& output_layout = instance.get_output_layout();
+        if (output_layout.data_padding._lower_size[1] != 0 || output_layout.data_padding._upper_size[1] != 0) {
+            auto& output = instance.output_memory();
+            args[DNNL_ARG_DST] = output.get_onednn_memory(_pd.dnnl::primitive_desc_base::dst_desc(0), 0);
+        }
+
         {
             auto weights = instance.weights_memory();
             auto offset = onednn::get_offset(instance.get_input_layout(1), _pd.dnnl::primitive_desc_base::weights_desc(0));
@@ -194,6 +201,17 @@ protected:
                 << " " << w_zp->get_layout().to_short_string() << std::endl;
         }
 
+        return args;
+    }
+
+    std::unordered_map<int, dnnl::memory> get_arguments(convolution_inst& instance,
+                                                         kernel_arguments_data& mem_args) const override {
+        auto args = parent::get_arguments(instance, mem_args);
+        const auto& output_layout = instance.get_output_layout();
+        if (output_layout.data_padding._lower_size[1] != 0 || output_layout.data_padding._upper_size[1] != 0) {
+            auto output = mem_args.outputs[0];
+            args[DNNL_ARG_DST] = output->get_onednn_memory(_pd.dnnl::primitive_desc_base::dst_desc(0), 0);
+        }
         return args;
     }
 
@@ -327,7 +345,8 @@ public:
         auto [input_md, weights_md, output_md] = onednn::get_conv_memory_descs(impl_params->get_input_layout(0),
                                                                                 impl_params->get_input_layout(1),
                                                                                 impl_params->get_output_layout(),
-                                                                                dnnl::memory::format_tag::undef);
+                                                                                dnnl::memory::format_tag::undef,
+                                                                                true);
 
         dnnl::memory::dims strides;
         dnnl::memory::dims dilates;

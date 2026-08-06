@@ -57,7 +57,8 @@ dnnl::memory::desc layout_to_memory_desc(cldnn::layout l, bool use_default_forma
 std::tuple<dnnl::memory::desc, dnnl::memory::desc, dnnl::memory::desc> get_conv_memory_descs(cldnn::layout input_layout,
                                                                  cldnn::layout weights_layout,
                                                                  cldnn::layout output_layout,
-                                                                 dnnl::memory::format_tag target_fmt = dnnl::memory::format_tag::undef);
+                                                                 dnnl::memory::format_tag target_fmt = dnnl::memory::format_tag::undef,
+                                                                 bool use_output_submemory = false);
 dnnl::algorithm convert_activation_func(cldnn::activation_func func);
 std::vector<std::vector<size_t>> get_candidate_orders(dnnl::memory::desc desc);
 cldnn::format find_format(dnnl::memory::desc desc, bool is_grouped = false);

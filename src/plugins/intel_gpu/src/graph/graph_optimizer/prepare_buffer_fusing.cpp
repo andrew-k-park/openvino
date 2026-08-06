@@ -120,6 +120,7 @@ bool concat_in_place_optimization::match(const program_node& concat_node,
     if (is_runtime && !concat_node.is_dynamic())
         return false;
     bool is_onednn_impl = false;
+    bool all_onednn_preds_are_convolution = true;
 
     // For in place concatenation input layouts and data types must match.
     // Also, it checks whether data along f-axis is aligned properly for implicit concat.
@@ -218,8 +219,10 @@ bool concat_in_place_optimization::match(const program_node& concat_node,
             }
 
             // Optimized-out input node is no longer onednn impl.
-            if (!pred.first->can_be_optimized())
+            if (!pred.first->can_be_optimized()) {
                 is_onednn_impl = true;
+                all_onednn_preds_are_convolution &= pred.first->is_type<convolution>();
+            }
         }
         const auto& input_padd = pred.first->get_output_layout().data_padding;
 
@@ -233,14 +236,16 @@ bool concat_in_place_optimization::match(const program_node& concat_node,
         }
         if (!concat_node.is_dynamic() || is_runtime) {
             lower_padd_in_axis += pred_params[idx].get_output_layout().get_tensor().sizes(def_fmt)[concat_axis];
-            // Accumulates byte offset for onednn 64-byte alignment. The assumption here is that onednn will support batch 1 case.
-            onednn_byte_offset += pred_l.bytes_count();
+            // Feature-axis concat offsets advance within each batch; batch-axis offsets span the full allocation.
+            onednn_byte_offset += concat_axis == 0
+                                      ? pred_l.bytes_count()
+                                      : pred_l.get_pitches()[0] * data_type_traits::size_of(pred_l.data_type);
         }
 
         idx++;
     }
 
-    // Implicit concat for onednn only when use_usm and batch 1.
+    // Implicit concat for onednn requires USM. Batch greater than 1 is supported only for convolution outputs.
     if (is_onednn_impl) {
         bool use_usm = concat_node.get_program().get_engine().use_unified_shared_memory();
         const layout& concat_out_l = concat_params.get_output_layout();
@@ -250,7 +255,7 @@ bool concat_in_place_optimization::match(const program_node& concat_node,
             // Return true in build time, it will be checked again in runtime
             return true;
         } else {
-            if (concat_out_l.batch() > 1)
+            if (concat_out_l.batch() > 1 && !all_onednn_preds_are_convolution)
                 return false;
             const auto& dims_order = concat_out_l.format.dims_order();
             for (auto dim : dims_order) {

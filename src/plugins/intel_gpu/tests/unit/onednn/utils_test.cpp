@@ -508,6 +508,23 @@ TEST_F(test_layout_to_memory_desc, get_conv_memory_descs_blocked_format) {
     EXPECT_EQ(output_desc.get_inner_nblks(), 1);
 }
 
+TEST_F(test_layout_to_memory_desc, get_conv_memory_descs_padded_output_submemory) {
+    layout input_layout = layout{ov::PartialShape{2, 32, 2, 1}, data_types::f16, format::b_fs_yx_fsv16};
+    layout weights_layout = layout{ov::PartialShape{32, 32, 1, 1}, data_types::f16, format::os_is_yx_osv16_isv16};
+    layout output_layout = layout{ov::PartialShape{2, 32, 2, 1}, data_types::f16, format::b_fs_yx_fsv16};
+    output_layout.data_padding = padding{{0, 16, 0, 0}, {0, 16, 0, 0}};
+
+    auto [input_desc, weights_desc, output_desc] = get_conv_memory_descs(
+        input_layout, weights_layout, output_layout, dnnl::memory::format_tag::undef, true);
+
+    EXPECT_EQ(output_desc.get_dims(), dnnl::memory::dims({2, 32, 2, 1}));
+    EXPECT_EQ(output_desc.get_inner_nblks(), 1);
+    EXPECT_EQ(output_desc.get_inner_blks()[0], 16);
+    EXPECT_EQ(output_desc.get_inner_idxs()[0], 1);
+    EXPECT_EQ(output_desc.get_strides()[0], 128);
+    EXPECT_EQ(output_desc.get_submemory_offset(), 32);
+}
+
 TEST_F(test_layout_to_memory_desc, get_conv_memory_descs_grouped_weights) {
     layout input_layout = layout{ov::PartialShape{1, 256, 28, 28}, data_types::f32, format::bfyx};
     layout weights_layout = layout{ov::PartialShape{32, 128, 8, 3, 3}, data_types::f32, format::goiyx};

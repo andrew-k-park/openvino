@@ -615,6 +615,72 @@ TEST(prepare_buffer_fusing, in_place_concat_dynamic_onednn_batch2) {
     }
 }
 
+TEST(prepare_buffer_fusing, in_place_concat_dynamic_onednn_convolution_multiple_batches) {
+    auto& engine = get_test_engine();
+    if (!engine.get_device_info().supports_immad)
+        return;
+
+    const ov::Shape weights_shape{16, 16, 1, 1};
+    const std::string no_bias;
+    auto dynamic_layout = layout{ov::PartialShape::dynamic(4), data_types::f16, format::bfyx};
+    auto weights_layout = layout{weights_shape, data_types::f16, format::bfyx};
+    auto weights1 = engine.allocate_memory(weights_layout);
+    auto weights2 = engine.allocate_memory(weights_layout);
+
+    tests::set_random_values<ov::float16>(weights1);
+    tests::set_random_values<ov::float16>(weights2);
+
+    topology topology(
+        input_layout("input1", dynamic_layout),
+        input_layout("input2", dynamic_layout),
+        data("weights1", weights1),
+        data("weights2", weights2),
+        convolution("conv1", input_info("input1"), "weights1", no_bias, 1, {1, 1}, {1, 1}, {0, 0}, {0, 0}, false),
+        convolution("conv2", input_info("input2"), "weights2", no_bias, 1, {1, 1}, {1, 1}, {0, 0}, {0, 0}, false),
+        concatenation("concat", {input_info("conv1"), input_info("conv2")}, 1),
+        reorder("output", input_info("concat"), format::bfyx, data_types::f16));
+
+    ExecutionConfig config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::optimize_data(true));
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    config.set_property(ov::intel_gpu::force_implementations(ov::intel_gpu::ImplForcingMap{
+        {"conv1", {format::b_fs_yx_fsv16, "", impl_types::onednn}},
+        {"conv2", {format::b_fs_yx_fsv16, "", impl_types::onednn}},
+    }));
+
+    auto reference_config = config;
+    reference_config.set_property(ov::intel_gpu::optimize_data(false));
+    network optimized_network(engine, topology, config);
+    network reference_network(engine, topology, reference_config);
+
+    for (const auto batch_size : std::vector<ov::Dimension::value_type>{1, 8, 2, 5, 1, 7, 3, 8, 2}) {
+        auto input_layout = layout{ov::PartialShape{batch_size, 16, 2, 1}, data_types::f16, format::bfyx};
+        auto input1 = engine.allocate_memory(input_layout);
+        auto input2 = engine.allocate_memory(input_layout);
+        tests::set_random_values<ov::float16>(input1);
+        tests::set_random_values<ov::float16>(input2);
+
+        optimized_network.set_input_data("input1", input1);
+        optimized_network.set_input_data("input2", input2);
+        reference_network.set_input_data("input1", input1);
+        reference_network.set_input_data("input2", input2);
+
+        auto optimized_outputs = optimized_network.execute();
+        auto reference_outputs = reference_network.execute();
+        auto concat_inst = optimized_network.get_primitive("concat");
+        ASSERT_TRUE(concat_inst->can_be_optimized()) << "batch=" << batch_size;
+        ASSERT_EQ(concat_inst->output_memory_ptr(), optimized_network.get_primitive("conv1")->output_memory_ptr());
+        ASSERT_EQ(concat_inst->output_memory_ptr(), optimized_network.get_primitive("conv2")->output_memory_ptr());
+
+        mem_lock<ov::float16> optimized_output(optimized_outputs.at("output").get_memory(), get_test_stream());
+        mem_lock<ov::float16> reference_output(reference_outputs.at("output").get_memory(), get_test_stream());
+        ASSERT_EQ(optimized_output.size(), reference_output.size());
+        for (size_t idx = 0; idx < optimized_output.size(); ++idx) {
+            ASSERT_EQ(optimized_output[idx], reference_output[idx]) << "batch=" << batch_size << ", idx=" << idx;
+        }
+    }
+}
+
 TEST(prepare_buffer_fusing, in_place_concat_dynamic__static_dim_dyn_pad) {
     auto& engine = get_test_engine();
     auto in_layout1_0 = layout{ ov::PartialShape{-1, 2, -1, -1}, data_types::f32, format::bfyx }; // => {-1, -1, -1, 2}

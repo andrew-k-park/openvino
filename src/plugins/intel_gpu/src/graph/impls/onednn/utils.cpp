@@ -542,7 +542,11 @@ dnnl::memory::desc layout_to_memory_desc(cldnn::layout l, bool use_default_forma
 }
 
 std::tuple<dnnl::memory::desc, dnnl::memory::desc, dnnl::memory::desc>
-get_conv_memory_descs(cldnn::layout input_layout, cldnn::layout weights_layout, cldnn::layout output_layout, dnnl::memory::format_tag target_fmt) {
+get_conv_memory_descs(cldnn::layout input_layout,
+                      cldnn::layout weights_layout,
+                      cldnn::layout output_layout,
+                      dnnl::memory::format_tag target_fmt,
+                      bool use_output_submemory) {
     bool need_blocked = input_layout.format.is_blocked() || output_layout.format.is_blocked();
     bool is_grouped = format::is_grouped(weights_layout.format);
 
@@ -559,6 +563,25 @@ get_conv_memory_descs(cldnn::layout input_layout, cldnn::layout weights_layout, 
     auto input_desc = input_mdb.build();
     auto weights_desc = weights_mdb.build();
     auto output_desc = output_mdb.build();
+
+    const auto rank = output_layout.get_rank();
+    const auto& lower_padding = output_layout.data_padding._lower_size;
+    const auto& upper_padding = output_layout.data_padding._upper_size;
+    if (use_output_submemory && (lower_padding[1] != 0 || upper_padding[1] != 0)) {
+        auto parent_dims = output_desc.get_dims();
+        dnnl::memory::dims offsets(rank, 0);
+        for (size_t i = 0; i < rank; ++i) {
+            parent_dims[i] += lower_padding[i] + upper_padding[i];
+            offsets[i] = lower_padding[i];
+        }
+
+        auto parent_layout = output_layout.clone_with_other_shape(ov::PartialShape(parent_dims));
+        parent_layout.data_padding = padding{};
+        auto parent_mdb = MemoryDescriptorBuilder(parent_layout, target_fmt);
+        if (need_blocked || is_grouped)
+            parent_mdb.keep_rank();
+        output_desc = parent_mdb.build().submemory_desc(output_desc.get_dims(), offsets);
+    }
 
     GPU_DEBUG_TRACE_DETAIL << "input: " << input_layout.to_short_string() << " -> " << memory_desc_to_string(input_desc) << std::endl;
     GPU_DEBUG_TRACE_DETAIL << "weights: " << weights_layout.to_short_string() << " -> " << memory_desc_to_string(weights_desc) << std::endl;
