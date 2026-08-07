@@ -895,7 +895,7 @@ TEST(IncreasePositionIdsPrecisionTest, DirectMatMulSinCos) {
     auto model = std::make_shared<ov::Model>(ov::OutputVector{sin, cos}, ov::ParameterVector{position_ids});
 
     ov::pass::Manager manager;
-    manager.register_pass<IncreasePositionIdsPrecisionForDirectMatMulSinCos>();
+    manager.register_pass<IncreasePositionIdsPrecision>();
     manager.run_passes(model);
 
     EXPECT_EQ(matmul->get_input_element_type(0), ov::element::f32);
@@ -925,7 +925,7 @@ TEST(IncreasePositionIdsPrecisionTest, DirectMatMulSinCosIgnoresUnrelatedInput) 
     auto model = std::make_shared<ov::Model>(ov::OutputVector{sin, cos}, ov::ParameterVector{input_ids});
 
     ov::pass::Manager manager;
-    manager.register_pass<IncreasePositionIdsPrecisionForDirectMatMulSinCos>();
+    manager.register_pass<IncreasePositionIdsPrecision>();
     manager.run_passes(model);
 
     EXPECT_EQ(matmul->get_input_element_type(0), ov::element::f16);
