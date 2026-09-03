@@ -1083,7 +1083,6 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
         tile_vreduce_max(S_tile, &S_max_tile);
         tile_atomic_max_full(
                 S_max_tile, S_max_slm, ugemm_kq_wg_tile_n, sg_j0_kq, 0);
-        intel_work_group_barrier_arrive(CLK_LOCAL_MEM_FENCE);
 
         #ifdef HAS_SINK_INPUT
         const int cur_k = causal_k - k0 - 1;
@@ -1152,7 +1151,9 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
 
 #ifndef ALT_MAX
         /* Read back WG-wide maxima */
-        intel_work_group_barrier_wait(CLK_LOCAL_MEM_FENCE);
+        // Split arrive/wait does not order these SLM accesses across loop iterations here, which showed up as
+        // run-to-run nondeterminism in the paged mixed stage; a full barrier is required.
+        barrier(CLK_LOCAL_MEM_FENCE);
         tile_load_full(&S_max_tile, S_max_slm, ugemm_kq_wg_tile_n, sg_j0_kq, 0);
 #endif
 
@@ -1167,7 +1168,7 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
 
 #ifdef ALT_MAX
         /* Read back WG-wide maxima and adjust S to match */
-        intel_work_group_barrier_wait(CLK_LOCAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
         s_sum_tile_type S_max_tile1;
         tile_copy(S_max_tile, S_max_tile1);
         tile_load_full(&S_max_tile, S_max_slm, ugemm_kq_wg_tile_n, sg_j0_kq, 0);
@@ -1225,7 +1226,6 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
         tile_store_t_sys_src2(S_tile_half2, (local uint *)S_slm,
                 ugemm_vs_sg_tile_n, ugemm_kq_wg_tile_m / 2, sg_i0_kq / 2,
                 sg_j0_kq);
-        intel_work_group_barrier_arrive(CLK_LOCAL_MEM_FENCE);
 
         /* Rescale existing accumulator and sums to match new maxima */
         if (!first) {
@@ -1331,11 +1331,7 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
 #endif
 
         /* Wait for S stores */
-        intel_work_group_barrier_wait(CLK_LOCAL_MEM_FENCE);
-
-        /* Last iteration: signal column sums are ready */
-        if (last && need_sum_barrier)
-            intel_work_group_barrier_arrive(CLK_LOCAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
 
         /* Accumulate A += V * S */
 #if IS_PAGED_ATTENTION && !IS_PREFILL
@@ -1486,7 +1482,7 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
     }
 
     /* Wait for column sums to be ready */
-    if (need_sum_barrier) intel_work_group_barrier_wait(CLK_LOCAL_MEM_FENCE);
+    if (need_sum_barrier) barrier(CLK_LOCAL_MEM_FENCE);
 
     /* Load column sums from SLM + reduce in registers */
     a_scale_tile_type A_scale_tile, A_scale_tile_load;
