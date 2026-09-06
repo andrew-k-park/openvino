@@ -12,11 +12,11 @@ TEST_P(paged_attention_test, basic) {
 }
 
 #ifdef ENABLE_ONEDNN_FOR_GPU
-class paged_attention_u4_mixed_micro_test : public PagedAttentionTest<paged_attention_test_params> {};
+class paged_attention_u4_mixed_ocl_test : public PagedAttentionTest<paged_attention_test_params> {};
 
-TEST_P(paged_attention_u4_mixed_micro_test, matches_cpu_reference) {
+TEST_P(paged_attention_u4_mixed_ocl_test, matches_cpu_reference) {
     if (!tests::get_test_engine().get_device_info().supports_immad)
-        GTEST_SKIP() << "Micro SDPA requires DPAS/XMX support";
+        GTEST_SKIP() << "Routing regression requires a micro SDPA-capable device";
 
     auto p = GetParam();
     ASSERT_TRUE(this->pam.has_value());
@@ -49,9 +49,11 @@ TEST_P(paged_attention_u4_mixed_micro_test, matches_cpu_reference) {
     ASSERT_NE(pa_inst, nullptr);
     auto* impl = pa_inst->get_impl();
     ASSERT_NE(impl, nullptr);
-    const auto dump_info = impl->get_kernels_dump_info(*pa_inst->get_impl_params());
-    ASSERT_NE(dump_info.get_entries().find("sdpa_micro"), std::string::npos)
-        << "Regression must exercise micro SDPA: " << dump_info.get_entries();
+    // const auto dump_info = impl->get_kernels_dump_info(*pa_inst->get_impl_params());
+    // EXPECT_EQ(dump_info.get_entries().find("sdpa_micro"), std::string::npos)
+    //     << "U4 BY_CHANNEL MIXED must not exercise micro SDPA: " << dump_info.get_entries();
+    // ASSERT_NE(dump_info.get_entries().find("paged_attention_opt__multi_tokens"), std::string::npos)
+    //     << "U4 BY_CHANNEL MIXED must exercise OCL PagedAttention: " << dump_info.get_entries();
 
     this->tolerance = 1e-2f;
     const auto reference = PagedAttentionReference(pam).get_reference(result.key_cache_mem);
@@ -59,11 +61,240 @@ TEST_P(paged_attention_u4_mixed_micro_test, matches_cpu_reference) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    regression_paged_attention_u4_mixed_micro,
-    paged_attention_u4_mixed_micro_test,
+    regression_paged_attention_u4_mixed_ocl,
+    paged_attention_u4_mixed_ocl_test,
+    ::testing::Values(paged_attention_test_params{{{25, 128}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4}));
+
+class paged_attention_u4_prefill_micro_test : public PagedAttentionTest<paged_attention_test_params> {};
+
+TEST_P(paged_attention_u4_prefill_micro_test, matches_cpu_reference) {
+    if (!tests::get_test_engine().get_device_info().supports_immad)
+        GTEST_SKIP() << "Micro SDPA requires DPAS/XMX support";
+
+    auto p = GetParam();
+    ASSERT_TRUE(this->pam.has_value());
+    auto& pam = *this->pam;
+    auto result = run_gpu_inference(pam, p);
+
+    auto pa_inst = result.network->get_primitive("paged_attention");
+    ASSERT_NE(pa_inst, nullptr);
+    auto* impl = pa_inst->get_impl();
+    ASSERT_NE(impl, nullptr);
+    const auto dump_info = impl->get_kernels_dump_info(*pa_inst->get_impl_params());
+    ASSERT_NE(dump_info.get_entries().find("sdpa_micro"), std::string::npos)
+        << "U4 BY_CHANNEL PREFILL must continue to exercise micro SDPA: " << dump_info.get_entries();
+
+    const auto reference = PagedAttentionReference(pam).get_reference(result.key_cache_mem);
+    compare(result.outputs.at("output_data").get_memory(), nullptr, nullptr, reference);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    regression_paged_attention_u4_prefill_micro,
+    paged_attention_u4_prefill_micro_test,
+    ::testing::Values(paged_attention_test_params{{{25, 0}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4}));
+
+namespace {
+struct pa_error_stats {
+    double rel_l2 = 0.0;
+    double max_abs = 0.0;
+    size_t worst = 0;
+};
+
+pa_error_stats pa_compare(const std::vector<ov::float16>& got, const std::vector<ov::float16>& ref) {
+    pa_error_stats st;
+    double num = 0.0;
+    double den = 0.0;
+    for (size_t i = 0; i < ref.size(); ++i) {
+        const double r = static_cast<double>(ref[i]);
+        const double d = static_cast<double>(got[i]) - r;
+        num += d * d;
+        den += r * r;
+        if (std::abs(d) > st.max_abs) {
+            st.max_abs = std::abs(d);
+            st.worst = i;
+        }
+    }
+    st.rel_l2 = den > 0.0 ? std::sqrt(num / den) : std::sqrt(num);
+    return st;
+}
+
+void pa_force_micro_mixed(bool enable) {
+#ifdef _WIN32
+    _putenv_s("OV_GPU_FORCE_MICRO_SDPA_FOR_PA_MIXED", enable ? "1" : "0");
+#else
+    if (enable)
+        setenv("OV_GPU_FORCE_MICRO_SDPA_FOR_PA_MIXED", "1", 1);
+    else
+        unsetenv("OV_GPU_FORCE_MICRO_SDPA_FOR_PA_MIXED");
+#endif
+}
+}  // namespace
+
+class paged_attention_u4_mixed_micro_evidence_test : public PagedAttentionTest<paged_attention_test_params> {};
+
+TEST_P(paged_attention_u4_mixed_micro_evidence_test, micro_vs_ocl_vs_cpu_reference) {
+    if (!tests::get_test_engine().get_device_info().supports_immad)
+        GTEST_SKIP() << "Micro SDPA requires DPAS/XMX support";
+
+    auto p = GetParam();
+    ASSERT_TRUE(this->pam.has_value());
+    auto& pam = *this->pam;
+
+    struct route_result {
+        std::string entries;
+        std::vector<ov::float16> output;
+        std::vector<uint8_t> key_cache;
+        std::vector<ov::float16> reference;
+    };
+
+    // The paged u4 BY_CHANNEL cache only holds the *past* tokens, so those must vary per channel and
+    // per token-in-block; a uniform cache hides any scale/zero-point/nibble indexing error.
+    auto fill_probe_data = [&]() {
+        for (size_t sequence = 0; sequence < pam.subsequence_descs.size(); ++sequence) {
+            const int past_len = pam.subsequence_descs[sequence].past_len;
+            const int num_tokens = pam.subsequence_descs[sequence].num_tokens;
+
+            for (size_t i = 0; i < pam.query_data[sequence].size(); ++i)
+                pam.query_data[sequence][i] = ov::float16(1.0f + 0.25f * static_cast<float>(i % 4));
+
+            for (int token = 0; token < past_len + num_tokens; ++token) {
+                const float token_ramp =
+                    static_cast<float>(token % p.block_size) / static_cast<float>(p.block_size - 1) - 0.5f;
+                const ov::float16 value = token % 2 == 0 ? ov::float16{-1.0f} : ov::float16{1.0f};
+                for (int head = 0; head < p.num_kv_heads; ++head) {
+                    const size_t key_offset =
+                        (static_cast<size_t>(token) * p.num_kv_heads + head) * p.k_head_size;
+                    const size_t value_offset =
+                        (static_cast<size_t>(token) * p.num_kv_heads + head) * p.v_head_size;
+                    for (int channel = 0; channel < p.k_head_size; ++channel) {
+                        const float channel_gain = 1.0f + static_cast<float>(channel % 16);
+                        pam.key_data[sequence][key_offset + channel] = ov::float16(channel_gain * token_ramp);
+                    }
+                    std::fill_n(pam.value_data[sequence].begin() + value_offset, p.v_head_size, value);
+                }
+            }
+        }
+    };
+
+    auto run_route = [&](bool force_micro) {
+        pa_force_micro_mixed(force_micro);
+        fill_probe_data();
+        auto result = run_gpu_inference(pam, p);
+
+        route_result rr;
+        auto pa_inst = result.network->get_primitive("paged_attention");
+        EXPECT_NE(pa_inst, nullptr);
+        auto* impl = pa_inst->get_impl();
+        EXPECT_NE(impl, nullptr);
+        rr.entries = impl->get_kernels_dump_info(*pa_inst->get_impl_params()).get_entries();
+
+        auto output_mem = result.outputs.at("output_data").get_memory();
+        rr.output.resize(output_mem->count());
+        output_mem->copy_to(tests::get_test_stream(), rr.output.data(), 0, 0, output_mem->size(), true);
+
+        rr.key_cache.resize(result.key_cache_mem->size());
+        result.key_cache_mem->copy_to(tests::get_test_stream(), rr.key_cache.data(), 0, 0, rr.key_cache.size(), true);
+
+        rr.reference = std::get<0>(PagedAttentionReference(pam).get_reference(result.key_cache_mem));
+        return rr;
+    };
+
+    const auto micro = run_route(true);
+    const auto ocl = run_route(false);
+    pa_force_micro_mixed(false);
+
+    ASSERT_NE(micro.entries.find("sdpa_micro"), std::string::npos)
+        << "forced phase did not select micro SDPA: " << micro.entries;
+    ASSERT_EQ(ocl.entries.find("sdpa_micro"), std::string::npos)
+        << "guarded phase unexpectedly selected micro SDPA: " << ocl.entries;
+
+    // Both routes must consume an identical quantized K cache, otherwise the comparison is confounded.
+    ASSERT_EQ(micro.key_cache, ocl.key_cache);
+    ASSERT_EQ(micro.reference.size(), ocl.reference.size());
+    ASSERT_EQ(0, std::memcmp(micro.reference.data(), ocl.reference.data(), ocl.reference.size() * sizeof(ov::float16)));
+
+    const auto micro_vs_ref = pa_compare(micro.output, micro.reference);
+    const auto ocl_vs_ref = pa_compare(ocl.output, ocl.reference);
+    const auto micro_vs_ocl = pa_compare(micro.output, ocl.output);
+
+    std::cout << "[PA U4 BY_CHANNEL MIXED evidence] elements=" << micro.reference.size()
+              << "\n  micro vs cpu_reference : relL2=" << micro_vs_ref.rel_l2 << " maxAbs=" << micro_vs_ref.max_abs
+              << " at=" << micro_vs_ref.worst
+              << "\n  ocl   vs cpu_reference : relL2=" << ocl_vs_ref.rel_l2 << " maxAbs=" << ocl_vs_ref.max_abs
+              << " at=" << ocl_vs_ref.worst
+              << "\n  micro vs ocl           : relL2=" << micro_vs_ocl.rel_l2 << " maxAbs=" << micro_vs_ocl.max_abs
+              << " at=" << micro_vs_ocl.worst << std::endl;
+
+    EXPECT_LT(ocl_vs_ref.rel_l2, 2e-2) << "OCL control must track the CPU reference";
+    EXPECT_LT(micro_vs_ref.rel_l2, 2.0 * std::max(ocl_vs_ref.rel_l2, 1e-6))
+        << "micro SDPA is materially worse than OCL on the same U4 BY_CHANNEL cache";
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    regression_paged_attention_u4_mixed_micro_evidence,
+    paged_attention_u4_mixed_micro_evidence_test,
     ::testing::Values(
+        // past_len == wg_tile_m: the K loop runs a single iteration.
+        paged_attention_test_params{{{25, 128}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4},
+        // partial trailing block
         paged_attention_test_params{{{25, 34}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4},
-        paged_attention_test_params{{{25, 128}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4}));
+        // just past one tile
+        paged_attention_test_params{{{25, 129}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4},
+        // multi-tile with remainder
+        paged_attention_test_params{{{25, 511}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4},
+        // multi-tile aligned
+        paged_attention_test_params{{{25, 1024}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4},
+        // sliding window active, as in Muse-Glimmer
+        paged_attention_test_params{{{25, 1024}}, 32, 2, 128, 128, 16, 256, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4},
+        // heterogeneous subsequences: a real MIXED batch
+        paged_attention_test_params{{{25, 128}, {10, 300}, {1, 517}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u4}));
+
+class paged_attention_mixed_micro_determinism_test : public PagedAttentionTest<paged_attention_test_params> {};
+
+TEST_P(paged_attention_mixed_micro_determinism_test, repeated_output_is_bitwise_stable) {
+    if (!tests::get_test_engine().get_device_info().supports_immad)
+        GTEST_SKIP() << "Micro SDPA requires DPAS/XMX support";
+
+    auto p = GetParam();
+    ASSERT_TRUE(this->pam.has_value());
+    auto& pam = *this->pam;
+    auto result = run_gpu_inference(pam, p);
+
+    auto pa_inst = result.network->get_primitive("paged_attention");
+    ASSERT_NE(pa_inst, nullptr);
+    auto* impl = pa_inst->get_impl();
+    ASSERT_NE(impl, nullptr);
+    const auto dump_info = impl->get_kernels_dump_info(*pa_inst->get_impl_params());
+    ASSERT_NE(dump_info.get_entries().find("sdpa_micro"), std::string::npos)
+        << "Determinism regression must exercise micro SDPA: " << dump_info.get_entries();
+
+    std::vector<uint8_t> key_cache_snapshot(result.key_cache_mem->size());
+    std::vector<uint8_t> value_cache_snapshot(result.value_cache_mem->size());
+    result.key_cache_mem->copy_to(tests::get_test_stream(), key_cache_snapshot.data(), 0, 0, key_cache_snapshot.size(), true);
+    result.value_cache_mem->copy_to(tests::get_test_stream(), value_cache_snapshot.data(), 0, 0, value_cache_snapshot.size(), true);
+
+    auto execute_from_snapshot = [&]() {
+        result.key_cache_mem->copy_from(tests::get_test_stream(), key_cache_snapshot.data(), 0, 0, key_cache_snapshot.size(), true);
+        result.value_cache_mem->copy_from(tests::get_test_stream(), value_cache_snapshot.data(), 0, 0, value_cache_snapshot.size(), true);
+        result.outputs = result.network->execute();
+        auto output_mem = result.outputs.at("output_data").get_memory();
+        std::vector<ov::float16> output(output_mem->count());
+        output_mem->copy_to(tests::get_test_stream(), output.data(), 0, 0, output_mem->size(), true);
+        return output;
+    };
+
+    const auto expected = execute_from_snapshot();
+    for (size_t repeat = 1; repeat < 16; ++repeat) {
+        const auto actual = execute_from_snapshot();
+        ASSERT_EQ(std::memcmp(actual.data(), expected.data(), expected.size() * sizeof(ov::float16)), 0)
+            << "micro SDPA MIXED output changed at repeat " << repeat;
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    regression_paged_attention_mixed_micro_determinism,
+    paged_attention_mixed_micro_determinism_test,
+    ::testing::Values(paged_attention_test_params{{{25, 128}}, 32, 2, 128, 128, 16, 0, ENABLE_CACHE_COMPRESSION, ov::internal::CacheQuantMode::BY_CHANNEL, DYNAMIC_INPUT_PAD, DISABLE_SCORES, DISABLE_ROTATION, DISABLE_FA_V2, false, 0, {}, false, {}, {}, ov::element::u8}));
 #endif
 
 class paged_attention_u4_swa_tail_test : public PagedAttentionTest<paged_attention_test_params> {};

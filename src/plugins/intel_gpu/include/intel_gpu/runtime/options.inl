@@ -126,4 +126,7 @@ OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, network_marker, false, "Insert named OpenC
 OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, list_layers, false, "Print layers list")
 OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, print_input_data_shapes, false, "print input data shapes")
 OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, pa_integrity_check, false, "Enable in-kernel SDPA micro-GEMM integrity checks (per-row K^T*Q and V*S reference comparisons)")
+OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, force_micro_sdpa_for_pa_mixed, false, "Force micro SDPA in the PagedAttention MIXED stage even for 4-bit BY_CHANNEL KV caches, bypassing the accuracy guard (evidence collection only)")
+OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, disable_micro_sdpa_for_pa_mixed, false, "Route the PagedAttention MIXED stage to paged_attention_opt.cl for any KV cache precision, so the two kernels can be A/B compared")
+OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, pa_swa_block_skip_disable, false, "Disable the sliding-window block skip in paged_attention_opt.cl so its equivalence to a full scan can be measured")
 OV_CONFIG_DEBUG_OPTION(ov::intel_gpu, micro_sdpa_workgroup_config, std::vector<int>{}, "Override SDPA micro-kernel workgroup config: 4 ints [wg_m_kq wg_n_kq wg_m_vs wg_n_vs]")

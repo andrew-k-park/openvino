@@ -9,6 +9,7 @@
 // clang-format on
 #include "paged_attention_opt.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -298,6 +299,8 @@ public:
         jit.make("SUBGROUP_SIZE", subgroup_size);
         jit.make("SLIDING_WINDOW_SIZE", desc->sliding_window);
         jit.make("SWA_BLOCK_SKIP_ENABLED", desc->sliding_window > 0 && !desc->has_scores_output());
+        jit.make("SWA_MIXED_EQUIVALENCE_CONTROL",
+                 GPU_DEBUG_VALUE_OR(params.get_program().get_config().get_pa_swa_block_skip_disable(), false));
 
         const auto kv_cache_dt = params.get_program().get_config().get_kv_cache_precision();
         const bool is_kv_compressed = get_kv_compressed(params);
@@ -1386,7 +1389,22 @@ public:
     // only in the PREFILL kernels, and in MIXED neither micro SDPA nor paged_attention_opt.cl consumes token_type_ids.
     // TODO: implement bidirectional attention for MIXED with token_type_ids
     bool can_use_micro_sdpa_for(const kernel_impl_params& params, const PagedAttentionStage& stage) const {
-        const auto can_use_micro_sdpa = supports_micro_sdpa(params) && valid_micro_stage(stage);
+        if (!supports_micro_sdpa(params) || !valid_micro_stage(stage))
+            return false;
+
+        // The generated ugemm loses accuracy when MIXED reads a 4-bit BY_CHANNEL paged cache.
+        const auto desc = params.typed_desc<paged_attention>();
+        const auto kv_cache_dt = params.get_program().get_config().get_kv_cache_precision();
+        // Debug-only escape hatches used to A/B the micro route against OCL.
+        const auto& cfg = params.get_program().get_config();
+        if (stage == PagedAttentionStage::MIXED && GPU_DEBUG_VALUE_OR(cfg.get_disable_micro_sdpa_for_pa_mixed(), false))
+            return false;
+        const auto force_micro_mixed = GPU_DEBUG_VALUE_OR(cfg.get_force_micro_sdpa_for_pa_mixed(), false);
+        const auto has_problematic_paged_u4_path = !force_micro_mixed &&
+                                                   stage == PagedAttentionStage::MIXED &&
+                                                   data_type_traits::is_i4_u4(kv_cache_dt) &&
+                                                   desc->is_key_by_channel;
+        const auto can_use_micro_sdpa = !has_problematic_paged_u4_path;
         GPU_DEBUG_TRACE_DETAIL << "can_use_micro_sdpa_for: stage = " << static_cast<size_t>(stage)
                                << ", token_type_ids = " << params.get_input_layout(PagedAttentionInputIdx::TOKEN_TYPE_IDS).to_short_string()
                                << ", can_use_micro_sdpa = " << can_use_micro_sdpa << std::endl;
@@ -1482,13 +1500,24 @@ public:
         rt_params->partition_size = get_partitioning_size(params, desc->v_head_size, rt_params->stage);
 
         auto effective_context_len = rt_params->max_context_len;
-        // scores_output is only used in SnapKV path, and it doesn't yet handle the SWA block skip offset
-        if (desc->sliding_window > 0 && rt_params->stage == PagedAttentionStage::GENERATE && !desc->has_scores_output()) {
-            auto total_blocks = ceil_div(rt_params->max_context_len, paged_attention_block_size);
-            auto swa_start_block =
-                rt_params->max_context_len > desc->sliding_window ? (rt_params->max_context_len - desc->sliding_window) / paged_attention_block_size : 0;
-            auto effective_blocks = total_blocks - swa_start_block;
-            effective_context_len = effective_blocks * paged_attention_block_size;
+        const auto swa_block_skip_disabled =
+            GPU_DEBUG_VALUE_OR(params.get_program().get_config().get_pa_swa_block_skip_disable(), false);
+        // scores_output is only used in SnapKV path, and it doesn't yet handle the SWA block skip offset.
+        // MIXED is included: paged_attention_opt.cl dispatches one work group per query token there
+        // (global[0] == total_tokens, local[0] == 1), so each work group derives its own window from
+        // its own seq_len exactly as the GENERATE path does.
+        if (desc->sliding_window > 0 && !desc->has_scores_output() && !swa_block_skip_disabled &&
+            (rt_params->stage == PagedAttentionStage::GENERATE || rt_params->stage == PagedAttentionStage::MIXED)) {
+            // num_of_partitions is a dispatch dimension shared by every token in the batch, so it must
+            // cover the token that needs the most blocks - which is not necessarily the longest one.
+            // With L = a * B + r and W = c * B + s, the in-window block count is
+            //     blocks(L) = ceil(L/B) - floor((L-W)/B) = c + (r > 0) + (r < s),
+            // which oscillates with the alignment of L and peaks at ceil(W/B) + 1. Evaluating it at
+            // max_context_len can therefore under-count a shorter sequence in the same batch and drop
+            // its last partition, so use the alignment-independent upper bound instead.
+            const auto total_blocks = ceil_div(rt_params->max_context_len, paged_attention_block_size);
+            const auto max_window_blocks = ceil_div(desc->sliding_window, paged_attention_block_size) + 1;
+            effective_context_len = std::min(total_blocks, max_window_blocks) * paged_attention_block_size;
         }
         rt_params->num_of_partitions = ceil_div(effective_context_len, rt_params->partition_size);
 

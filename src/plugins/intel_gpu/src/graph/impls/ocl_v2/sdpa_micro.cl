@@ -704,15 +704,17 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
          */
     #if !defined(IS_KV_COMPRESSED_PA) \
             || (IS_INT4_KV_CACHE && IS_KEY_BY_CHANNEL)
-        /* Per-row KQ integrity walk for sg 0's sub-tile at q_col = wg_j0.
-         * The KQ C-tile's i0-axis is q col (n) and j-axis is k row (m),
-         * matching tile_vreduce_max / tile_predicated_assignment_t.
+        /* Index-resolved KQ integrity walk across every subgroup and every k0
+         * iteration of WG(0,0,0). Only mismatching rows are printed so the log
+         * stays bounded, and each carries sg_i_kq / block / token-in-block plus
+         * whether the row came from the paged cache or from Kc. That is what
+         * separates OpenVINO pointer glue from the generated ugemm.
          * xlane_tile_access requires whole-subgroup participation; only
          * lane 0 prints the result. */
         if (get_group_id(0) == 0 && get_group_id(1) == 0
-                && get_group_id(2) == 0 && sg_ij == 0
-                && k0 == window_k0_begin) {
-            if (get_sub_group_local_id() == 0) {
+                && get_group_id(2) == 0) {
+            if (sg_ij == 0 && k0 == window_k0_begin
+                    && get_sub_group_local_id() == 0) {
                 printf("[SDPA DBG layout] sg_tile_m=%d sg_tile_n=%d "
                        "SUBGROUP_SIZE=%d c_block0=%d c_block1=%d "
                        "c_nblock0=%d c_nblock1=%d sg_per_wg_m=%d sg_per_wg_n=%d\n",
@@ -734,24 +736,31 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
                            (float)S_tile.x[b][6], (float)S_tile.x[b][7]);
                 }
             }
-            const int q_col = (int)wg_j0;                 /* sg_j0_kq==0 */
+            const int q_col = (int)wg_j0 + (int)sg_j0_kq;
+            /* Each k0 chunk runs either the paged gemm or the Kc gemm, never both. */
+            const bool chunk_is_paged = k0 < past_len;
             int ok_count = 0;
             int fail_count = 0;
             float first_fail_ref = 0.0f;
             float first_fail_got = 0.0f;
             int first_fail_row = -1;
-            for (int i_row = 0; i_row < ugemm_kq_sg_tile_m; i_row++) {
+            for (int i_row = 0; q_col < q && i_row < ugemm_kq_sg_tile_m; i_row++) {
                 const float s_i0_from_tile = xlane_tile_access(S_tile,
                         /* i (q col) */ 0, /* j (k row) */ i_row,
                         SUBGROUP_SIZE,
                         ugemm_kq_c_type_block0, ugemm_kq_c_type_block1,
                         ugemm_kq_c_type_nblock0);
-                const int k_row = k0 + i_row;             /* sg_i0_kq==0 */
+                const int k_row = k0 + (int)sg_i0_kq + i_row;
                 if (k_row >= causal_k) continue;
+                if ((k_row < past_len) != chunk_is_paged) continue;
                 if (get_sub_group_local_id() != 0) continue;
                 float ref = 0.0f;
+                /* Same dot product, but with K dequantized in half like the
+                 * generated ugemm does, to tell rounding from a real defect. */
+                float ref_h = 0.0f;
                 for (int dd = 0; dd < d; dd++) {
                     float k_v;
+                    float k_v_h;
                     if (k_row < past_len) {
                         /* Past-K from paged cache. */
                         const int bidx = k_row / PAGED_ATTENTION_BLOCK_SIZE;
@@ -784,6 +793,8 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
                         const float k_scale_v = convert_float(sz[0]);
                         const float k_zp_v = convert_float(sz[1]);
                         k_v = ((float)u4_val - k_zp_v) * k_scale_v;
+                        k_v_h = convert_float(
+                                (convert_half(u4_val) - sz[1]) * sz[0]);
     #else
                         /* Uncompressed fp16 paged cache: per-block layout is
                          * [head_dim rows x PAGED_ATTENTION_BLOCK_SIZE cols]
@@ -793,6 +804,7 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
                         k_v = convert_float(Kblk[dd
                                 * ADJUSTED_PAGED_ATTENTION_BLOCK_SIZE
                                 + within]);
+                        k_v_h = k_v;
     #endif
                     } else {
                         /* New-K region: contiguous Kc (always fp16),
@@ -801,19 +813,26 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
                         k_v = convert_float(
                                 ((const global half *)Kc)[new_idx * ldkc
                                         + dd]);
+                        k_v_h = k_v;
                     }
                     /* Q was already offset by subsequence_begin*ldq
                      * + b0*HEAD_SIZE + INPUT0_PAD; q_col is relative. */
                     const float q_v = convert_float(
                             ((const global half *)Q)[q_col * ldq + dd]);
                     ref += k_v * q_v;
+                    ref_h += k_v_h * q_v;
                 }
                 const float diff = s_i0_from_tile - ref;
                 const float abs_diff = diff < 0 ? -diff : diff;
                 const float abs_ref = ref < 0 ? -ref : ref;
                 const float rel = abs_ref > 1e-6f ? abs_diff / abs_ref
                                                   : abs_diff;
-                const bool row_ok = rel < 1e-2f;
+                const float diff_h = s_i0_from_tile - ref_h;
+                const float abs_diff_h = diff_h < 0 ? -diff_h : diff_h;
+                const float abs_ref_h = ref_h < 0 ? -ref_h : ref_h;
+                const float rel_h = abs_ref_h > 1e-6f ? abs_diff_h / abs_ref_h
+                                                      : abs_diff_h;
+                const bool row_ok = rel < 1e-2f || rel_h < 1e-2f;
                 if (row_ok) {
                     ok_count++;
                 } else {
@@ -824,17 +843,25 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
                     }
                     fail_count++;
                 }
-                printf("[SDPA DBG chk paged row] wg_j0=%u k0=%d k_row=%d "
-                       "q_col=%d ugemm=%.6f reference=%.6f abs=%.6f rel=%.6f "
-                       "%s\n",
-                       wg_j0, k0, k_row, q_col, s_i0_from_tile, ref,
-                       abs_diff, rel, row_ok ? "OK" : "MISMATCH");
+                if (rel >= 1e-2f) {
+                    printf("[SDPA DBG chk paged row] wg_j0=%u k0=%d k_row=%d "
+                           "q_col=%d sg_i_kq=%d sg_j_kq=%d blk=%d tok_in_blk=%d "
+                           "src=%s ugemm=%.6f reference=%.6f abs=%.6f rel=%.6f "
+                           "refh=%.6f absh=%.6f relh=%.6f MISMATCH\n",
+                           wg_j0, k0, k_row, q_col, (int)sg_i_kq, (int)sg_j_kq,
+                           k_row / PAGED_ATTENTION_BLOCK_SIZE,
+                           k_row % PAGED_ATTENTION_BLOCK_SIZE,
+                           (k_row < past_len) ? "paged" : "kc",
+                           s_i0_from_tile, ref, abs_diff, rel,
+                           ref_h, abs_diff_h, rel_h);
+                }
             }
-            if (get_sub_group_local_id() == 0) {
-                printf("[SDPA DBG chk paged summary] sg_tile_m=%d "
-                       "wg_m_kq=%d ok=%d fail=%d first_fail_row=%d "
+            if (get_sub_group_local_id() == 0
+                    && (fail_count > 0 || k0 == window_k0_begin)) {
+                printf("[SDPA DBG chk paged summary] k0=%d sg_i_kq=%d "
+                       "sg_j_kq=%d ok=%d fail=%d first_fail_row=%d "
                        "first_fail got=%.6f ref=%.6f\n",
-                       ugemm_kq_sg_tile_m, ugemm_kq_sg_per_wg_m,
+                       k0, (int)sg_i_kq, (int)sg_j_kq,
                        ok_count, fail_count, first_fail_row,
                        first_fail_got, first_fail_ref);
             }
@@ -1369,60 +1396,83 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
                     );
 
 #ifdef PA_INTEGRITY_CHECK   // CODE FOR DEBUGGING
-    /* Integrity check for ugemm_vs. Runs only on WG(0,0,0), sg 0, first
-       outer K iteration, first V block. Recomputes A_tile1[d=0, n=0] as
-       sum_k V[0, k_local] * S_check_slm[k_local, 0] and compares against
-       the microkernel result. Supports fp16 uncompressed and u4 per-token
-       V; other layouts skip the check. */
+    /* Index-resolved integrity check for ugemm_vs across every subgroup,
+       every outer K iteration and every V block of WG(0,0,0). Recomputes
+       A_tile1[d, n] as sum_k V[d, k_local] * S_check_slm[kb0 + k_local, n]
+       on a 4x4 stride of the sub-tile and compares against the microkernel
+       result. Both a float and a half dequantization reference are kept so
+       fp16 rounding can be told apart from a real defect. Supports fp16
+       uncompressed and u4 per-token V; other layouts skip the check. */
     #if !defined(IS_KV_COMPRESSED_PA) || IS_INT4_KV_CACHE
             if (get_group_id(0) == 0 && get_group_id(1) == 0
-                    && get_group_id(2) == 0 && sg_ij == 0
-                    && k0 == window_k0_begin && kb0 == 0) {
-                const int d_check = 0;
-                const int n_check = 0;
-                const float a_ugemm = xlane_tile_access(A_tile1,
-                        /* i (d row) */ d_check,
-                        /* j (n col) */ n_check,
-                        SUBGROUP_SIZE,
-                        ugemm_vs_c_type_block0, ugemm_vs_c_type_block1,
-                        ugemm_vs_c_type_nblock0);
-                if (get_sub_group_local_id() == 0) {
-                    float ref = 0.f;
-                    for (int kk = 0; kk < kb_chunk; kk++) {
-                        float v_val;
+                    && get_group_id(2) == 0) {
+                const int q_col_vs = (int)wg_j0 + (int)sg_j_vs * ugemm_vs_sg_tile_n;
+                for (int n_check = 0; q_col_vs < q && n_check < ugemm_vs_sg_tile_n;
+                        n_check += 4) {
+                    for (int d_check = 0; d_check < ugemm_vs_sg_tile_m; d_check += 4) {
+                        const float a_ugemm = xlane_tile_access(A_tile1,
+                                /* i (d row) */ d_check,
+                                /* j (n col) */ n_check,
+                                SUBGROUP_SIZE,
+                                ugemm_vs_c_type_block0, ugemm_vs_c_type_block1,
+                                ugemm_vs_c_type_nblock0);
+                        if (get_sub_group_local_id() != 0) continue;
+                        const int d_abs = (int)sg_i_vs * ugemm_vs_sg_tile_m + d_check;
+                        const int n_abs = (int)sg_j_vs * ugemm_vs_sg_tile_n + n_check;
+                        if (d_abs >= d) continue;
+                        float ref = 0.f;
+                        float ref_h = 0.f;
+                        for (int kk = 0; kk < kb_chunk; kk++) {
+                            float v_val;
+                            float v_val_h;
         #if IS_INT4_KV_CACHE
-                        const global uchar *V_u8
-                                = (const global uchar *)Vb0;
-                        const int row_off_bytes
-                                = kk * ADJUSTED_V_HEAD_SIZE;
-                        const uchar packed
-                                = V_u8[row_off_bytes + (d_check >> 1)];
-                        const int u4_val = (d_check & 1)
-                                ? ((packed >> 4) & 0x0F)
-                                : (packed & 0x0F);
-                        const global half *vsz = (const global half *)(V_u8
-                                + row_off_bytes + (HEAD_SIZE >> 1));
-                        v_val = ((float)u4_val - convert_float(vsz[1]))
-                                * convert_float(vsz[0]);
+                            const global uchar *V_u8
+                                    = (const global uchar *)Vb0;
+                            const int row_off_bytes
+                                    = kk * ADJUSTED_V_HEAD_SIZE;
+                            const uchar packed
+                                    = V_u8[row_off_bytes + (d_abs >> 1)];
+                            const int u4_val = (d_abs & 1)
+                                    ? ((packed >> 4) & 0x0F)
+                                    : (packed & 0x0F);
+                            const global half *vsz = (const global half *)(V_u8
+                                    + row_off_bytes + (HEAD_SIZE >> 1));
+                            v_val = ((float)u4_val - convert_float(vsz[1]))
+                                    * convert_float(vsz[0]);
+                            v_val_h = convert_float(
+                                    (convert_half(u4_val) - vsz[1]) * vsz[0]);
         #else
-                        const global half *V_h = (const global half *)Vb0;
-                        v_val = convert_float(V_h[kk * ldv + d_check]);
+                            const global half *V_h = (const global half *)Vb0;
+                            v_val = convert_float(V_h[kk * ldv + d_abs]);
+                            v_val_h = v_val;
         #endif
-                        const float s_val = S_check_slm[
-                                kk * ugemm_kq_wg_tile_n + n_check];
-                        ref += v_val * s_val;
+                            const float s_val = S_check_slm[
+                                    (kb0 + kk) * ugemm_kq_wg_tile_n + n_abs];
+                            ref += v_val * s_val;
+                            ref_h += v_val_h * s_val;
+                        }
+                        const float diff = a_ugemm - ref;
+                        const float abs_diff = diff < 0 ? -diff : diff;
+                        const float abs_ref = ref < 0 ? -ref : ref;
+                        const float rel = abs_ref > 1e-6f
+                                ? abs_diff / abs_ref : abs_diff;
+                        const float diff_h = a_ugemm - ref_h;
+                        const float abs_diff_h = diff_h < 0 ? -diff_h : diff_h;
+                        const float abs_ref_h = ref_h < 0 ? -ref_h : ref_h;
+                        const float rel_h = abs_ref_h > 1e-6f
+                                ? abs_diff_h / abs_ref_h : abs_diff_h;
+                        if (rel >= 1e-2f) {
+                            printf("[SDPA DBG chk paged vs row] k0=%d kb0=%d "
+                                   "kb_chunk=%d sg_i_vs=%d sg_j_vs=%d d=%d n=%d "
+                                   "q_col=%d ugemm=%.6f reference=%.6f abs=%.6f "
+                                   "rel=%.6f refh=%.6f absh=%.6f relh=%.6f "
+                                   "MISMATCH\n",
+                                   k0, kb0, kb_chunk, (int)sg_i_vs, (int)sg_j_vs,
+                                   d_abs, n_abs, q_col_vs + n_check,
+                                   a_ugemm, ref, abs_diff, rel,
+                                   ref_h, abs_diff_h, rel_h);
+                        }
                     }
-                    const float diff = a_ugemm - ref;
-                    const float abs_diff = diff < 0 ? -diff : diff;
-                    const float abs_ref = ref < 0 ? -ref : ref;
-                    const float rel = abs_ref > 1e-6f
-                            ? abs_diff / abs_ref : abs_diff;
-                    printf("[SDPA DBG chk paged vs] k0=%d kb0=%d "
-                           "kb_chunk=%d d=%d n=%d ugemm=%.6f "
-                           "reference=%.6f abs=%.6f rel=%.6f %s\n",
-                           k0, kb0, kb_chunk, d_check, n_check,
-                           a_ugemm, ref, abs_diff, rel,
-                           rel < 1e-2f ? "OK" : "MISMATCH");
                 }
             }
     #endif
