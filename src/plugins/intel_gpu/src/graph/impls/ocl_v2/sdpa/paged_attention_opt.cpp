@@ -1394,12 +1394,15 @@ public:
         const auto kv_cache_dt = params.get_program().get_config().get_kv_cache_precision();
         // U4 BY_CHANNEL MIXED has shown concurrency-sensitive output instability in production workloads.
         // Keep micro SDPA for PREFILL and route only the affected MIXED configuration to OCL.
-        const auto use_ocl_for_u4_by_channel_mixed = stage == PagedAttentionStage::MIXED &&
+        const auto enable_u4_mixed_ocl_fallback = params.get_program().get_config().get_enable_u4_mixed_ocl_fallback();
+        const auto use_ocl_for_u4_by_channel_mixed = enable_u4_mixed_ocl_fallback &&
+                                                     stage == PagedAttentionStage::MIXED &&
                                                      kv_cache_dt == ov::element::u4 &&
                                                      desc->is_key_by_channel;
         const auto can_use_micro_sdpa = !use_ocl_for_u4_by_channel_mixed;
         GPU_DEBUG_TRACE_DETAIL << "can_use_micro_sdpa_for: stage = " << static_cast<size_t>(stage)
                                << ", token_type_ids = " << params.get_input_layout(PagedAttentionInputIdx::TOKEN_TYPE_IDS).to_short_string()
+                               << ", enable_u4_mixed_ocl_fallback = " << enable_u4_mixed_ocl_fallback
                                << ", can_use_micro_sdpa = " << can_use_micro_sdpa << std::endl;
         return can_use_micro_sdpa;
     }
