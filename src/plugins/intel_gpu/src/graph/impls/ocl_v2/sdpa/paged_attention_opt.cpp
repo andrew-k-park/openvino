@@ -1484,11 +1484,13 @@ public:
         auto effective_context_len = rt_params->max_context_len;
         // scores_output is only used in SnapKV path, and it doesn't yet handle the SWA block skip offset
         if (desc->sliding_window > 0 && rt_params->stage == PagedAttentionStage::GENERATE && !desc->has_scores_output()) {
-            auto total_blocks = ceil_div(rt_params->max_context_len, paged_attention_block_size);
-            auto swa_start_block =
-                rt_params->max_context_len > desc->sliding_window ? (rt_params->max_context_len - desc->sliding_window) / paged_attention_block_size : 0;
-            auto effective_blocks = total_blocks - swa_start_block;
-            effective_context_len = effective_blocks * paged_attention_block_size;
+            // A sliding window can straddle one extra cache block when its start is not block-aligned:
+            //     aligned    |####|####|####|      3 blocks
+            //     unaligned  |##|####|####|##|     4 blocks
+            // Since num_of_partitions is shared by the batch, allocate for the worst-case start alignment.
+            const auto total_blocks = ceil_div(rt_params->max_context_len, paged_attention_block_size);
+            const auto max_window_blocks = ceil_div(desc->sliding_window, paged_attention_block_size) + 1;
+            effective_context_len = std::min(total_blocks, max_window_blocks) * paged_attention_block_size;
         }
         rt_params->num_of_partitions = ceil_div(effective_context_len, rt_params->partition_size);
 
