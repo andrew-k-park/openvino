@@ -16,11 +16,21 @@ KERNEL(tile_ref)(OPTIONAL_SHAPE_INFO_ARG
     const uint z = (uint)get_global_id(1) % OUTPUT_SIZE_Z;
     const uint w = (uint)get_global_id(1) / OUTPUT_SIZE_Z;
     const uint out_offset = OUTPUT_GET_INDEX(b, f, w, z, y, x);
+    #if INPUT0_DIMS == 5
+    const uint in_offset = INPUT0_GET_INDEX_SAFE(f, w, z, y, x);
+    #elif INPUT0_DIMS == 4
+    const uint in_offset = INPUT0_GET_INDEX_SAFE(w, z, y, x);
+    #else
     const uint in_offset = INPUT0_GET_INDEX_SAFE(b, f, w, z, y, x);
+    #endif
     #elif OUTPUT_DIMS == 5
     const uint z = (uint)get_global_id(1);
     const uint out_offset = OUTPUT_GET_INDEX(b, f, z, y, x);
+    #if INPUT0_DIMS == 4
+    const uint in_offset = INPUT0_GET_INDEX_SAFE(f, z, y, x);
+    #else
     const uint in_offset = INPUT0_GET_INDEX_SAFE(b, f, z, y, x);
+    #endif
     #elif OUTPUT_DIMS == 4
     const uint out_offset = OUTPUT_GET_INDEX(b, f, y, x);
     const uint in_offset = INPUT0_GET_INDEX_SAFE(b, f, y, x);

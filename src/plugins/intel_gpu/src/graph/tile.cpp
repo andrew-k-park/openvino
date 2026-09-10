@@ -62,7 +62,12 @@ std::vector<layout> tile_inst::calc_output_layouts(tile_node const& /*node*/, co
 
     std::vector<ShapeType> output_shapes = ov::op::v0::shape_infer(&op, input_shapes, data_accessor);
 
-    format output_format = format::adjust_to_rank(input0_layout.format, output_shapes[0].size());
+    const auto output_rank = output_shapes[0].size();
+    const auto rank_promoted_blocked_input = input0_layout.get_rank() < output_rank &&
+                                             !format::is_simple_data_format(input0_layout.format);
+    format output_format = rank_promoted_blocked_input
+                               ? format::get_default_format(output_rank)
+                               : format::adjust_to_rank(input0_layout.format, output_rank);
 
     return {layout{output_shapes[0], output_type, output_format}};
 }

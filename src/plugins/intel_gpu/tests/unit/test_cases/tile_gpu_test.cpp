@@ -9,6 +9,7 @@
 #include "tile_inst.h"
 
 #include <iostream>
+#include <numeric>
 
 using namespace cldnn;
 using namespace ::tests;
@@ -351,6 +352,68 @@ TEST_F(tile_gpu, basic_in1x2x2x2_axis_z) {
 
 TEST_F(tile_gpu, dynamic) {
     this->test_dynamic_1x2x2x2_axis_f();
+}
+
+TEST_F(tile_gpu, rank4_blocked_input_rank5_repeats) {
+    auto& engine = get_test_engine();
+    const ov::Shape input_shape{2, 17, 2, 2};
+    auto input = engine.allocate_memory({input_shape, data_types::f32, format::bfyx});
+
+    std::vector<float> input_values(ov::shape_size(input_shape));
+    std::iota(input_values.begin(), input_values.end(), 0.0f);
+    set_values(input, input_values);
+
+    topology topology;
+    topology.add(input_layout("input", input->get_layout()));
+    topology.add(reorder("blocked_input", input_info("input"), format::b_fs_yx_fsv16, data_types::f32));
+    topology.add(tile("tile", input_info("blocked_input"), std::vector<int64_t>{1, 1, 1, 1, 2}));
+    topology.add(reorder("output", input_info("tile"), format::bfzyx, data_types::f32));
+
+    auto config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    auto network = get_network(engine, topology, config, get_test_stream_ptr(), false);
+    network->set_input_data("input", input);
+    auto outputs = network->execute();
+
+    cldnn::mem_lock<float, mem_lock_type::read> output(outputs.at("output").get_memory(), get_test_stream());
+    ASSERT_EQ(output.size(), input_values.size() * 2);
+    for (size_t i = 0; i < input_values.size(); i += 2) {
+        EXPECT_EQ(output[2 * i], input_values[i]) << "Index=" << 2 * i;
+        EXPECT_EQ(output[2 * i + 1], input_values[i + 1]) << "Index=" << 2 * i + 1;
+        EXPECT_EQ(output[2 * i + 2], input_values[i]) << "Index=" << 2 * i + 2;
+        EXPECT_EQ(output[2 * i + 3], input_values[i + 1]) << "Index=" << 2 * i + 3;
+    }
+}
+
+TEST_F(tile_gpu, rank5_blocked_input_rank6_repeats) {
+    auto& engine = get_test_engine();
+    const ov::Shape input_shape{2, 17, 2, 2, 2};
+    auto input = engine.allocate_memory({input_shape, data_types::f32, format::bfzyx});
+
+    std::vector<float> input_values(ov::shape_size(input_shape));
+    std::iota(input_values.begin(), input_values.end(), 0.0f);
+    set_values(input, input_values);
+
+    topology topology;
+    topology.add(input_layout("input", input->get_layout()));
+    topology.add(reorder("blocked_input", input_info("input"), format::b_fs_zyx_fsv16, data_types::f32));
+    topology.add(tile("tile", input_info("blocked_input"), std::vector<int64_t>{1, 1, 1, 1, 1, 2}));
+    topology.add(reorder("output", input_info("tile"), format::bfwzyx, data_types::f32));
+
+    auto config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    auto network = get_network(engine, topology, config, get_test_stream_ptr(), false);
+    network->set_input_data("input", input);
+    auto outputs = network->execute();
+
+    cldnn::mem_lock<float, mem_lock_type::read> output(outputs.at("output").get_memory(), get_test_stream());
+    ASSERT_EQ(output.size(), input_values.size() * 2);
+    for (size_t i = 0; i < input_values.size(); i += 2) {
+        EXPECT_EQ(output[2 * i], input_values[i]) << "Index=" << 2 * i;
+        EXPECT_EQ(output[2 * i + 1], input_values[i + 1]) << "Index=" << 2 * i + 1;
+        EXPECT_EQ(output[2 * i + 2], input_values[i]) << "Index=" << 2 * i + 2;
+        EXPECT_EQ(output[2 * i + 3], input_values[i + 1]) << "Index=" << 2 * i + 3;
+    }
 }
 
 class tile_cpu_impl : public tile_gpu {};

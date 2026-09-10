@@ -46,9 +46,11 @@ public:
         auto output_pshape = output_layout.get_partial_shape();
         const auto target_rank = std::max<size_t>(4, output_pshape.size());
 
-        input_pshape = extend_shape_to_rank_from_begin(input_pshape, output_pshape.size());
-        input_layout.set_partial_shape(extend_shape_to_rank_from_end(input_pshape, target_rank));
-        input_layout.format = format::adjust_to_rank(input_layout.format, target_rank);
+        if (format::is_simple_data_format(input_layout.format)) {
+            input_pshape = extend_shape_to_rank_from_begin(input_pshape, output_pshape.size());
+            input_layout.set_partial_shape(extend_shape_to_rank_from_end(input_pshape, target_rank));
+            input_layout.format = format::adjust_to_rank(input_layout.format, target_rank);
+        }
 
         output_layout.set_partial_shape(extend_shape_to_rank_from_end(output_pshape, target_rank));
         output_layout.format = format::adjust_to_rank(output_layout.format, target_rank);
