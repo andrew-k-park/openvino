@@ -959,7 +959,10 @@ KERNEL(micro_sdpa)(OPTIONAL_SHAPE_INFO_ARG
 #endif
 
         /* Apply attention mask */
-#ifdef STATIC_SCALAR_ATTN_MASK_VALUE
+#ifdef STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE
+#define boolean_scalar_mask_op(x) (STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE ? (x) : INPUT0_VAL_MIN / 2)
+    tile_elementwise(S_tile, boolean_scalar_mask_op);
+#elif defined(STATIC_SCALAR_ATTN_MASK_VALUE)
 #define mask_scale_op(x) ((x) + masked_scale)
         tile_elementwise(S_tile, mask_scale_op);
 #elif WITH_ATTN_MASK

@@ -81,7 +81,10 @@ JitConstants SDPAOptGeneratorBase::get_jit_constants_base(const kernel_impl_para
         size_t data_inputs_num = get_data_inputs_num(*desc);
         size_t attn_mask_idx = ScaledDotProductAttentionInputIdx::ATTN_MASK;
         const bool has_attn_mask_input = sdpa_has_runtime_attn_mask_input(params);
-        if (desc->attn_mask_val.has_value()) {
+        if (desc->boolean_attn_mask_val.has_value()) {
+            jit.make("STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE", desc->boolean_attn_mask_val.value() ? 1 : 0);
+            jit.make("HAS_ATTN_MASK_INPUT", 0);
+        } else if (desc->attn_mask_val.has_value()) {
             jit.make("STATIC_SCALAR_ATTN_MASK_VALUE", desc->attn_mask_val.value());
             jit.make("HAS_ATTN_MASK_INPUT", 0);
         } else {

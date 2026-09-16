@@ -81,6 +81,19 @@ static void GetNewOrder(ProgramBuilder&p, const std::shared_ptr<ov::op::internal
     }
 }
 
+static void SetScalarAttentionMask(cldnn::scaled_dot_product_attention& primitive,
+                                   const std::shared_ptr<ov::op::v0::Constant>& scalar_attn_mask) {
+    if (!scalar_attn_mask) {
+        return;
+    }
+
+    if (scalar_attn_mask->get_element_type() == ov::element::boolean) {
+        primitive.boolean_attn_mask_val = scalar_attn_mask->cast_vector<bool>()[0];
+    } else {
+        primitive.attn_mask_val = scalar_attn_mask->cast_vector<float>()[0];
+    }
+}
+
 static void CreateScaledDotProductAttentionOp(ProgramBuilder& p, const std::shared_ptr<ov::op::v13::ScaledDotProductAttention>& op) {
     // if transpose fusion is disabled, this is used
 
@@ -108,9 +121,7 @@ static void CreateScaledDotProductAttentionOp(ProgramBuilder& p, const std::shar
         sdpa_prim.scale_val = scalar_scale->cast_vector<float>()[0];
     }
 
-    if (scalar_attn_mask && scalar_attn_mask->get_element_type() != ov::element::boolean) {
-        sdpa_prim.attn_mask_val = scalar_attn_mask->cast_vector<float>()[0];
-    }
+    SetScalarAttentionMask(sdpa_prim, scalar_attn_mask);
 
     p.add_primitive(*op, sdpa_prim);
 }
@@ -147,9 +158,7 @@ static void CreateSDPAOp(ProgramBuilder& p, const std::shared_ptr<ov::op::intern
         sdpa_prim.scale_val = scalar_scale->cast_vector<float>()[0];
     }
 
-    if (scalar_attn_mask && scalar_attn_mask->get_element_type() != ov::element::boolean) {
-        sdpa_prim.attn_mask_val = scalar_attn_mask->cast_vector<float>()[0];
-    }
+    SetScalarAttentionMask(sdpa_prim, scalar_attn_mask);
 
     p.add_primitive(*op, sdpa_prim);
 }
@@ -186,9 +195,7 @@ static void CreateIndirectSDPAOp(ProgramBuilder& p, const std::shared_ptr<ov::op
         sdpa_prim.scale_val = scalar_scale->cast_vector<float>()[0];
     }
 
-    if (scalar_attn_mask && scalar_attn_mask->get_element_type() != ov::element::boolean) {
-        sdpa_prim.attn_mask_val = scalar_attn_mask->cast_vector<float>()[0];
-    }
+    SetScalarAttentionMask(sdpa_prim, scalar_attn_mask);
 
     p.add_primitive(*op, sdpa_prim);
 }

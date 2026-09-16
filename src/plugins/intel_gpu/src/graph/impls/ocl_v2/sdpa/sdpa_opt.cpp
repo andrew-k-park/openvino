@@ -74,7 +74,7 @@ public:
                     GPU_DEBUG_TRACE_DETAIL << "add stage for indirect non-dynamic with prefill_stage \n";
                     add_stage(indirect_multi_tokens, params);
 #ifdef ENABLE_ONEDNN_FOR_GPU
-                } else if (SDPAOpt::supports_micro_sdpa(params)) {
+                } else if (is_prefill_stage(params) && SDPAOpt::supports_micro_sdpa(params)) {
                     GPU_DEBUG_TRACE_DETAIL << "add stage for micro_sdpa non-dynamic with prefill_stage \n";
                     add_stage(regular_micro_multi_tokens, params);
                     // Sometimes micro kernel will fail due to "Insufficient registers in requested bundle",
@@ -234,7 +234,8 @@ bool SDPAOpt::supports_micro_sdpa(const RuntimeParams& params) {
     auto data_inputs_num = get_data_inputs_num(*desc);
     // TODO: To support sdpa_micro kernel with non-const scalar mask / scale inputs
     const auto mask_idx = 3lu;
-    if (!desc->attn_mask_val.has_value() && data_inputs_num > mask_idx && !params.get_input_layout(mask_idx).is_dynamic() &&
+    const bool has_const_attn_mask = desc->attn_mask_val.has_value() || desc->boolean_attn_mask_val.has_value();
+    if (!has_const_attn_mask && data_inputs_num > mask_idx && !params.get_input_layout(mask_idx).is_dynamic() &&
         params.get_input_layout(mask_idx).count() == 1) {
         return false;
     }

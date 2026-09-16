@@ -34,7 +34,7 @@ inline bool sdpa_has_runtime_attn_mask_input(const cldnn::kernel_impl_params& pa
 
     const auto& desc = *params.typed_desc<cldnn::scaled_dot_product_attention>();
 
-    if (desc.attn_mask_val.has_value()) {
+    if (desc.attn_mask_val.has_value() || desc.boolean_attn_mask_val.has_value()) {
         return false;
     }
 

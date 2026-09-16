@@ -86,6 +86,7 @@ struct scaled_dot_product_attention : public primitive_base<scaled_dot_product_a
     std::vector<int64_t> output_transpose_order;
 
     std::optional<float> attn_mask_val;
+    std::optional<bool> boolean_attn_mask_val;
     std::optional<float> scale_val;
 
     size_t hash() const override {
@@ -103,6 +104,10 @@ struct scaled_dot_product_attention : public primitive_base<scaled_dot_product_a
         seed = hash_combine(seed, attn_mask_val.has_value());
         if (attn_mask_val) {
             seed = hash_combine(seed, attn_mask_val.value());
+        }
+        seed = hash_combine(seed, boolean_attn_mask_val.has_value());
+        if (boolean_attn_mask_val) {
+            seed = hash_combine(seed, boolean_attn_mask_val.value());
         }
         seed = hash_combine(seed, scale_val.has_value());
         if (scale_val) {
@@ -138,6 +143,7 @@ struct scaled_dot_product_attention : public primitive_base<scaled_dot_product_a
                input_v_transpose_order == rhs_casted.input_v_transpose_order &&
                output_transpose_order == rhs_casted.output_transpose_order &&
                attn_mask_val == rhs_casted.attn_mask_val &&
+               boolean_attn_mask_val == rhs_casted.boolean_attn_mask_val &&
                scale_val == rhs_casted.scale_val &&
                is_kv_compressed == rhs_casted.is_kv_compressed &&
                quantization_attributes.scales_zp_output_order == rhs_casted.quantization_attributes.scales_zp_output_order &&
@@ -165,6 +171,10 @@ struct scaled_dot_product_attention : public primitive_base<scaled_dot_product_a
         ob << attn_mask_val.has_value();
         if (attn_mask_val) {
             ob << make_data(&attn_mask_val.value(), sizeof(attn_mask_val.value()));
+        }
+        ob << boolean_attn_mask_val.has_value();
+        if (boolean_attn_mask_val) {
+            ob << boolean_attn_mask_val.value();
         }
         ob << scale_val.has_value();
         if (scale_val) {
@@ -196,6 +206,11 @@ struct scaled_dot_product_attention : public primitive_base<scaled_dot_product_a
         ib >> has_attn_mask_val;
         if (has_attn_mask_val) {
             ib >> make_data(&attn_mask_val.emplace(), sizeof(attn_mask_val.value()));
+        }
+        bool has_boolean_attn_mask_val;
+        ib >> has_boolean_attn_mask_val;
+        if (has_boolean_attn_mask_val) {
+            ib >> boolean_attn_mask_val.emplace();
         }
         bool has_scale_val;
         ib >> has_scale_val;

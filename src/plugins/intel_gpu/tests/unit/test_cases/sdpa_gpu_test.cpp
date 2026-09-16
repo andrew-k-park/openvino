@@ -1172,4 +1172,113 @@ TEST(sdpa_gpu_custom, scalar_placeholder_mask_matches_scale_only) {
             << std::endl;
     }
 }
+
+TEST(sdpa_gpu_custom, scalar_boolean_mask_attribute_is_typed) {
+    for (const bool mask_value : {false, true}) {
+        scaled_dot_product_attention sdpa_prim("sdpa",
+                                               {input_info("q"), input_info("k"), input_info("v"), input_info("mask")},
+                                               false,
+                                               -1,
+                                               {0, 2, 1, 3},
+                                               {0, 2, 1, 3},
+                                               {0, 2, 1, 3},
+                                               {0, 1, 2, 3},
+                                               {},
+                                               false);
+        sdpa_prim.boolean_attn_mask_val = mask_value;
+
+        EXPECT_FALSE(sdpa_prim.attn_mask_val.has_value());
+        ASSERT_TRUE(sdpa_prim.boolean_attn_mask_val.has_value());
+        EXPECT_EQ(sdpa_prim.boolean_attn_mask_val.value(), mask_value);
+    }
+}
+
+std::vector<float> run_scalar_boolean_mask(const std::string& kernel_name, bool mask_value) {
+    auto& engine = get_test_engine();
+    constexpr size_t head_size = 128;
+    const bool use_dynamic_head = kernel_name == "sdpa_ref";
+    const layout query_layout(use_dynamic_head ? ov::PartialShape{1, 2, 1, -1} : ov::PartialShape{1, 2, 1, head_size},
+                              data_types::f16,
+                              format::bfyx);
+    const layout key_value_layout(use_dynamic_head ? ov::PartialShape{1, 2, 1, -1} : ov::PartialShape{1, 2, 1, head_size},
+                                  data_types::f16,
+                                  format::bfyx);
+    const layout query_static_layout(ov::PartialShape{1, 2, 1, head_size}, data_types::f16, format::bfyx);
+    const layout key_value_static_layout(ov::PartialShape{1, 2, 1, head_size}, data_types::f16, format::bfyx);
+
+    auto query_memory = engine.allocate_memory(query_static_layout);
+    auto key_memory = engine.allocate_memory(key_value_static_layout);
+    auto value_memory = engine.allocate_memory(key_value_static_layout);
+
+    std::vector<ov::float16> query_values(2 * head_size, ov::float16(0.0f));
+    std::vector<ov::float16> key_values(2 * head_size, ov::float16(0.0f));
+    std::vector<ov::float16> value_values(2 * head_size, ov::float16(6.0f));
+    query_values[0] = ov::float16(8.0f);
+    query_values[head_size] = ov::float16(8.0f);
+    key_values[0] = ov::float16(8.0f);
+    key_values[head_size] = ov::float16(-8.0f);
+    std::fill(value_values.begin(), value_values.begin() + head_size, ov::float16(2.0f));
+    set_values(query_memory, query_values);
+    set_values(key_memory, key_values);
+    set_values(value_memory, value_values);
+
+    topology topology;
+    topology.add(input_layout("query", query_layout));
+    topology.add(input_layout("key", key_value_layout));
+    topology.add(input_layout("value", key_value_layout));
+    auto sdpa_prim = scaled_dot_product_attention("sdpa",
+                                                  {input_info("query"), input_info("key"), input_info("value")},
+                                                  false,
+                                                  -1,
+                                                  {0, 2, 1, 3},
+                                                  {0, 2, 1, 3},
+                                                  {0, 2, 1, 3},
+                                                  {0, 1, 2, 3},
+                                                  {},
+                                                  false);
+    sdpa_prim.boolean_attn_mask_val = mask_value;
+    topology.add(sdpa_prim);
+
+    ExecutionConfig config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+
+    auto network = get_network(engine, topology, config, get_test_stream_ptr(), false);
+    const auto implementation_info = get_selected_sdpa_kernel(network);
+    EXPECT_NE(implementation_info.find(kernel_name), std::string::npos) << implementation_info;
+    network->set_input_data("query", query_memory);
+    network->set_input_data("key", key_memory);
+    network->set_input_data("value", value_memory);
+    auto output = network->execute().at("sdpa").get_memory();
+
+    mem_lock<ov::float16, mem_lock_type::read> output_data(output, get_test_stream());
+    std::vector<float> result(output_data.size());
+    std::transform(output_data.begin(), output_data.end(), result.begin(), [](ov::float16 value) {
+        return static_cast<float>(value);
+    });
+    return result;
+}
+
+TEST(sdpa_gpu_custom, scalar_boolean_mask_ref) {
+    for (const bool mask_value : {false, true}) {
+        const auto output = run_scalar_boolean_mask("sdpa_ref", mask_value);
+        const float expected = mask_value ? 2.0f + 4.0f / (1.0f + std::exp(8.0f)) : 4.0f;
+        for (const auto value : output) {
+            EXPECT_NEAR(value, expected, 1e-3f) << "mask=" << mask_value;
+        }
+    }
+}
+
+TEST(sdpa_gpu_custom, scalar_boolean_mask_micro) {
+    if (!get_test_engine().get_device_info().supports_immad) {
+        GTEST_SKIP() << "SDPA micro-kernels require IMMAD support";
+    }
+
+    for (const bool mask_value : {false, true}) {
+        const auto output = run_scalar_boolean_mask("sdpa_micro", mask_value);
+        const float expected = mask_value ? 2.0f + 4.0f / (1.0f + std::exp(8.0f)) : 4.0f;
+        for (const auto value : output) {
+            EXPECT_NEAR(value, expected, 1e-3f) << "mask=" << mask_value;
+        }
+    }
+}
 } // namespace

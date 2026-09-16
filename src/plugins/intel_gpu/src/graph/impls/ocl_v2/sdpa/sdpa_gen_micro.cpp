@@ -1189,7 +1189,10 @@ JitConstants SDPAMicroGenerator::get_jit_constants(const kernel_impl_params& par
     jit.make("CAUSAL_MASK_LOWER_RIGHT", config.causal_lower_right);
     if (!config.is_paged_attention) {
         const bool has_attn_mask_input = sdpa_has_runtime_attn_mask_input(params);
-        if (config.has_const_attn_mask_val) {
+        if (config.boolean_attn_mask_val.has_value()) {
+            jit.make("WITH_ATTN_MASK", 0);
+            jit.make("STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE", config.boolean_attn_mask_val.value() ? 1 : 0);
+        } else if (config.has_const_attn_mask_val) {
             jit.make("WITH_ATTN_MASK", 0);
             jit.make("STATIC_SCALAR_ATTN_MASK_VALUE", config.attn_mask_val);
             // scale_input_idx -= 1;

@@ -548,6 +548,10 @@ KERNEL(sdpa_opt)(
 #endif
                         qk_val[seq_idx] += mask_val;
 #endif
+#elif defined(STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE)
+                        qk_val[seq_idx] = STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE
+                                                  ? qk_val[seq_idx]
+                                                  : (start_partition_idx + seq_len < SOURCE_SEQ_LEN ? INPUT0_VAL_MIN / 2 : INPUT0_VAL_MIN);
 #elif defined(STATIC_SCALAR_ATTN_MASK_VALUE)
                         qk_val[seq_idx] += STATIC_SCALAR_ATTN_MASK_VALUE;
 #endif
@@ -1015,7 +1019,9 @@ inline MASK_VECTOR_TYPE FUNC(load_attn_mask)(OPTIONAL_SHAPE_INFO_ARG
                                              ATTN_SCALE_BUFFER_ARG
                                              PA_BUFFERS_ARGS
                                              ) {
-#ifdef STATIC_SCALAR_ATTN_MASK_VALUE
+#ifdef STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE
+    MASK_VECTOR_TYPE mask_vec = INPUT0_VAL_ZERO;
+#elif defined(STATIC_SCALAR_ATTN_MASK_VALUE)
     MASK_VECTOR_TYPE mask_vec = STATIC_SCALAR_ATTN_MASK_VALUE;
 #else
     MASK_VECTOR_TYPE mask_vec = INPUT0_VAL_ZERO;
@@ -1095,7 +1101,7 @@ inline MASK_VECTOR_TYPE FUNC(load_attn_mask)(OPTIONAL_SHAPE_INFO_ARG
 #endif
 
     // Apply scale to attn_mask
-#if IS_CAUSAL || HAS_ATTN_MASK_INPUT || defined(STATIC_SCALAR_ATTN_MASK_VALUE)
+#if IS_CAUSAL || HAS_ATTN_MASK_INPUT || defined(STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE) || defined(STATIC_SCALAR_ATTN_MASK_VALUE)
     mask_vec *= scale_val;
 #endif
 
@@ -1980,6 +1986,11 @@ KERNEL(sdpa_opt)(
 #endif
 
                         qk_acc[i] = INPUT0_MIN_FUNC(INPUT0_MAX_FUNC(qk_acc[i], INPUT0_VAL_MIN), INPUT0_VAL_MAX);
+#if defined(STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE)
+                        qk_acc[i] = STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE
+                                            ? qk_acc[i]
+                                            : (seq_len + i < SOURCE_SEQ_LEN ? INPUT0_VAL_MIN / 2 : INPUT0_VAL_MIN);
+#endif
 #if IS_CAUSAL
                     } else {
                         qk_acc[i] = INPUT0_VAL_MIN;

@@ -307,6 +307,8 @@ KERNEL(sdpa_ref)(
 #else
             OUTPUT_COMPUTE_T attn_mask_val = LOAD_INPUT3(attn_mask[attn_mask_offset]);
 #endif
+#elif defined(STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE)
+            OUTPUT_COMPUTE_T attn_mask_val = STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE ? OUTPUT_COMPUTE_VAL_ZERO : OUTPUT_COMPUTE_VAL_MIN;
 #elif defined(STATIC_SCALAR_ATTN_MASK_VALUE)
             OUTPUT_COMPUTE_T attn_mask_val = TO_OUTPUT_COMPUTE_T(STATIC_SCALAR_ATTN_MASK_VALUE);
 #else

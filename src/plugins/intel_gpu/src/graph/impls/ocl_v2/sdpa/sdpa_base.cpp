@@ -193,6 +193,7 @@ sdpa_configuration SDPABase::get_sdpa_configuration(const kernel_impl_params& im
     } else {
         config.has_const_attn_mask_val = false;
     }
+    config.boolean_attn_mask_val = desc->boolean_attn_mask_val;
 
     if (desc->is_kv_compressed) {
         const auto& group_sizes = desc->quantization_attributes.group_sizes;

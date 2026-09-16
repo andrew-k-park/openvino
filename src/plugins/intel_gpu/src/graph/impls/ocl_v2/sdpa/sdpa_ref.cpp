@@ -37,6 +37,9 @@ protected:
         jit.add(make_type_jit_constants("ACCUMULATOR", get_accumulator_type(params)));
 
         size_t data_inputs_num = get_data_inputs_num(*desc);
+        if (desc->boolean_attn_mask_val.has_value()) {
+            jit.make("STATIC_SCALAR_BOOLEAN_ATTN_MASK_VALUE", desc->boolean_attn_mask_val.value() ? 1 : 0);
+        }
         if (sdpa_has_runtime_attn_mask_input(params)) {
             jit.make("HAS_ATTN_MASK_INPUT", 1);
             const auto& attn_mask_layout = params.get_input_layout(ScaledDotProductAttentionInputIdx::ATTN_MASK);
