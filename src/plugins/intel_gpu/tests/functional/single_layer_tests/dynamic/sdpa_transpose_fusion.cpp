@@ -5,6 +5,7 @@
 #include "common_test_utils/ov_tensor_utils.hpp"
 #include "common_test_utils/test_enums.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/transpose.hpp"
@@ -24,6 +25,7 @@ struct SDPATransposeFusionGPUTestParams {
     std::vector<std::vector<int64_t>> input_transpose_orders;  // per-input transpose (empty = identity)
     std::vector<int64_t> output_transpose_order;  // {0,2,1,3} or empty for no-transpose
     bool expect_transpose_removed;                // true if the pass should remove the Transpose
+    bool use_scalar_multiply = false;
 };
 
 class SDPATransposeFusionGPUTest : public testing::WithParamInterface<SDPATransposeFusionGPUTestParams>,
@@ -69,6 +71,8 @@ std::string SDPATransposeFusionGPUTest::getTestCaseName(
             result << v;
         result << "_";
     }
+    if (p.use_scalar_multiply)
+        result << "scalar_multiply_";
     result << "expect_fused=" << p.expect_transpose_removed;
     return result.str();
 }
@@ -140,12 +144,16 @@ void SDPATransposeFusionGPUTest::SetUp() {
 
     // Apply output Transpose if order is specified
     ov::Output<ov::Node> final_output = sdpa;
+    if (p.use_scalar_multiply) {
+        auto scale = ov::op::v0::Constant::create(p.netPrecision, ov::Shape{}, {0.125f});
+        final_output = std::make_shared<ov::op::v1::Multiply>(final_output, scale);
+    }
     if (!p.output_transpose_order.empty()) {
         auto order_const = ov::op::v0::Constant::create(
             ov::element::i64,
             ov::Shape{p.output_transpose_order.size()},
             p.output_transpose_order);
-        auto out_tp = std::make_shared<ov::op::v1::Transpose>(sdpa, order_const);
+        auto out_tp = std::make_shared<ov::op::v1::Transpose>(final_output, order_const);
         out_tp->set_friendly_name("output_transpose");
         final_output = out_tp;
     }
@@ -246,6 +254,8 @@ INSTANTIATE_TEST_SUITE_P(
         SDPATransposeFusionGPUTestParams{ov::element::f16, static_4d_large, true, {}, {0, 2, 1, 3}, true},
         // Non-causal + output Transpose
         SDPATransposeFusionGPUTestParams{ov::element::f16, static_4d_non_causal, false, {}, {0, 2, 1, 3}, true},
+        // Qwen Image pattern: SDPA -> scalar Multiply -> output Transpose
+        SDPATransposeFusionGPUTestParams{ov::element::f16, static_4d_non_causal, false, {}, {0, 2, 1, 3}, true, true},
         // Pattern-1 with non-identity QKV input orders
         SDPATransposeFusionGPUTestParams{ov::element::f16, static_4d_small, false,
                                          {{0, 2, 1, 3}, {0, 2, 1, 3}, {0, 2, 1, 3}}, {0, 2, 1, 3}, true},

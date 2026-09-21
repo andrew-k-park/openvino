@@ -7,6 +7,7 @@
 #include "intel_gpu/op/sdpa.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/pass/pattern/op/or.hpp"
@@ -70,15 +71,21 @@ SDPATransposeFusion::SDPATransposeFusion() {
     //    identity input orders (leaving any input transposes as explicit ops)
     //    and absorb the output Transpose into output_transpose_order.
     //
+    // Both forms may have a scalar Multiply between SDPA and Transpose. Since
+    // scalar multiplication commutes with permutation, keep the Multiply after
+    // absorbing the Transpose into SDPA.
+    //
     // Note: the internal op::SDPA derives from v13::ScaledDotProductAttention,
     // so wrap_type<v13::...> would also match internal SDPA nodes and resetting
     // their input orders to identity would corrupt Q/K/V interpretation. The
     // Or alternatives are ordered so that internal SDPA nodes always take the
     // first (op::SDPA) branch.
-    auto sdpa_m = wrap_type<ov::intel_gpu::op::SDPA>(consumers_count(1));
-    auto sdpa_v13_m = wrap_type<v13::ScaledDotProductAttention>(consumers_count(1));
+    auto sdpa_m = wrap_type<ov::intel_gpu::op::SDPA>();
+    auto sdpa_v13_m = wrap_type<v13::ScaledDotProductAttention>();
     auto any_sdpa_m = std::make_shared<Or>(OutputVector{sdpa_m, sdpa_v13_m});
-    auto transpose_m = wrap_type<v1::Transpose>({any_sdpa_m, any_input()});
+    auto multiply_m = wrap_type<v1::Multiply>(consumers_count(1));
+    auto transpose_input_m = std::make_shared<Or>(OutputVector{any_sdpa_m, multiply_m});
+    auto transpose_m = wrap_type<v1::Transpose>({transpose_input_m, any_input()});
 
     ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
         const auto& pattern_map = m.get_pattern_value_map();
@@ -91,12 +98,30 @@ SDPATransposeFusion::SDPATransposeFusion() {
         if (order.empty())
             return false;
 
-        std::shared_ptr<ov::Node> sdpa_node;
+        auto sdpa_node = transpose->input_value(0).get_node_shared_ptr();
+        if (auto multiply = ov::as_type_ptr<v1::Multiply>(sdpa_node)) {
+            auto input0 = multiply->input_value(0).get_node_shared_ptr();
+            auto input1 = multiply->input_value(1).get_node_shared_ptr();
+            const auto input0_is_sdpa = ov::is_type<ov::intel_gpu::op::SDPA>(input0) ||
+                                        ov::is_type<v13::ScaledDotProductAttention>(input0);
+            const auto input1_is_sdpa = ov::is_type<ov::intel_gpu::op::SDPA>(input1) ||
+                                        ov::is_type<v13::ScaledDotProductAttention>(input1);
+            if (input0_is_sdpa == input1_is_sdpa)
+                return false;
+
+            auto scale = ov::as_type_ptr<v0::Constant>(input0_is_sdpa ? input1 : input0);
+            if (!ov::op::util::is_scalar_or_single_elem_constant(scale))
+                return false;
+
+            sdpa_node = input0_is_sdpa ? input0 : input1;
+        }
+
+        if (sdpa_node->output(0).get_target_inputs().size() != 1)
+            return false;
+
         std::shared_ptr<ov::intel_gpu::op::SDPA> new_sdpa;
 
-        if (pattern_map.count(sdpa_m) > 0) {
-            auto sdpa = ov::as_type_ptr<ov::intel_gpu::op::SDPA>(
-                pattern_map.at(sdpa_m).get_node_shared_ptr());
+        if (auto sdpa = ov::as_type_ptr<ov::intel_gpu::op::SDPA>(sdpa_node)) {
             if (!sdpa || transformation_callback(sdpa))
                 return false;
 
@@ -142,30 +167,28 @@ SDPATransposeFusion::SDPATransposeFusion() {
                         sdpa->get_output_type(),
                         sdpa->get_causal_mask_alignment());
             }
-            sdpa_node = sdpa;
         } else {
-            auto sdpa = ov::as_type_ptr<v13::ScaledDotProductAttention>(
-                pattern_map.at(sdpa_v13_m).get_node_shared_ptr());
-            if (!sdpa || transformation_callback(sdpa))
+            auto framework_sdpa = ov::as_type_ptr<v13::ScaledDotProductAttention>(sdpa_node);
+            if (!framework_sdpa || transformation_callback(framework_sdpa))
                 return false;
 
             // Only match rank-4 inputs/output.
-            if (!is_rank_4(sdpa->get_output_partial_shape(0)))
+            if (!is_rank_4(framework_sdpa->get_output_partial_shape(0)))
                 return false;
             for (size_t i = 0; i < 3; ++i) {
-                if (!is_rank_4(sdpa->get_input_partial_shape(i)))
+                if (!is_rank_4(framework_sdpa->get_input_partial_shape(i)))
                     return false;
             }
 
             // Keep identity input orders and only absorb the output Transpose.
             new_sdpa = std::make_shared<ov::intel_gpu::op::SDPA>(
-                sdpa->input_values(),
-                sdpa->get_causal(),
+                framework_sdpa->input_values(),
+                framework_sdpa->get_causal(),
                 ov::intel_gpu::op::SDPA::default_order(4),
                 ov::intel_gpu::op::SDPA::default_order(4),
                 ov::intel_gpu::op::SDPA::default_order(4),
                 compose_orders(ov::intel_gpu::op::SDPA::default_order(4), order));
-            sdpa_node = sdpa;
+            sdpa_node = framework_sdpa;
         }
 
         new_sdpa->set_friendly_name(sdpa_node->get_friendly_name());

@@ -7,6 +7,7 @@
 #include "intel_gpu/op/sdpa.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
@@ -398,6 +399,97 @@ TEST_F(TransformationTestsF, SDPATransposeFusion_InternalSDPA_KvCompressed_Prese
         auto sdpa = make_internal_sdpa_compressed(q, k, v, ks, vs, causal, identity, identity, identity, swap_hs);
 
         model_ref = std::make_shared<ov::Model>(ov::OutputVector{sdpa}, ov::ParameterVector{q, k, v, ks, vs});
+        comparator.enable(FunctionsComparator::ATTRIBUTES);
+    }
+}
+
+TEST_F(TransformationTestsF, SDPATransposeFusion_InternalSDPA_ScalarMultiply_OutputTransposeFused) {
+    const bool causal = false;
+    const std::vector<int64_t> identity{0, 1, 2, 3};
+    const std::vector<int64_t> swap_hs{0, 2, 1, 3};
+
+    {
+        auto q = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto k = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto v = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto sdpa = make_internal_sdpa(q, k, v, causal, identity, identity, identity, identity);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.125f});
+        auto multiply = std::make_shared<ov::op::v1::Multiply>(sdpa, scale);
+        auto out_tp = make_transpose(multiply, swap_hs);
+
+        model = std::make_shared<ov::Model>(ov::OutputVector{out_tp}, ov::ParameterVector{q, k, v});
+        manager.register_pass<SDPATransposeFusion>();
+    }
+    {
+        auto q = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto k = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto v = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto sdpa = make_internal_sdpa(q, k, v, causal, identity, identity, identity, swap_hs);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.125f});
+        auto multiply = std::make_shared<ov::op::v1::Multiply>(sdpa, scale);
+
+        model_ref = std::make_shared<ov::Model>(ov::OutputVector{multiply}, ov::ParameterVector{q, k, v});
+        comparator.enable(FunctionsComparator::ATTRIBUTES);
+    }
+}
+
+TEST_F(TransformationTestsF, SDPATransposeFusion_InternalSDPA_ScalarFirstMultiply_OutputTransposeFused) {
+    const bool causal = false;
+    const std::vector<int64_t> identity{0, 1, 2, 3};
+    const std::vector<int64_t> swap_hs{0, 2, 1, 3};
+
+    {
+        auto q = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto k = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto v = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto sdpa = make_internal_sdpa(q, k, v, causal, identity, identity, identity, identity);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1}, {0.125f});
+        auto multiply = std::make_shared<ov::op::v1::Multiply>(scale, sdpa);
+        auto out_tp = make_transpose(multiply, swap_hs);
+
+        model = std::make_shared<ov::Model>(ov::OutputVector{out_tp}, ov::ParameterVector{q, k, v});
+        manager.register_pass<SDPATransposeFusion>();
+    }
+    {
+        auto q = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto k = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto v = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto sdpa = make_internal_sdpa(q, k, v, causal, identity, identity, identity, swap_hs);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1}, {0.125f});
+        auto multiply = std::make_shared<ov::op::v1::Multiply>(scale, sdpa);
+
+        model_ref = std::make_shared<ov::Model>(ov::OutputVector{multiply}, ov::ParameterVector{q, k, v});
+        comparator.enable(FunctionsComparator::ATTRIBUTES);
+    }
+}
+
+TEST_F(TransformationTestsF, SDPATransposeFusion_InternalSDPA_NonScalarMultiply_NoFusion) {
+    const bool causal = false;
+    const std::vector<int64_t> identity{0, 1, 2, 3};
+    const std::vector<int64_t> swap_hs{0, 2, 1, 3};
+
+    {
+        auto q = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto k = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto v = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto sdpa = make_internal_sdpa(q, k, v, causal, identity, identity, identity, identity);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{2}, {0.125f, 0.25f});
+        auto multiply = std::make_shared<ov::op::v1::Multiply>(sdpa, scale);
+        auto out_tp = make_transpose(multiply, swap_hs);
+
+        model = std::make_shared<ov::Model>(ov::OutputVector{out_tp}, ov::ParameterVector{q, k, v});
+        manager.register_pass<SDPATransposeFusion>();
+    }
+    {
+        auto q = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto k = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto v = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape::dynamic(4));
+        auto sdpa = make_internal_sdpa(q, k, v, causal, identity, identity, identity, identity);
+        auto scale = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{2}, {0.125f, 0.25f});
+        auto multiply = std::make_shared<ov::op::v1::Multiply>(sdpa, scale);
+        auto out_tp = make_transpose(multiply, swap_hs);
+
+        model_ref = std::make_shared<ov::Model>(ov::OutputVector{out_tp}, ov::ParameterVector{q, k, v});
         comparator.enable(FunctionsComparator::ATTRIBUTES);
     }
 }
