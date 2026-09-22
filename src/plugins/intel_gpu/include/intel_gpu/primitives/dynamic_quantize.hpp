@@ -61,6 +61,7 @@ struct dynamic_quantize : public primitive_base<dynamic_quantize> {
         seed = hash_combine(seed, attrs.output_storage_type);
         seed = hash_combine(seed, attrs.precomputed_reduction);
         seed = hash_combine(seed, attrs.precomputed_reduction_dt.hash());
+        seed = hash_combine(seed, attrs.input_scale);
         seed = hash_combine(seed, input_size);
         seed = hash_combine(seed, innermost_size);
 
@@ -83,6 +84,7 @@ struct dynamic_quantize : public primitive_base<dynamic_quantize> {
                attrs.quantization_type == rhs_casted.attrs.quantization_type &&
                attrs.precomputed_reduction == rhs_casted.attrs.precomputed_reduction &&
                attrs.precomputed_reduction_dt == rhs_casted.attrs.precomputed_reduction_dt &&
+               attrs.input_scale == rhs_casted.attrs.input_scale &&
                input_size == rhs_casted.input_size &&
                innermost_size == rhs_casted.innermost_size;
     }
@@ -99,6 +101,7 @@ struct dynamic_quantize : public primitive_base<dynamic_quantize> {
         ob << attrs.scales_zp_output_order;
         ob << attrs.group_sizes;
         ob << attrs.precomputed_reduction;
+        ob << attrs.input_scale;
         ob << input_size;
         ob << innermost_size;
     }
@@ -115,6 +118,7 @@ struct dynamic_quantize : public primitive_base<dynamic_quantize> {
         ib >> attrs.scales_zp_output_order;
         ib >> attrs.group_sizes;
         ib >> attrs.precomputed_reduction;
+        ib >> attrs.input_scale;
         ib >> input_size;
         ib >> innermost_size;
     }

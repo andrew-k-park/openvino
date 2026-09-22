@@ -110,6 +110,7 @@ KERNEL(dynamic_quantize_gpu_opt)(
 
     unroll_for (uint i = 0 ; i < quantize_block; ++i) {
         input_0[i] = vload4(0, &input[input_offset + i * 4]);
+        input_0[i] *= (INPUT0_TYPE)INPUT_SCALE;
         max[i] = fmax(fmax(fabs(input_0[i][0]), fabs(input_0[i][1])), fmax(fabs(input_0[i][2]), fabs(input_0[i][3])));
     }
 
@@ -212,6 +213,7 @@ KERNEL(dynamic_quantize_gpu_opt)(
     
     if (is_valid_block) {
         val = AS_INPUT_TYPE_N(VLOAD_N(0, input + input_offset + (blockid * block_size)));
+        val *= (INPUT0_TYPE)INPUT_SCALE;
     } else {
         // Initialize with zero for skipped blocks  
         val = (MAKE_VECTOR_TYPE(INPUT0_TYPE, VEC_SIZE))(0);
@@ -398,6 +400,7 @@ KERNEL(dynamic_quantize_gpu_opt)(
             continue;
 
         val[i] = AS_INPUT_TYPE_N(VLOAD_N(0, input + offset + ((local_id * iteration + i) * block_size)));
+        val[i] *= (INPUT0_TYPE)INPUT_SCALE;
 #if ASYMMETRIC_QUANTIZATION
         unroll_for (int j = 0; j < VEC_SIZE; j++) {
             max_value = fmax(max_value, val[i][j]);

@@ -44,6 +44,7 @@ public:
         std::vector<uint64_t> group_sizes = {};
         std::vector<uint64_t> scales_zp_output_order = {};
         OutputStorageType output_storage_type = OutputStorageType::Planar;
+        float input_scale = 1.0f;
     };
 
     DynamicQuantize() = default;

@@ -43,7 +43,8 @@ public:
                                    const std::string& impl_name = "",
                                    SetInnerMostDimValuesZero set_inner_most_dim_values_zero = SetInnerMostDimValuesZero::No,
                                    const PrecomputeSum has_precompute_sum = PrecomputeSum::Disabled,
-                                   const TestForSmallInputs test_for_small_inputs = TestForSmallInputs::No) {
+                                   const TestForSmallInputs test_for_small_inputs = TestForSmallInputs::No,
+                                   float input_scale = 1.0f) {
         tests::random_generator rg(GET_SUITE_NAME);
         auto& engine = get_test_engine();
 
@@ -79,6 +80,7 @@ public:
         dq_config.zp_dt = zp_dt;
         dq_config.group_sizes = group_sizes;
         dq_config.scales_zp_output_order = { 0, 1, 2};
+        dq_config.input_scale = input_scale;
 
         if (has_precompute_sum == PrecomputeSum::Enabled) {
             dq_config.precomputed_reduction = true;
@@ -521,6 +523,13 @@ TEST_F(dynamic_quantization_gpu_tests, dynamic_quantize_opt_group_size_256) {
     this->test_dynamic_quantization(false, {1, 1, 8192}, {1, 1, 8192}, QuantizationType::Symmetric, 256,
                                 data_types::i8, data_types::f16, data_types::dynamic, OutputStorageType::Planar,
                                 "dynamic_quantize_gpu_opt");
+}
+
+TEST_F(dynamic_quantization_gpu_tests, dynamic_quantize_opt_input_scale) {
+    this->test_dynamic_quantization(true, {1, 1, 128}, {16, 1, 128}, QuantizationType::Symmetric, 128,
+                                data_types::i8, data_types::f16, data_types::dynamic, OutputStorageType::Planar,
+                                "dynamic_quantize_gpu_opt", SetInnerMostDimValuesZero::No,
+                                PrecomputeSum::Disabled, TestForSmallInputs::Yes, 0.125f);
 }
 
 TEST_F(dynamic_quantization_gpu_tests, dynamic_quantize_opt_group_size_256_precompute_sum) {

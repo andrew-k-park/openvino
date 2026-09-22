@@ -107,7 +107,7 @@ KERNEL(dynamic_quantize_gpu_ref)(
         // It is assumed that grouped quantization happens only for 3d input case where we don't have x axis
 #if GROUP_SIZE_DIM3 == 1
         const uint offset = INPUT0_GET_INDEX(b + b_off, f + f_off, y + y_off, x);
-        half val = input[offset];
+        half val = input[offset] * (INPUT0_TYPE)INPUT_SCALE;
 #if ASYMMETRIC_QUANTIZATION
         max_val = fmax(max_val, val);
         min_val = fmin(min_val, val);
@@ -119,7 +119,7 @@ KERNEL(dynamic_quantize_gpu_ref)(
         const uint offset = INPUT0_GET_INDEX(b + b_off, f + f_off, y + y_off, 0);
         int x;
         for (x = 0; x < INPUT0_SIZE_X / 8; x++) {
-            half8 val = as_half8(vload8(0, (ushort*)input + offset + x * 8));
+            half8 val = as_half8(vload8(0, (ushort*)input + offset + x * 8)) * (INPUT0_TYPE)INPUT_SCALE;
             half8 abs_val = fabs(val);
             for (int j = 0; j < 8; j++) {
 #if ASYMMETRIC_QUANTIZATION
@@ -132,7 +132,7 @@ KERNEL(dynamic_quantize_gpu_ref)(
         }
         x *= 8;
         for (; x < INPUT0_SIZE_X; x++) {
-            half val = input[offset + x];
+            half val = input[offset + x] * (INPUT0_TYPE)INPUT_SCALE;
 #if ASYMMETRIC_QUANTIZATION
             max_val = fmax(max_val, val);
             min_val = fmin(min_val, val);
@@ -176,7 +176,7 @@ KERNEL(dynamic_quantize_gpu_ref)(
         const uint in_offset = INPUT0_GET_INDEX(b + b_off, f + f_off, y + y_off, x);
         const uint out_offset = OUTPUT_GET_INDEX(b + b_off, f + f_off, y + y_off, x);
 
-        half val = input[in_offset];
+        half val = input[in_offset] * (INPUT0_TYPE)INPUT_SCALE;
         val *= scale;
 #if ASYMMETRIC_QUANTIZATION
         val += zp;
@@ -202,7 +202,7 @@ KERNEL(dynamic_quantize_gpu_ref)(
         const uint byte_offset = out_offset / ELEMENTS_PER_BYTE;
         int x;
         for (x = 0; x < INPUT0_SIZE_X / 8; x++) {
-            half8 val = as_half8(vload8(0, (ushort*)input + in_offset + x * 8));
+            half8 val = as_half8(vload8(0, (ushort*)input + in_offset + x * 8)) * (INPUT0_TYPE)INPUT_SCALE;
             val = convert_half8(TO_SCALE_TYPE_8(val) * (MAKE_VECTOR_TYPE(SCALE_TYPE, 8))scale);
 #if ASYMMETRIC_QUANTIZATION
             val += zp;
@@ -219,7 +219,7 @@ KERNEL(dynamic_quantize_gpu_ref)(
         }
         x *= 8;
         for (; x < INPUT0_SIZE_X; x++) {
-            half val = input[in_offset + x];
+            half val = input[in_offset + x] * (INPUT0_TYPE)INPUT_SCALE;
             val *= scale;
 #if ASYMMETRIC_QUANTIZATION
             val += zp;

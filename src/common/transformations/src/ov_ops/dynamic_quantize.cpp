@@ -146,6 +146,7 @@ bool DynamicQuantize::visit_attributes(AttributeVisitor& visitor) {
     visitor.on_attribute("group_sizes", m_attrs.group_sizes);
     visitor.on_attribute("scales_zp_output_order", m_attrs.scales_zp_output_order);
     visitor.on_attribute("output_storage_type", m_attrs.output_storage_type);
+    visitor.on_attribute("input_scale", m_attrs.input_scale);
     return true;
 }
 

@@ -6,8 +6,12 @@
 
 #include "intel_gpu/op/fully_connected_compressed.hpp"
 #include "intel_gpu/op/placeholder.hpp"
+#include "intel_gpu/op/sdpa.hpp"
 #include "ov_ops/dynamic_quantize.hpp"
 
+#include "openvino/op/constant.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/reshape.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "openvino/pass/pattern/op/or.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
@@ -16,7 +20,43 @@
 #include "intel_gpu/runtime/utils.hpp"
 #include "openvino/core/graph_util.hpp"
 
+#include <cmath>
+
 namespace ov::intel_gpu {
+
+static std::pair<ov::Output<ov::Node>, float> fuse_post_sdpa_input_scale(const ov::Output<ov::Node>& input) {
+    auto reshape = ov::as_type_ptr<ov::op::v1::Reshape>(input.get_node_shared_ptr());
+    if (!reshape || reshape->output(0).get_target_inputs().size() != 1)
+        return {input, 1.0f};
+
+    auto multiply = ov::as_type_ptr<ov::op::v1::Multiply>(reshape->input_value(0).get_node_shared_ptr());
+    if (!multiply || multiply->output(0).get_target_inputs().size() != 1 ||
+        multiply->get_output_element_type(0) != ov::element::f16)
+        return {input, 1.0f};
+
+    auto input0 = multiply->input_value(0);
+    auto input1 = multiply->input_value(1);
+    const auto input0_is_sdpa = ov::is_type<ov::intel_gpu::op::SDPA>(input0.get_node_shared_ptr());
+    const auto input1_is_sdpa = ov::is_type<ov::intel_gpu::op::SDPA>(input1.get_node_shared_ptr());
+    if (input0_is_sdpa == input1_is_sdpa)
+        return {input, 1.0f};
+
+    auto scale = ov::as_type_ptr<ov::op::v0::Constant>(
+        (input0_is_sdpa ? input1 : input0).get_node_shared_ptr());
+    if (!ov::op::util::is_scalar_or_single_elem_constant(scale))
+        return {input, 1.0f};
+
+    const auto scale_value = scale->cast_vector<float>()[0];
+    int exponent = 0;
+    if (!std::isfinite(scale_value) || scale_value <= 0.0f || std::frexp(scale_value, &exponent) != 0.5f)
+        return {input, 1.0f};
+
+    const auto sdpa_output = input0_is_sdpa ? input0 : input1;
+    auto new_reshape = reshape->clone_with_new_inputs({sdpa_output, reshape->input_value(1)});
+    new_reshape->set_friendly_name(reshape->get_friendly_name());
+    ov::copy_runtime_info(ov::NodeVector{multiply, reshape}, new_reshape);
+    return {new_reshape, scale_value};
+}
 
 // precomputed_reduction is providing partial reduction of activation from dynamic quantization into onednn for faster computation
 // It is used for asymmetric weight.
@@ -116,7 +156,11 @@ DynamicQuantizeFullyConnected::DynamicQuantizeFullyConnected(uint64_t group_size
             config.zp_dt = element::u8; // it supports u8 only now
         }
 
-        std::shared_ptr<ov::op::internal::DynamicQuantize> dyn_quan = std::make_shared<ov::op::internal::DynamicQuantize>(m_fc->input_value(0), config);
+        auto dq_input = m_fc->input_value(0);
+        if (config.quantization_type == QuantizationType::Symmetric) {
+            std::tie(dq_input, config.input_scale) = fuse_post_sdpa_input_scale(dq_input);
+        }
+        auto dyn_quan = std::make_shared<ov::op::internal::DynamicQuantize>(dq_input, config);
 
         int dyn_quan_output_idx = 2;
         auto optional_a_zp = config.quantization_type == QuantizationType::Symmetric ?

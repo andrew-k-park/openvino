@@ -74,7 +74,7 @@ KERNEL(dynamic_quantize_gpu_kv_cache)(
 
     const uint input_offset = INPUT0_GET_INDEX(b, f, y, x);
     unroll_for (uint i = 0; i < INNERMOST_DIM_VALUE / SUBGROUP_SIZE; i++) {
-        val[i] = INPUT_BLOCK_READ(input, input_offset + i * SUBGROUP_SIZE);
+        val[i] = INPUT_BLOCK_READ(input, input_offset + i * SUBGROUP_SIZE) * (INPUT0_TYPE)INPUT_SCALE;
 #if ASYMMETRIC_QUANTIZATION
         max_value = fmax(max_value, val[i]);
         min_value = fmin(min_value, val[i]);
