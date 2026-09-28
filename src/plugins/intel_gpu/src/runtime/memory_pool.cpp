@@ -197,11 +197,12 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
             it->second._users.insert(memory_user(MEM_USER(unique_id, network_id, prim_id, layout_bytes_count)));
             auto ret_mem = _engine->reinterpret_buffer(*it->second._memory, layout);
             ret_mem->from_memory_pool = true;
+            GPU_DEBUG_LOG << "[pool:hit|node:" << prim_id << "|output|layout:" << layout.to_short_string() << "]" << std::endl;
             return ret_mem;
         }
         ++it;
     }
-    GPU_DEBUG_LOG << "[" << prim_id << "(" << unique_id << "): output]" << std::endl;
+    GPU_DEBUG_LOG << "[pool:miss|node:" << prim_id << "|output|layout:" << layout.to_short_string() << "]" << std::endl;
     // didn't find anything for you? create new resource
     auto mem = alloc_memory(layout, type, reset);
     {
@@ -309,6 +310,10 @@ memory::ptr memory_pool::get_memory(const layout& layout,
     if (!do_reuse || layout.format.is_image()) {
         // images (reuse not yet implemented)
         auto mem = alloc_memory(layout, type, reset);
+        if (type == allocation_type::usm_device) {
+            GPU_DEBUG_LOG << "[etc:allocation|node:" << prim_id << "|output|layout:" << layout.to_short_string()
+                          << "|size:" << mem->size() << "]" << std::endl;
+        }
 #ifdef GPU_DEBUG_CONFIG
         GPU_DEBUG_IF(_config.get_dump_memory_pool()) {
             auto allocated_mem_size = mem->size();

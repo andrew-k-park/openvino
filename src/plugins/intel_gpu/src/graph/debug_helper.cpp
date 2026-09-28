@@ -717,11 +717,19 @@ NetworkDebugHelper::~NetworkDebugHelper() {
     auto* prog = m_network.get_program().get();
     auto net_id = m_network.get_id();
     const auto& config = prog->get_config();
-    // print '-data_shape' option for benchmark_app
+    // Print runtime network I/O shapes for benchmark_app and verbose tracing.
     if (config.get_print_input_data_shapes() || config.get_verbose() >= 4) {
         std::stringstream data_shape_str;
         auto add_string = [&data_shape_str](std::string str) {
             data_shape_str << ((data_shape_str.rdbuf()->in_avail() == 0) ? " -data_shape " : ",") << str;
+        };
+
+        std::stringstream io_summary;
+        auto add_io = [&io_summary, this](const char* direction, const primitive_id& id) {
+            const auto inst = m_network.get_primitive(id);
+            io_summary << (io_summary.rdbuf()->in_avail() == 0 ? "" : ", ")
+                       << direction << ":" << inst->id() << " "
+                       << inst->get_output_layout().get_partial_shape().to_string();
         };
 
         for (auto& inst : m_network._exec_order) {
@@ -736,6 +744,17 @@ NetworkDebugHelper::~NetworkDebugHelper() {
 
         GPU_DEBUG_COUT << "[program:" << std::setw(2) << ((prog != nullptr) ? prog->get_id() : 0) << "|network:" << std::setw(2) << net_id
                        << "|iter:" << std::setw(4) << m_iter << "] benchmark_app cmd: " << data_shape_str.str() << std::endl;
+
+        if (config.get_verbose() >= 4) {
+            for (const auto& id : m_network.get_input_ids()) {
+                add_io("input", id);
+            }
+            for (const auto& id : m_network.get_output_ids()) {
+                add_io("output", id);
+            }
+            GPU_DEBUG_COUT << "[program:" << std::setw(2) << ((prog != nullptr) ? prog->get_id() : 0) << "|net_id:" << std::setw(2) << net_id
+                           << "|iter:" << std::setw(4) << m_iter << "] network I/O: " << io_summary.str() << std::endl;
+        }
     }
 
     if (!config.get_dump_graphs_path().empty() && is_target_iteration(m_iter, config.get_dump_iterations())) {
