@@ -9,6 +9,7 @@
 
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
+#include "openvino/op/fake_quantize.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
@@ -18,6 +19,18 @@
 using namespace cldnn;
 using namespace ov::intel_gpu;
 using namespace ::tests;
+
+static std::shared_ptr<ov::Model> make_fake_quantize_model(const ov::PartialShape& input_shape) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, input_shape);
+    auto input_low = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.0f});
+    auto input_high = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {1.0f});
+    auto output_low = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.0f});
+    auto output_high = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {255.0f});
+    auto fake_quantize = std::make_shared<ov::op::v0::FakeQuantize>(
+        input, input_low, input_high, output_low, output_high, 256);
+
+    return std::make_shared<ov::Model>(ov::OutputVector{fake_quantize}, ov::ParameterVector{input});
+}
 
 // Build a model with MatMul (compressed weights) + PagedAttention stub.
 // PA node triggers is_paged_attention_model detection in apply_model_specific_options.
@@ -243,4 +256,39 @@ TEST(execution_config, kv_cache_4bit_by_token_throws) {
     config.set_user_property(ov::internal::key_cache_quant_mode(ov::internal::CacheQuantMode::BY_TOKEN));
 
     ASSERT_ANY_THROW(config.finalize(ctx.get(), model.get()));
+}
+
+TEST(execution_config, dynamic_fake_quantize_disables_onednn) {
+    auto& engine = get_test_engine();
+    auto ctx = std::make_shared<RemoteContextImpl>("GPU", std::vector<cldnn::device::ptr>{engine.get_device()});
+    auto model = make_fake_quantize_model(ov::PartialShape{-1, 3, -1, -1});
+
+    ExecutionConfig config;
+    config.finalize(ctx.get(), model.get());
+
+    ASSERT_FALSE(config.get_use_onednn());
+    ASSERT_EQ(config.get_queue_type(), QueueTypes::in_order);
+}
+
+TEST(execution_config, dynamic_fake_quantize_respects_onednn_override) {
+    auto& engine = get_test_engine();
+    auto ctx = std::make_shared<RemoteContextImpl>("GPU", std::vector<cldnn::device::ptr>{engine.get_device()});
+    auto model = make_fake_quantize_model(ov::PartialShape{-1, 3, -1, -1});
+
+    ExecutionConfig config;
+    config.set_user_property(ov::intel_gpu::use_onednn(true));
+    config.finalize(ctx.get(), model.get());
+
+    ASSERT_TRUE(config.get_use_onednn());
+}
+
+TEST(execution_config, static_fake_quantize_keeps_onednn_default) {
+    auto& engine = get_test_engine();
+    auto ctx = std::make_shared<RemoteContextImpl>("GPU", std::vector<cldnn::device::ptr>{engine.get_device()});
+    auto model = make_fake_quantize_model(ov::PartialShape{1, 3, 640, 640});
+
+    ExecutionConfig config;
+    config.finalize(ctx.get(), model.get());
+
+    ASSERT_EQ(config.get_use_onednn(), engine.get_device_info().supports_immad);
 }

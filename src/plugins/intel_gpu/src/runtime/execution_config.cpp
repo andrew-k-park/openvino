@@ -15,6 +15,7 @@
 #include "openvino/core/any.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/core/model.hpp"
+#include "openvino/op/fake_quantize.hpp"
 #include "openvino/op/gru_sequence.hpp"
 #include "openvino/op/istft.hpp"
 #include "openvino/op/loop.hpp"
@@ -213,6 +214,16 @@ void ExecutionConfig::apply_model_specific_options(const IRemoteContext* context
 
     const auto& ops = model.get_ops();
     const auto& info = dynamic_cast<const RemoteContextImpl*>(context)->get_engine().get_device_info();
+
+    const bool is_dynamic_quantized_model = model.is_dynamic() && std::any_of(ops.begin(), ops.end(), [](const auto& op) {
+        return ov::is_type<ov::op::v0::FakeQuantize>(op);
+    });
+    if (is_dynamic_quantized_model && !is_set_by_user(ov::intel_gpu::use_onednn)) {
+        set_user_property({ov::intel_gpu::use_onednn(false)});
+        if (!is_set_by_user(ov::intel_gpu::queue_type)) {
+            m_queue_type = QueueTypes::in_order;
+        }
+    }
 
     std::function<void(std::shared_ptr<Node>)> process_op = [&, this](std::shared_ptr<Node> op) {
         if (requires_new_shape_infer(op)) {
