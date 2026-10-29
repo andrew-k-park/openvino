@@ -4,12 +4,14 @@
 
 #include "transformations/common_optimizations/moe_op_fusion.hpp"
 
+#include <algorithm>
 #include <limits>
 
 #include "itt.hpp"
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "openvino/core/validation_util.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/clamp.hpp"
 #include "openvino/op/constant.hpp"
@@ -49,6 +51,52 @@ namespace v8 = ov::op::v8;
 static size_t weight_logical_K(const ov::Shape& shape) {
     OPENVINO_ASSERT(shape.size() == 3 || shape.size() == 4, "MOE weight must be rank 3 or 4, got rank ", shape.size());
     return shape.size() == 4 ? shape[2] * shape[3] : shape[2];
+}
+
+// Re-applies the matched end Reshape after the fused MoE op. The end Reshape was matched on the ReduceSum output, i.e.
+// on the flattened [tokens, hidden] layout. A special_zero target such as [0, hidden] (emitted by
+// ConvertTiledMoeBlockTo*GatherMatmuls for an expert view [experts, 0, hidden]) copies dimensions of that layout, so a
+// MoE output of another rank ([batch, seq, hidden]) is flattened back first. Otherwise the zero would copy the batch
+// dimension instead of the token count. Returns nullptr when the flattened layout is not static.
+static std::shared_ptr<ov::Node> restore_end_reshape(const std::shared_ptr<ov::Node>& moe_node,
+                                                     const std::shared_ptr<ov::Node>& end_reshape) {
+    const auto& matched_shape = end_reshape->get_input_partial_shape(0);
+    const auto& moe_shape = moe_node->get_output_partial_shape(0);
+    const bool same_rank =
+        matched_shape.rank().is_static() && moe_shape.rank().is_static() && matched_shape.rank() == moe_shape.rank();
+
+    const auto reshape = ov::as_type_ptr<v1::Reshape>(end_reshape);
+    bool copies_input_dims = reshape && reshape->get_special_zero();
+    if (copies_input_dims) {
+        if (const auto target = ov::util::get_constant_from_source(end_reshape->input_value(1))) {
+            const auto values = target->cast_vector<int64_t>();
+            copies_input_dims = std::any_of(values.begin(), values.end(), [](int64_t value) {
+                return value == 0;
+            });
+        }
+    }
+
+    ov::Output<ov::Node> end_reshape_input = moe_node->output(0);
+    if (copies_input_dims && !same_rank) {
+        if (matched_shape.rank().is_dynamic()) {
+            return nullptr;
+        }
+        std::vector<int64_t> flat_shape{-1};
+        for (size_t i = 1; i < matched_shape.size(); ++i) {
+            if (matched_shape[i].is_dynamic()) {
+                return nullptr;
+            }
+            flat_shape.push_back(matched_shape[i].get_length());
+        }
+        auto flatten = std::make_shared<v1::Reshape>(
+            moe_node,
+            v0::Constant::create(ov::element::i64, ov::Shape{flat_shape.size()}, flat_shape),
+            false);
+        flatten->set_friendly_name(end_reshape->get_friendly_name() + "/Flatten");
+        ov::copy_runtime_info(end_reshape, flatten);
+        end_reshape_input = flatten;
+    }
+    return end_reshape->clone_with_new_inputs({end_reshape_input, end_reshape->input_value(1)});
 }
 
 Convert3GatherMatmulMoeBlockToMoeOp::Convert3GatherMatmulMoeBlockToMoeOp() {
@@ -232,10 +280,11 @@ Convert3GatherMatmulMoeBlockToMoeOp::Convert3GatherMatmulMoeBlockToMoeOp() {
 
         auto replacement = moe_node;
         if (!hidden_states.get_partial_shape().same_scheme(pm.at(end_reshape_m).get_partial_shape())) {
+            replacement = restore_end_reshape(moe_node, pm.at(end_reshape_m).get_node_shared_ptr());
+            if (!replacement) {
+                return false;
+            }
             moe_node->set_friendly_name(m.get_match_root()->get_friendly_name() + "/MOE");
-            replacement = pm.at(end_reshape_m)
-                              .get_node_shared_ptr()
-                              ->clone_with_new_inputs({moe_node, pm.at(end_reshape_shape_m)});
             register_new_node(replacement);
         }
         replacement->set_friendly_name(m.get_match_root()->get_friendly_name());
@@ -443,10 +492,11 @@ Convert2GatherMatmulMoeBlockToMoeOp::Convert2GatherMatmulMoeBlockToMoeOp() {
 
         auto replacement = moe_node;
         if (!hidden_states.get_partial_shape().same_scheme(pm.at(end_reshape_m).get_partial_shape())) {
+            replacement = restore_end_reshape(moe_node, pm.at(end_reshape_m).get_node_shared_ptr());
+            if (!replacement) {
+                return false;
+            }
             moe_node->set_friendly_name(m.get_match_root()->get_friendly_name() + "/MOE");
-            replacement = pm.at(end_reshape_m)
-                              .get_node_shared_ptr()
-                              ->clone_with_new_inputs({moe_node, pm.at(end_reshape_shape_m)});
             register_new_node(replacement);
         }
         replacement->set_friendly_name(m.get_match_root()->get_friendly_name());

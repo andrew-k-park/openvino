@@ -279,10 +279,26 @@ inline std::shared_ptr<ov::Model> build_3gemm_moe_pattern_model() {
 // Post-BGM model builders (3 BGMs + compact routing + ReduceSum + Reshape)
 // ============================================================================
 
+// Expected tail for a [0, hidden] special_zero end Reshape: the fused MoE output is flattened back to the
+// [tokens, hidden] layout the end Reshape was built for, so the zero keeps copying the token count.
+inline ov::Output<ov::Node> build_zero_copy_end_reshape(const ov::Output<ov::Node>& moe, size_t hidden_size) {
+    using namespace ov;
+    const auto hidden = static_cast<int64_t>(hidden_size);
+    auto flatten = std::make_shared<op::v1::Reshape>(
+        moe,
+        op::v0::Constant::create(element::i64, Shape{2}, std::vector<int64_t>{-1, hidden}),
+        false);
+    return std::make_shared<op::v1::Reshape>(
+        flatten,
+        op::v0::Constant::create(element::i64, Shape{2}, std::vector<int64_t>{0, hidden}),
+        true);
+}
+
 inline std::shared_ptr<ov::Model> build_3gemm_bgm_model(
     ov::op::internal::MOE::Activation_type activation_type = ov::op::internal::MOE::Activation_type::SWIGLU,
     bool has_batch_dim = true,
-    bool restore_output_shape = false) {
+    bool restore_output_shape = false,
+    bool zero_copy_end_reshape = false) {
     using namespace ov;
 
     const size_t batch = 2;
@@ -356,10 +372,14 @@ inline std::shared_ptr<ov::Model> build_3gemm_bgm_model(
                                             op::v0::Constant::create(element::i64, Shape{1}, std::vector<int64_t>{0}),
                                             false);
 
+    // zero_copy_end_reshape: [0, hidden] with special_zero, as ConvertTiledMoeBlockTo3GatherMatmuls emits for an
+    // expert view [experts, 0, hidden]; the zero copies the token count of the flattened ReduceSum output.
     const std::vector<int64_t> output_shape =
-        restore_output_shape ? std::vector<int64_t>{-1, static_cast<int64_t>(batch), static_cast<int64_t>(hidden_size)}
-        : has_batch_dim      ? std::vector<int64_t>{static_cast<int64_t>(batch), -1, static_cast<int64_t>(hidden_size)}
-                             : std::vector<int64_t>{-1, static_cast<int64_t>(hidden_size)};
+        zero_copy_end_reshape ? std::vector<int64_t>{0, static_cast<int64_t>(hidden_size)}
+        : restore_output_shape
+            ? std::vector<int64_t>{-1, static_cast<int64_t>(batch), static_cast<int64_t>(hidden_size)}
+        : has_batch_dim ? std::vector<int64_t>{static_cast<int64_t>(batch), -1, static_cast<int64_t>(hidden_size)}
+                        : std::vector<int64_t>{-1, static_cast<int64_t>(hidden_size)};
     auto end_reshape = std::make_shared<op::v1::Reshape>(
         reduce_sum,
         op::v0::Constant::create(element::i64, Shape{output_shape.size()}, output_shape),
@@ -371,7 +391,8 @@ inline std::shared_ptr<ov::Model> build_3gemm_bgm_model(
 inline std::shared_ptr<ov::Model> build_3gemm_bgm_to_moe_reference_model(
     ov::op::internal::MOE::Activation_type activation_type = ov::op::internal::MOE::Activation_type::SWIGLU,
     bool has_batch_dim = true,
-    bool restore_output_shape = false) {
+    bool restore_output_shape = false,
+    bool zero_copy_end_reshape = false) {
     using namespace ov;
 
     const size_t batch = 2;
@@ -421,7 +442,9 @@ inline std::shared_ptr<ov::Model> build_3gemm_bgm_to_moe_reference_model(
     auto moe = std::make_shared<ov::op::internal::MOE>(moe_inputs, config);
 
     ov::Output<ov::Node> output = moe;
-    if (!has_batch_dim || restore_output_shape) {
+    if (zero_copy_end_reshape) {
+        output = build_zero_copy_end_reshape(moe, hidden_size);
+    } else if (!has_batch_dim || restore_output_shape) {
         const std::vector<int64_t> output_shape =
             restore_output_shape
                 ? std::vector<int64_t>{-1, static_cast<int64_t>(batch), static_cast<int64_t>(hidden_size)}
@@ -434,7 +457,9 @@ inline std::shared_ptr<ov::Model> build_3gemm_bgm_to_moe_reference_model(
     return std::make_shared<ov::Model>(ov::OutputVector{output}, ov::ParameterVector{input});
 }
 
-inline std::shared_ptr<ov::Model> build_2gemm_bgm_model(bool has_batch_dim = true, bool restore_output_shape = false) {
+inline std::shared_ptr<ov::Model> build_2gemm_bgm_model(bool has_batch_dim = true,
+                                                        bool restore_output_shape = false,
+                                                        bool zero_copy_end_reshape = false) {
     using namespace ov;
 
     const size_t batch = 2;
@@ -534,9 +559,11 @@ inline std::shared_ptr<ov::Model> build_2gemm_bgm_model(bool has_batch_dim = tru
                                             op::v0::Constant::create(element::i64, Shape{1}, std::vector<int64_t>{0}),
                                             false);
     const std::vector<int64_t> output_shape =
-        restore_output_shape ? std::vector<int64_t>{-1, static_cast<int64_t>(batch), static_cast<int64_t>(hidden_size)}
-        : has_batch_dim      ? std::vector<int64_t>{static_cast<int64_t>(batch), -1, static_cast<int64_t>(hidden_size)}
-                             : std::vector<int64_t>{-1, static_cast<int64_t>(hidden_size)};
+        zero_copy_end_reshape ? std::vector<int64_t>{0, static_cast<int64_t>(hidden_size)}
+        : restore_output_shape
+            ? std::vector<int64_t>{-1, static_cast<int64_t>(batch), static_cast<int64_t>(hidden_size)}
+        : has_batch_dim ? std::vector<int64_t>{static_cast<int64_t>(batch), -1, static_cast<int64_t>(hidden_size)}
+                        : std::vector<int64_t>{-1, static_cast<int64_t>(hidden_size)};
     auto end_reshape = std::make_shared<op::v1::Reshape>(
         reduce_sum,
         op::v0::Constant::create(element::i64, Shape{output_shape.size()}, output_shape),
@@ -546,7 +573,8 @@ inline std::shared_ptr<ov::Model> build_2gemm_bgm_model(bool has_batch_dim = tru
 }
 
 inline std::shared_ptr<ov::Model> build_2gemm_bgm_to_moe_reference_model(bool has_batch_dim = true,
-                                                                         bool restore_output_shape = false) {
+                                                                         bool restore_output_shape = false,
+                                                                         bool zero_copy_end_reshape = false) {
     using namespace ov;
 
     const size_t batch = 2;
@@ -608,7 +636,9 @@ inline std::shared_ptr<ov::Model> build_2gemm_bgm_to_moe_reference_model(bool ha
 
     auto moe = std::make_shared<ov::op::internal::MOE>(moe_inputs, config);
     ov::Output<ov::Node> output = moe;
-    if (!has_batch_dim || restore_output_shape) {
+    if (zero_copy_end_reshape) {
+        output = build_zero_copy_end_reshape(moe, hidden_size);
+    } else if (!has_batch_dim || restore_output_shape) {
         const std::vector<int64_t> output_shape =
             restore_output_shape
                 ? std::vector<int64_t>{-1, static_cast<int64_t>(batch), static_cast<int64_t>(hidden_size)}
@@ -836,4 +866,19 @@ TEST_F(TransformationTestsF, Convert2GatherMatmulMoeBlockToMoeOp_restores_output
     model = build_2gemm_bgm_model(true, true);
     manager.register_pass<ov::pass::Convert2GatherMatmulMoeBlockToMoeOp>();
     model_ref = build_2gemm_bgm_to_moe_reference_model(true, true);
+}
+
+// The fused MoE keeps [batch, seq, hidden] while the [0, hidden] end Reshape was built for the flattened
+// [tokens, hidden] layout; re-applying it directly would copy the batch dimension instead of the token count.
+TEST_F(TransformationTestsF, Convert3GatherMatmulMoeBlockToMoeOp_zero_copy_end_reshape) {
+    model = build_3gemm_bgm_model(ov::op::internal::MOE::Activation_type::SWIGLU, true, false, true);
+    manager.register_pass<ov::pass::Convert3GatherMatmulMoeBlockToMoeOp>();
+    model_ref =
+        build_3gemm_bgm_to_moe_reference_model(ov::op::internal::MOE::Activation_type::SWIGLU, true, false, true);
+}
+
+TEST_F(TransformationTestsF, Convert2GatherMatmulMoeBlockToMoeOp_zero_copy_end_reshape) {
+    model = build_2gemm_bgm_model(true, false, true);
+    manager.register_pass<ov::pass::Convert2GatherMatmulMoeBlockToMoeOp>();
+    model_ref = build_2gemm_bgm_to_moe_reference_model(true, false, true);
 }
