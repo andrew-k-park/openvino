@@ -5,6 +5,7 @@
 #include "primitive_inst.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -2591,7 +2592,20 @@ void primitive_inst::prepare_primitive() {
         if (!is_valid_fusion()) {
             OV_ITT_SCOPED_TASK(ov::intel_gpu::itt::domains::intel_gpu_plugin, openvino::itt::handle("unfused_subgraph_build: " + id()));
             get_unfused_subgraph();
+            if (!_use_unfused_subgraph) {
+                _fused_output_memory = _outputs[0];
+                _use_unfused_subgraph = true;
+            }
             return;
+        }
+
+        // The fusion is valid again (e.g. single-token decode after a multi-token prefill): go back to the fused impl.
+        if (_use_unfused_subgraph) {
+            _use_unfused_subgraph = false;
+            _outputs[0] = std::move(_fused_output_memory);
+            // Forces update_impl() and realloc_if_needed() below for the restored output buffer.
+            set_flag(ExecutionFlags::SHAPE_CHANGED);
+            set_flag(ExecutionFlags::MEMORY_CHANGED);
         }
 
         // Try update impl if current impl is dynamic because opt kernel may be added to impl cache through async compilation.
@@ -2732,7 +2746,7 @@ void primitive_inst::execute() {
         return;
     }
 
-    if (_unfused_subgraph != nullptr) {
+    if (_use_unfused_subgraph) {
         GPU_DEBUG_TRACE << "Now execute unfused subgraph  " << _node->id() << std::endl;
         for (auto& d : _deps) {
             if (!d.first->get_node().is_type<data>()) {
@@ -3495,7 +3509,7 @@ bool primitive_inst::is_valid_fusion() const {
         }
     }
 
-    const auto& out_pshape = (_unfused_subgraph != nullptr && !get_flag(ExecutionFlags::SHAPE_CHANGED))
+    const auto& out_pshape = (_use_unfused_subgraph && !get_flag(ExecutionFlags::SHAPE_CHANGED))
                                  ? _unfused_subgraph->get_primitive(get_node().id())->get_output_layout().get_partial_shape()
                                  : _impl_params->get_output_layout().get_partial_shape();
     for (auto& fd : fused_eltwise_prims) {
@@ -3526,6 +3540,30 @@ bool primitive_inst::is_valid_fusion() const {
             const auto& data_layout = outer_dep.first->_impl_params->get_output_layout();
             auto gemm_dims = onednn::convert_tensor(gemm_layout.get_tensor(), cldnn::format::dimension(gemm_layout.format));
             auto data_dims = onednn::convert_tensor(data_layout.get_tensor(), cldnn::format::dimension(data_layout.format));
+
+            // CVS-197800 experiment switch, not for upstream.
+            static const bool exp_gemm_fusion_check_v2 = std::getenv("OV_GPU_EXP_GEMM_FUSION_CHECK_V2") != nullptr;
+            if (exp_gemm_fusion_check_v2) {
+                // Check the 4D shapes gemm_onednn really uses: rank < 4 gemm outputs and post-op inputs get leading ones.
+                const auto gemm_prim = _impl_params->typed_desc<gemm>();
+                std::vector<layout> in_layouts;
+                for (size_t i = 0; i < gemm_prim->input_size(); ++i) {
+                    in_layouts.push_back(_impl_params->get_input_layout(i));
+                }
+                in_layouts = gemm_inst::transform_input_layouts(gemm_prim, in_layouts, _impl_params->get_program().is_new_shape_infer());
+                const auto onednn_out_layout = gemm_inst::transform_output_layout(gemm_prim, in_layouts, gemm_layout);
+                gemm_dims = onednn::convert_tensor(onednn_out_layout.get_tensor(), cldnn::format::dimension(onednn_out_layout.format));
+
+                const size_t data_rank = cldnn::format::dimension(data_layout.format);
+                auto data_pshape = data_layout.get_partial_shape();
+                const size_t target_rank = std::max(gemm_layout.get_partial_shape().size(), data_rank);
+                if (data_pshape.size() < target_rank) {
+                    data_pshape.insert(data_pshape.begin(), target_rank - data_pshape.size(), 1ul);
+                }
+                auto post_op_layout = data_layout;
+                post_op_layout.set_partial_shape(data_pshape);
+                data_dims = onednn::convert_tensor(post_op_layout.get_tensor(), data_rank);
+            }
 
             if (gemm_dims[0] != data_dims[0] && gemm_dims[1] != 1) {
                 LOG_AND_RETURN_FALSE(_node);

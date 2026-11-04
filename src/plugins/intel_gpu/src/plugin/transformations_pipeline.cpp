@@ -5,6 +5,7 @@
 #include "intel_gpu/plugin/transformations_pipeline.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cctype>
 #include <cmath>
 #include <deque>
@@ -1936,7 +1937,10 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             }
 
             // Temporary disabling for BMG due to regression
-            if (device_info.arch != cldnn::gpu_arch::xe2 && (!config.get_enable_lora_operation() || device_info.supports_immad)) {
+            // CVS-197800 experiment switch, not for upstream.
+            const bool exp_lora_hfusion_xe2 = std::getenv("OV_GPU_EXP_LORA_HFUSION_XE2") != nullptr;
+            if ((device_info.arch != cldnn::gpu_arch::xe2 || exp_lora_hfusion_xe2) &&
+                (!config.get_enable_lora_operation() || device_info.supports_immad)) {
                 manager.register_pass<ov::intel_gpu::LoRAHorizontalFusion>();
             }
         }

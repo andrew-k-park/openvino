@@ -563,6 +563,70 @@ TEST(prepare_primitive_fusing, eltwise_fusing_residual_connection) {
     ASSERT_TRUE(conv_inst->has_unfused_subgraph());
 }
 
+TEST(prepare_primitive_fusing, fuse_eltwise_to_fc_dyn_illegal_then_legal) {
+    // The unfused subgraph must be used only while the fusion is invalid for the current shapes,
+    // e.g. an LLM prefill (invalid) must not keep the unfused path for the following decode steps (valid).
+    auto& engine = get_test_engine();
+    auto weights = engine.allocate_memory({ov::PartialShape{2, 10}, data_types::u8, format::bfyx});
+    auto in_layout = layout{ov::PartialShape::dynamic(2), data_types::u8, format::bfyx};
+    auto in_eltw_layout = layout{ov::PartialShape::dynamic(2), data_types::f32, format::bfyx};
+
+    set_values<uint8_t>(weights, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+    topology topology;
+    topology.add(data("weights", weights));
+    topology.add(input_layout("input", in_layout));
+    topology.add(input_layout("extra_input", in_eltw_layout));
+    topology.add(fully_connected("fc", input_info("input"), {"weights"}, "", data_types::f32));
+    topology.add(eltwise("eltw", {input_info("fc"), input_info("extra_input")}, eltwise_mode::sum));
+    topology.add(reorder("reorder", input_info("eltw"), format::bfyx, data_types::f32));
+
+    ExecutionConfig config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::optimize_data(true));
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    auto prog = program::build_program(engine, topology, config, false, true);
+
+    program_wrapper::apply_opt_pass<prepare_primitive_fusing>(*prog);
+
+    ASSERT_NE(prog, nullptr);
+    ASSERT_FALSE(has_node_with_type<eltwise>(*prog));
+
+    cldnn::network net(prog, 0);
+    const auto& fc_inst = net.get_primitive("fc");
+
+    auto input_memory = engine.allocate_memory(layout{ov::PartialShape{1, 10}, data_types::u8, format::bfyx});
+    set_values<uint8_t>(input_memory, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+    // [1, 2] keeps the fc output shape (valid fusion), [2, 2] broadcasts it (invalid fusion).
+    auto legal_extra_input = engine.allocate_memory(layout{ov::PartialShape{1, 2}, data_types::f32, format::bfyx});
+    set_values<float>(legal_extra_input, {10, 20});
+    auto illegal_extra_input = engine.allocate_memory(layout{ov::PartialShape{2, 2}, data_types::f32, format::bfyx});
+    set_values<float>(illegal_extra_input, {10, 20, 30, 40});
+
+    auto execute = [&](const memory::ptr& extra_input) {
+        net.set_input_data("input", input_memory);
+        net.set_input_data("extra_input", extra_input);
+        auto out_mem = net.execute().at("reorder").get_memory();
+        OPENVINO_ASSERT(out_mem != nullptr);
+        std::vector<float> result(out_mem->count());
+        mem_lock<float, mem_lock_type::read> lock(out_mem, net.get_stream());
+        for (size_t i = 0; i < result.size(); ++i) {
+            result[i] = lock[i];
+        }
+        return result;
+    };
+
+    const std::vector<float> legal_ref = {285 + 10, 285 + 20};
+    const std::vector<float> illegal_ref = {285 + 10, 285 + 20, 285 + 30, 285 + 40};
+    for (size_t i = 0; i < 2; ++i) {
+        ASSERT_EQ(execute(illegal_extra_input), illegal_ref);
+        ASSERT_TRUE(fc_inst->uses_unfused_subgraph());
+
+        ASSERT_EQ(execute(legal_extra_input), legal_ref);
+        ASSERT_FALSE(fc_inst->uses_unfused_subgraph());
+    }
+    ASSERT_TRUE(fc_inst->has_unfused_subgraph());
+}
+
 TEST(prepare_primitive_fusing, fuse_constant_transposes_removal_check) {
     auto& engine = get_test_engine();
 
