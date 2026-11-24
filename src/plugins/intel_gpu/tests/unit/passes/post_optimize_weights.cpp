@@ -7,6 +7,7 @@
 #include "fully_connected_inst.h"
 #include "convolution_inst.h"
 #include "gru_seq_inst.h"
+#include "permute_inst.h"
 #ifdef ENABLE_ONEDNN_FOR_GPU
 #include "graph/impls/onednn/utils.hpp"
 #endif
@@ -248,6 +249,85 @@ TEST(post_optimize_weights, fuse_only_with_supported_weights_layout) {
     program_wrapper::apply_opt_pass<post_optimize_weights>(*prog, rf);
 
     ASSERT_TRUE(has_node(*prog, "reorder"));
+}
+
+TEST(post_optimize_weights, fuse_transferred_reorders_of_shared_weights) {
+    // Two weights chains start at the same constant: data -> reorder(f32->f16) -> permute -> fc.
+    // reorder_transfer moves each reorder below its permute, so the reorder primitive still records the constant
+    // as its input. Fusing must use the actual dependency, otherwise the second fc gets the first fc's reorder.
+    auto& engine = get_test_engine();
+
+    auto input = engine.allocate_memory({ { 2, 32 }, data_types::f16, format::bfyx });
+    auto weights = engine.allocate_memory({ { 32, 2 }, data_types::f32, format::bfyx });
+
+    topology topology(
+        input_layout("input", input->get_layout()),
+        data("weights", weights),
+        reorder("reorder_dt_0", input_info("weights"), format::bfyx, data_types::f16,
+                std::vector<float>(), reorder_mean_mode::subtract, padding(), true),
+        permute("permute_0", input_info("reorder_dt_0"), {1, 0}),
+        fully_connected("fc_0", input_info("input"), { "permute_0" }, "", data_types::f16),
+        reorder("reorder_dt_1", input_info("weights"), format::bfyx, data_types::f16,
+                std::vector<float>(), reorder_mean_mode::subtract, padding(), true),
+        permute("permute_1", input_info("reorder_dt_1"), {1, 0}),
+        fully_connected("fc_1", input_info("input"), { "permute_1" }, "", data_types::f16)
+    );
+
+    ExecutionConfig config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::optimize_data(true));
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    auto prog = program::build_program(engine, topology, config, false, true);
+
+    for (auto& node : prog->get_processing_order()) {
+        if (!node->is_type<data>())
+            node->get_output_layouts();
+    }
+
+    reorder_factory rf;
+    program_wrapper::apply_opt_pass<reorder_transfer>(*prog);
+    program_wrapper::apply_opt_pass<compile_graph>(*prog);
+    ASSERT_NO_THROW(program_wrapper::apply_opt_pass<post_optimize_weights>(*prog, rf));
+
+    for (const auto& [fc_id, permute_id] : {std::pair{"fc_0", "permute_0"}, std::pair{"fc_1", "permute_1"}}) {
+        auto& fc_weights = prog->get_node(fc_id).get_dependency(1);
+        ASSERT_TRUE(fc_weights.is_type<reorder>()) << fc_id;
+        EXPECT_TRUE(format::is_weights_format(fc_weights.get_output_layout().format)) << fc_id;
+        EXPECT_EQ(fc_weights.get_dependency(0).id(), permute_id);
+    }
+}
+
+TEST(post_optimize_weights, share_fused_weights_reorder_of_same_input) {
+    // Two fully connected layers read the same constant through separate but identical precision reorders.
+    // The second fusion finds the first weights reorder in the cache and must reuse it instead of replacing.
+    auto& engine = get_test_engine();
+
+    auto input = engine.allocate_memory({ { 2, 32 }, data_types::f16, format::bfyx });
+    auto weights = engine.allocate_memory({ { 2, 32 }, data_types::f32, format::bfyx });
+
+    topology topology(
+        input_layout("input", input->get_layout()),
+        data("weights", weights),
+        reorder("reorder_dt_0", input_info("weights"), format::bfyx, data_types::f16),
+        fully_connected("fc_0", input_info("input"), { "reorder_dt_0" }, "", data_types::f16),
+        reorder("reorder_dt_1", input_info("weights"), format::bfyx, data_types::f16),
+        fully_connected("fc_1", input_info("input"), { "reorder_dt_1" }, "", data_types::f16)
+    );
+
+    ExecutionConfig config = get_test_default_config(engine);
+    config.set_property(ov::intel_gpu::optimize_data(true));
+    config.set_property(ov::intel_gpu::allow_new_shape_infer(true));
+    auto prog = program::build_program(engine, topology, config, false, true);
+
+    reorder_factory rf;
+    program_wrapper::apply_opt_pass<compile_graph>(*prog);
+    ASSERT_NO_THROW(program_wrapper::apply_opt_pass<post_optimize_weights>(*prog, rf));
+
+    auto& fc_0_weights = prog->get_node("fc_0").get_dependency(1);
+    ASSERT_TRUE(format::is_weights_format(fc_0_weights.get_output_layout().format));
+    EXPECT_EQ(&prog->get_node("fc_1").get_dependency(1), &fc_0_weights);
+    EXPECT_EQ(fc_0_weights.get_dependency(0).id(), "weights");
+    // The shared reorder keeps the id of the reorder it replaced first; the other precision reorder is removed.
+    EXPECT_NE(has_node(*prog, "reorder_dt_0"), has_node(*prog, "reorder_dt_1"));
 }
 
 TEST(post_optimize_weights, onednn_group_conv_weights_reorder_test) {

@@ -228,6 +228,75 @@ const std::vector<std::vector<ptrdiff_t>> emptyOutputPadding = {{}};
 const std::vector<size_t> numOutChannels = {6};
 const std::vector<size_t> numGroups = {2, 3};
 
+/* ============= GroupConvolution (1D) ============= */
+// 1 = single group, 3 = grouped, 12 = depthwise
+const std::vector<size_t> numGroups1d = {1, 3, 12};
+
+const auto groupConvParams_ExplicitPadding_1D = ::testing::Combine(
+        ::testing::Values(std::vector<size_t>{3}, std::vector<size_t>{12}),
+        ::testing::Values(std::vector<size_t>{1}, std::vector<size_t>{2}),
+        ::testing::Values(std::vector<ptrdiff_t>{0}),
+        ::testing::Values(std::vector<ptrdiff_t>{0}),
+        ::testing::Values(std::vector<size_t>{1}),
+        ::testing::Values(size_t{12}),
+        ::testing::ValuesIn(numGroups1d),
+        ::testing::Values(ov::op::PadType::EXPLICIT),
+        ::testing::ValuesIn(emptyOutputPadding)
+);
+
+const std::vector<DeconvInputData> dyn_1D_inputs_smoke = {
+    DeconvInputData{
+        InputShape{{-1, 12, -1}, {{1, 12, 7}, {2, 12, 5}, {1, 12, 7}}},
+        ov::test::utils::InputLayerType::CONSTANT,
+        {}
+    },
+    DeconvInputData{
+        InputShape{{{1, 10}, 12, 7}, {{1, 12, 7}, {3, 12, 7}, {2, 12, 7}}},
+        ov::test::utils::InputLayerType::CONSTANT,
+        {}
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(smoke_GroupDeconv_1D_Dynamic_FP32, GroupDeconvolutionLayerGPUTest,
+    ::testing::Combine(
+        groupConvParams_ExplicitPadding_1D,
+        ::testing::ValuesIn(dyn_1D_inputs_smoke),
+        ::testing::Values(ov::element::f32),
+        ::testing::Values(ov::test::utils::DEVICE_GPU),
+        ::testing::Values(emptyAdditionalConfig)),
+    GroupDeconvolutionLayerGPUTest::getTestCaseName);
+
+const std::vector<DeconvInputData> dyn_1D_inputs_with_output_shape = {
+    DeconvInputData{
+        InputShape{{-1, 12, -1}, {{1, 12, 7}, {2, 12, 5}, {1, 12, 7}}},
+        ov::test::utils::InputLayerType::PARAMETER,
+        {{15}, {9}, {15}}
+    },
+    DeconvInputData{
+        InputShape{{-1, 12, -1}, {{2, 12, 7}, {1, 12, 5}}},
+        ov::test::utils::InputLayerType::CONSTANT,
+        {{15}}
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(smoke_GroupDeconv_1D_Dynamic_OutputShape_FP32, GroupDeconvolutionLayerGPUTest,
+    ::testing::Combine(
+        ::testing::Combine(
+            ::testing::Values(std::vector<size_t>{3}),
+            ::testing::Values(std::vector<size_t>{1}, std::vector<size_t>{2}),
+            ::testing::Values(std::vector<ptrdiff_t>{0}),
+            ::testing::Values(std::vector<ptrdiff_t>{0}),
+            ::testing::Values(std::vector<size_t>{1}),
+            ::testing::Values(size_t{12}),
+            ::testing::ValuesIn(numGroups1d),
+            ::testing::Values(ov::op::PadType::EXPLICIT),
+            ::testing::ValuesIn(emptyOutputPadding)),
+        ::testing::ValuesIn(dyn_1D_inputs_with_output_shape),
+        ::testing::Values(ov::element::f32),
+        ::testing::Values(ov::test::utils::DEVICE_GPU),
+        ::testing::Values(emptyAdditionalConfig)),
+    GroupDeconvolutionLayerGPUTest::getTestCaseName);
+
 /* ============= GroupConvolution params (2D) ============= */
 const std::vector<std::vector<size_t>> kernels2d = {{3, 3}, {1, 1}};
 const std::vector<std::vector<size_t>> strides2d = {{1, 1}, {2, 2}};

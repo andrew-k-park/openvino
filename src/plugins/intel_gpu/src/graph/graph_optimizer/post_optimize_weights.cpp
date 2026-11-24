@@ -131,11 +131,18 @@ void post_optimize_weights::optimize_weights(T& node, program& p) {
                     onednn_weights_params->_in_desc = std::make_shared<dnnl::memory::desc>(onednn::layout_to_memory_desc(updated_input_layout));
                 }
 #endif // ENABLE_ONEDNN_FOR_GPU
-                auto weights_reorder = _rf.get_weights_reorder(prev_node.get_primitive()->input[0].pid,
-                                                               weights_reorder_params);
+                // The recorded primitive input can be stale once passes such as reorder_transfer have moved the node.
+                auto& reorder_input = prev_node.get_dependency(0);
+                auto weights_reorder = _rf.get_weights_reorder(reorder_input.id(), weights_reorder_params);
                 auto& weights_reorder_node = p.get_or_create(weights_reorder.first);
-                p.replace(prev_node, weights_reorder_node);
-                weights_reorder_node.recalc_output_layout(false);
+                if (weights_reorder_node.get_dependencies().empty() && weights_reorder_node.get_users().empty()) {
+                    p.replace(prev_node, weights_reorder_node);
+                    weights_reorder_node.recalc_output_layout(false);
+                } else {
+                    // The same reorder of the same input is already in the graph, so share it.
+                    node.replace_dependency(i, weights_reorder_node);
+                    p.extract_and_remove(prev_node);
+                }
 
                 if (!weights_reorder.second) {
                     add_weights_rotation(p, weights_reorder_node);

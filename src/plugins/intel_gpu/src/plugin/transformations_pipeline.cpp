@@ -88,6 +88,7 @@
 #include "plugin/transformations/convert_convolution.hpp"
 #include "plugin/transformations/convert_fc_to_compressed.hpp"
 #include "plugin/transformations/convert_gated_residual_scale_layout.hpp"
+#include "plugin/transformations/convert_group_conv_backprop_data_1d_to_2d.hpp"
 #include "transformations/op_conversions/convert_grouped_matmul_to_compressed.hpp"
 #include "plugin/transformations/convert_matmul_to_fc.hpp"
 #include "plugin/transformations/fuse_moe_shared_expert.hpp"
@@ -1128,6 +1129,7 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
         manager.register_pass<ov::pass::GatedDeltaNetFusion>();
         manager.register_pass<ov::pass::InitNodeInfo>();
         manager.register_pass<EinsumDecomposition>();
+        manager.register_pass<ov::intel_gpu::ConvertGroupConvolutionBackpropData1DTo2D>();
 
         precisions_map fp_convert_precision_map = {
                 {ov::element::f64, ov::element::f32}
